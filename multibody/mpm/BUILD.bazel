@@ -45,6 +45,7 @@ drake_cc_library(
         "particles.h",
     ],
     deps = [
+        ":math",
         "//common:essential",
         "//multibody/fem",
     ],
@@ -118,6 +119,22 @@ cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "particles_to_bgeo",
+    srcs = [
+        "particles_to_bgeo.cc",
+    ],
+    hdrs = [
+        "particles_to_bgeo.h",
+    ],
+    deps = [
+        "//common:essential",
+        "//common:find_resource",
+        ":particles",
+        "@partio",
+    ],
+)
+
 # This setting governs when we'll compile with Intel AVX2 and FMA enabled.
 # Compiling for Broadwell (or later) gets those instructions.
 #
@@ -162,6 +179,15 @@ drake_cc_googletest(
     ],
     deps = [
         ":mpm_driver",
+    ],
+)
+
+drake_cc_googletest(
+    name = "particles_to_bgeo_test",
+    deps = [
+        ":particles_to_bgeo",
+        "//common:temp_directory",
+        "//common/test_utilities:eigen_matrix_compare",
     ],
 )
 

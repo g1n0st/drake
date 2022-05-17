@@ -67,6 +67,7 @@ load("//tools/workspace/opengl:repository.bzl", "opengl_repository")
 load("//tools/workspace/openusd_internal:repository.bzl", "openusd_internal_repository")  # noqa
 load("//tools/workspace/org_apache_xmlgraphics_commons:repository.bzl", "org_apache_xmlgraphics_commons_repository")  # noqa
 load("//tools/workspace/osqp_internal:repository.bzl", "osqp_internal_repository")  # noqa
+load("//tools/workspace/partio:repository.bzl", "partio_repository")
 load("//tools/workspace/picosha2_internal:repository.bzl", "picosha2_internal_repository")  # noqa
 load("//tools/workspace/platforms:repository.bzl", "platforms_repository")
 load("//tools/workspace/poisson_disk_sampling_internal:repository.bzl", "poisson_disk_sampling_internal_repository")  # noqa
@@ -255,6 +256,8 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
         org_apache_xmlgraphics_commons_repository(name = "org_apache_xmlgraphics_commons", mirrors = mirrors)  # noqa
     if "osqp_internal" not in excludes:
         osqp_internal_repository(name = "osqp_internal", mirrors = mirrors)
+    if "partio" not in excludes:
+        partio_repository(name = "partio", mirrors = mirrors)
     if "picosha2_internal" not in excludes:
         picosha2_internal_repository(name = "picosha2_internal", mirrors = mirrors)  # noqa
     if "platforms" not in excludes:
