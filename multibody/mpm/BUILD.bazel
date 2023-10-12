@@ -80,6 +80,22 @@ cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "poisson_disk",
+    srcs = [
+        "poisson_disk.cc",
+    ],
+    hdrs = [
+        "poisson_disk.h",
+    ],
+    interface_deps = [
+        "//common:essential",
+    ],
+    deps = [
+        "@poisson_disk_sampling_internal//:poisson_disk_sampling",
+    ],
+)
+
 # This setting governs when we'll compile with Intel AVX2 and FMA enabled.
 # Compiling for Broadwell (or later) gets those instructions.
 #
@@ -122,6 +138,14 @@ drake_cc_googletest(
     name = "math_test",
     deps = [
         ":math",
+    ],
+)
+
+drake_cc_googletest(
+    name = "poisson_disk_test",
+    deps = [
+        ":poisson_disk",
+        "//common:essential",
     ],
 )
 

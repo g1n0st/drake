@@ -1,0 +1,22 @@
+# -*- bazel -*-
+
+load("@drake//tools/skylark:cc.bzl", "cc_library")
+load("@drake//tools/install:install.bzl", "install")
+
+licenses(["notice"])  # MIT
+
+package(default_visibility = ["//visibility:private"])
+
+cc_library(
+    name = "poisson_disk_sampling",
+    hdrs = ["thinks/poisson_disk_sampling/poisson_disk_sampling.h"],
+    strip_include_prefix = "thinks/poisson_disk_sampling",
+    linkstatic = 1,
+    visibility = ["//visibility:public"],
+)
+
+install(
+    name = "install",
+    docs = ["LICENSE.txt"],
+    visibility = ["//visibility:public"],
+)
