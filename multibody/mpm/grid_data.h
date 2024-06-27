@@ -85,9 +85,9 @@ class GridData {
     }
   }
 
-  void ApplyExplicitForceImpulsesToVelocities(const T& dt) {
+  void ApplyExplicitForceImpulsesToVelocities(const T& dt, const Vector3<T>& gravity) {
     for (size_t i = 0; i < masses_.size(); ++i) {
-      velocities_[i] += forces_[i] / masses_[i] * dt;
+      velocities_[i] += (forces_[i] / masses_[i] + gravity) * dt;
     }
   }
 

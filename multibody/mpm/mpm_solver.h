@@ -43,7 +43,7 @@ class MpmSolver {
     }
 
     int count = 0;
-    bool explicit_stage = false;
+    bool explicit_stage = true;
     if (explicit_stage) {
       double substep_dt = 1e-4;
       count = int(dt / substep_dt);
@@ -58,17 +58,11 @@ class MpmSolver {
         transfer.P2G(temp_particles, temp_sparse_grid,
                     grid_data_free_motion, &(scratch->transfer_scratch));
 
-        grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(substep_dt);
-        if (params.apply_ground) {
-          UpdateCollisionNodesWithGround(temp_sparse_grid,
-                                        &(scratch->collision_nodes));
-          
-          grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
-                                                params.sticky_ground);
-        }
+        grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(substep_dt, model.gravity());
+        // if (params.apply_ground) { grid_data_free_motion->ProjectionGround(scratch->collision_nodes, params.sticky_ground); }
 
         transfer.G2P(temp_sparse_grid, *grid_data_free_motion, temp_particles, &scratch->particles_data, &(scratch->transfer_scratch));
-        transfer.UpdateParticlesState(scratch->particles_data, substep_dt, &temp_particles);
+        transfer.UpdateParticlesVelocityStateOnly(scratch->particles_data, substep_dt, &temp_particles);
 
         temp_particles.AdvectParticles(substep_dt);
       }
@@ -84,10 +78,14 @@ class MpmSolver {
       transfer.P2G(temp_initial_particles, temp_sparse_grid,
                     grid_data_free_motion, &(scratch->transfer_scratch));
       if (params.apply_ground) {
+        UpdateCollisionNodesWithGround(temp_sparse_grid,
+                                        &(scratch->collision_nodes));
         grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
                                                 params.sticky_ground);
       }
-
+      std::cout << "Substeppinp " << count << " iterations.\n"
+                << "num active nodes: "
+                << grid_data_free_motion->num_active_nodes() << std::endl;
     } else {
       transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
                   grid_data_free_motion, &(scratch->transfer_scratch));

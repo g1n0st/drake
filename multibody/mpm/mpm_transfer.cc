@@ -57,6 +57,18 @@ void MpmTransfer<T>::G2P(const SparseGrid<T>& grid,
 }
 
 template <typename T>
+void MpmTransfer<T>::UpdateParticlesVelocityStateOnly(
+    const ParticlesData<T>& particles_data, double dt,
+    Particles<T>* particles) const {
+  particles->SetVelocities(particles_data.particle_velocites_next);
+  particles->SetBMatrices(particles_data.particle_B_matrices_next);
+  unused(dt);
+  // particles->UpdateTrialDeformationGradients(dt, particles_data.particle_grad_v_next);
+  // particles->UpdateElasticDeformationGradientsAndStresses();
+}
+
+
+template <typename T>
 void MpmTransfer<T>::UpdateParticlesState(
     const ParticlesData<T>& particles_data, double dt,
     Particles<T>* particles) const {
