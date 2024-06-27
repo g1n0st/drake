@@ -319,7 +319,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         "./f" + std::to_string(current_step) + ".bgeo";
     mpm::internal::WriteParticlesToBgeo(
         output_filename, state.particles.positions(),
-        state.particles.velocities(), state.particles.masses());
+        state.particles.velocities(), state.particles.masses(), state.particles.initial_ids());
 
     // WriteAvgX(context, current_step);
     std::cout << "write " << output_filename << std::endl;

@@ -85,6 +85,12 @@ class GridData {
     }
   }
 
+  void ApplyExplicitForceImpulsesToVelocities(const T& dt) {
+    for (size_t i = 0; i < masses_.size(); ++i) {
+      velocities_[i] += forces_[i] / masses_[i] * dt;
+    }
+  }
+
   /**
    * @pre index_1d < num_active_nodes()
    */

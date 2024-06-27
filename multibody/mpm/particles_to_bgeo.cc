@@ -17,7 +17,8 @@ namespace internal {
 void WriteParticlesToBgeo(const std::string& filename,
                           const std::vector<Vector3<double>>& q,
                           const std::vector<Vector3<double>>& v,
-                          const std::vector<double>& m) {
+                          const std::vector<double>& m,
+                          const std::vector<int>& ID) {
   DRAKE_DEMAND(q.size() == v.size());
   DRAKE_DEMAND(q.size() == m.size());
   // Create a particle data handle.
@@ -25,16 +26,20 @@ void WriteParticlesToBgeo(const std::string& filename,
   Partio::ParticleAttribute position;
   Partio::ParticleAttribute velocity;
   Partio::ParticleAttribute mass;
+  Partio::ParticleAttribute id;
   position = particles->addAttribute("position", Partio::VECTOR, 3);
   velocity = particles->addAttribute("velocity", Partio::VECTOR, 3);
   mass = particles->addAttribute("mass", Partio::VECTOR, 1);
+  id = particles->addAttribute("id", Partio::INT, 1);
   for (size_t i = 0; i < q.size(); ++i) {
     int index = particles->addParticle();
     // N.B. PARTIO doesn't support double!
     float* q_dest = particles->dataWrite<float>(position, index);
     float* v_dest = particles->dataWrite<float>(velocity, index);
     float* m_dest = particles->dataWrite<float>(mass, index);
+    int* id_desk = particles->dataWrite<int>(id, index);
     m_dest[0] = m[i];
+    id_desk[0] = ID[i];
     for (int d = 0; d < 3; ++d) {
       q_dest[d] = q[i](d);
       v_dest[d] = v[i](d);

@@ -20,7 +20,8 @@ namespace internal {
  void WriteParticlesToBgeo(const std::string& filename,
                           const std::vector<Vector3<double>>& q,
                           const std::vector<Vector3<double>>& v,
-                          const std::vector<double>& m);
+                          const std::vector<double>& m,
+                          const std::vector<int>& ID);
 
 }  // namespace internal
 }  // namespace mpm
