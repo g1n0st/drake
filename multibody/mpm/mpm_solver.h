@@ -42,6 +42,11 @@ class MpmSolver {
       throw;  // only supports double
     }
 
+    /*Particles<T> const_vel = mpm_state.particles;
+    for (size_t i = 0; i < const_vel.num_particles(); ++i) {
+      const_vel.SetVelocityAt(i, Vector3<T>(1.0, 0, 0));
+    }*/
+    
     int count = 0;
     bool explicit_stage = true;
     if (explicit_stage) {
@@ -59,10 +64,16 @@ class MpmSolver {
                     grid_data_free_motion, &(scratch->transfer_scratch));
 
         grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(substep_dt, model.gravity());
-        // if (params.apply_ground) { grid_data_free_motion->ProjectionGround(scratch->collision_nodes, params.sticky_ground); }
+        if (params.apply_ground) {
+          UpdateCollisionNodesWithGround(temp_sparse_grid,
+                                        &(scratch->collision_nodes));
+
+          grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
+                                                params.sticky_ground);
+        }
 
         transfer.G2P(temp_sparse_grid, *grid_data_free_motion, temp_particles, &scratch->particles_data, &(scratch->transfer_scratch));
-        transfer.UpdateParticlesVelocityStateOnly(scratch->particles_data, substep_dt, &temp_particles);
+        transfer.UpdateParticlesState(scratch->particles_data, substep_dt, &temp_particles);
 
         temp_particles.AdvectParticles(substep_dt);
       }
@@ -72,6 +83,40 @@ class MpmSolver {
 
       for (size_t i = 0; i < temp_initial_particles.num_particles(); ++i) {
         temp_initial_particles.SetVelocityAt(i, (temp_particles.GetPositionAt(i) - temp_initial_particles.GetPositionAt(i)) / dt);
+      }
+
+      {
+        SparseGrid<T> temp_sparse_grid1 = mpm_state.sparse_grid;
+        Particles<T> temp_initial_particles1 = mpm_state.particles;
+        Particles<T> temp_particles1 = mpm_state.particles;
+
+        transfer.SetUpTransfer(&(temp_sparse_grid1), &(temp_particles1));
+        transfer.P2G(temp_particles1, temp_sparse_grid1,
+                    grid_data_free_motion, &(scratch->transfer_scratch));
+
+        grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(dt, model.gravity());
+
+        transfer.G2P(temp_sparse_grid1, *grid_data_free_motion, temp_particles1, &scratch->particles_data, &(scratch->transfer_scratch));
+        transfer.UpdateParticlesVelocityStateOnly(scratch->particles_data, dt, &temp_particles1);
+
+        temp_particles1.AdvectParticles(dt);
+
+        temp_initial_particles1.ResetToInitialOrder();
+        temp_particles1.ResetToInitialOrder();
+
+        for (size_t i = 0; i < temp_initial_particles1.num_particles(); ++i) {
+          temp_initial_particles1.SetVelocityAt(i, (temp_particles1.GetPositionAt(i) - temp_initial_particles1.GetPositionAt(i)) / dt);
+        }
+
+        double diff = 0.0f;
+        for (size_t i = 0; i < temp_initial_particles1.num_particles(); ++i) {
+          if (i == 0) {
+            std::cout << temp_initial_particles.GetVelocityAt(i).norm() << " " << temp_initial_particles1.GetVelocityAt(i).norm() << "\n";
+          }
+          diff += (temp_initial_particles.GetVelocityAt(i) - temp_initial_particles1.GetVelocityAt(i)).norm();
+        }
+
+        std::cout << "Test Diff: " << diff << "\n";
       }
 
       transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_initial_particles));
