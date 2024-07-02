@@ -235,6 +235,7 @@ class MpmModel {
           const MpmTransfer<T>& transfer,
           const DeformationState<T>& deformation_state, double dt) const {
     if constexpr (std::is_same_v<T, double>) {
+      unused(dt);
       multibody::contact_solvers::internal::
           BlockSparseLowerTriangularOrSymmetricMatrix<Matrix3<double>, true>
               result =
