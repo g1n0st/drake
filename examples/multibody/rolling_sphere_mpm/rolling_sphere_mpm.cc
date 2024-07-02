@@ -23,9 +23,9 @@
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
 
-DEFINE_double(simulation_time, 2.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 3.0, "Desired duration of the simulation [s].");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 5e-3,
+DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(E, 1e4, "Young's modulus of the deformable body [Pa].");
 DEFINE_double(nu, 0.4, "Poisson's ratio of the deformable body, unitless.");
@@ -35,7 +35,7 @@ DEFINE_double(beta, 0.01,
 
 DEFINE_double(friction, 0.0, "mpm friction");
 DEFINE_double(ppc, 8, "mpm ppc");
-DEFINE_double(shift, 0.98, "shift");
+DEFINE_double(shift, 1.2, "shift");
 DEFINE_double(damping, 0.0, "larger, more damping");
 
 using drake::geometry::AddContactMaterial;
@@ -86,10 +86,10 @@ int do_main() {
   rigid_proximity_props.AddProperty(geometry::internal::kHydroGroup,
                                     geometry::internal::kRezHint, 1.0);
   /* Set up a ground. */
-  bool disable_ground = true;
+  bool disable_ground = false;
   if (!disable_ground) {
     Box ground{10, 10, 10};
-    const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -5});
+    const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -5 });
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground,
                                     "ground_collision", rigid_proximity_props);
   }
@@ -101,8 +101,8 @@ int do_main() {
   // set a MPM body
   std::unique_ptr<drake::multibody::mpm::internal::AnalyticLevelSet>
       mpm_geometry_level_set =
-          std::make_unique<drake::multibody::mpm::internal::SphereLevelSet>(
-              radius);
+          std::make_unique<drake::multibody::mpm::internal::BoxLevelSet>(
+              Vector3<double>(radius, radius, radius));
   std::unique_ptr<
       drake::multibody::mpm::constitutive_model::ElastoPlasticModel<double>>
       model = std::make_unique<drake::multibody::mpm::constitutive_model::
@@ -117,7 +117,7 @@ int do_main() {
                                           1000.0, h);
 
   owned_deformable_model->SetMpmGravity(
-      Vector3<double>(std::sqrt(2.0) / 2.0, 0.0, -std::sqrt(2.0) / 2.0));
+      Vector3<double>(0.0, 0.0, -6.0));
   //   owned_deformable_model->SetMpmGravity(
   //       Vector3<double>(std::sqrt(0.0) / 2.0, 0.0, -std::sqrt(0.0) / 2.0));
   owned_deformable_model->SetMpmFriction(FLAGS_friction);
