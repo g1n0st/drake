@@ -575,6 +575,17 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           jacobian_blocks;
       jacobian_blocks.reserve(2);
 
+      /*mpm::MpmSolverScratch<T>& mpm_scratch =
+        manager_->plant()
+            .get_cache_entry(cache_indexes_.mpm_solver_scratch)
+            .get_mutable_cache_entry_value(context)
+            .template GetMutableValueOrThrow<mpm::MpmSolverScratch<T>>();
+
+      const mpm::GridData<T>& grid_data_free_motion = EvalGridDataFreeMotion(context);
+      mpm_transfer_->G2P(state.sparse_grid, grid_data_free_motion, state.particles,
+                       &(mpm_scratch.particles_data),
+                       &(mpm_scratch.transfer_scratch));
+        */
       /* MPM part of Jacobian, note this is -J_mpm */
       if (!deformable_model_->MpmUseSchur()) {
         MatrixX<T> J_mpm;
@@ -598,8 +609,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
             contact_solvers::internal::MatrixBlock<T>(std::move(J_mpm)));
       }
 
-      vn += R_CW.matrix() * state.particles.GetVelocityAt(
-                                contact_pair.particle_in_contact_index);
+      // vn += R_CW.matrix() * mpm_scratch.particles_data.particle_velocites_next[contact_pair.particle_in_contact_index];
+      vn += R_CW.matrix() * state.particles.GetVelocityAt(contact_pair.particle_in_contact_index);
+
 
       /* Non-MPM (rigid) part of Jacobian */
       const BodyIndex index_B =
