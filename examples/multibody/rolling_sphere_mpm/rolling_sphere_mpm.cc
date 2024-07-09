@@ -23,7 +23,7 @@
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
 
-DEFINE_double(simulation_time, 3.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 6.0, "Desired duration of the simulation [s].");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
@@ -87,6 +87,7 @@ int do_main() {
                                     geometry::internal::kRezHint, 1.0);
   /* Set up a ground. */
   bool disable_ground = false;
+  bool apply_mpm_ground = false;
   if (!disable_ground) {
     Box ground{10, 10, 10};
     const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -5 });
@@ -107,7 +108,7 @@ int do_main() {
       drake::multibody::mpm::constitutive_model::ElastoPlasticModel<double>>
       model = std::make_unique<drake::multibody::mpm::constitutive_model::
                                    LinearCorotatedModel<double>>(1e5, 0.3);
-  Vector3<double> translation = {0.0, 0.0, FLAGS_shift * radius};
+  Vector3<double> translation = {0.0, 0.0, FLAGS_shift * 0.4};
   std::unique_ptr<math::RigidTransform<double>> pose =
       std::make_unique<math::RigidTransform<double>>(translation);
   double h = 0.2;
@@ -116,8 +117,11 @@ int do_main() {
                                           std::move(model), std::move(pose),
                                           1000.0, h);
 
+  if (apply_mpm_ground) {
+    owned_deformable_model->ApplyMpmGround();
+  }
   owned_deformable_model->SetMpmGravity(
-      Vector3<double>(0.0, 0.0, -6.0));
+      Vector3<double>(0.0, 0.0, -(6.0/1.0)));
   //   owned_deformable_model->SetMpmGravity(
   //       Vector3<double>(std::sqrt(0.0) / 2.0, 0.0, -std::sqrt(0.0) / 2.0));
   owned_deformable_model->SetMpmFriction(FLAGS_friction);
