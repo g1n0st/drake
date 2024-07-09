@@ -71,6 +71,10 @@ void Particles<T>::Prepare(double h) {
   std::iota(permutation_.begin(), permutation_.end(), 0);
   std::sort(permutation_.begin(), permutation_.end(),
             [this](size_t i1, size_t i2) {
+              // TODO(changyu): explicit integration with dt=1e-2 can only work by adding this. But why?
+              /*if (base_nodes_[i1] == base_nodes_[i2]) {
+                    return initial_ids_[i1] < initial_ids_[i2];
+                  }*/
               return internal::CompareIndex3DLexicographically(base_nodes_[i1],
                                                                base_nodes_[i2]);
             });
