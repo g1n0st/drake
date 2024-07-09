@@ -269,6 +269,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           not_in_contact_nodes_v_free_motion +
           mpm_schur.SolveForX(in_contact_nodes_v_next -
                               in_contact_nodes_v_free_motion);
+      std::cout << "dv not in contact: " << double(mpm_schur.SolveForX(in_contact_nodes_v_next -
+                              in_contact_nodes_v_free_motion).norm()) << std::endl;
 
       int count_in_contact = 0;
       int count_not_in_contact = 0;
@@ -285,6 +287,22 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         }
       }
     }
+
+    // Check CFL condition here
+    const mpm::MpmState<T>& state =
+        context.template get_abstract_state<mpm::MpmState<T>>(
+            deformable_model_->mpm_model().mpm_state_index());
+    double CFL_dt = 1000.0;
+    for (size_t i = 0; i < grid_data_post_contact->num_active_nodes(); i++) {
+        CFL_dt = std::min(CFL_dt, 0.5 * (state.sparse_grid.h() / double(grid_data_post_contact->GetVelocityAt(i).norm())));
+    }
+
+    double dt = manager_->plant().time_step();
+    std::cout << "dt=" << dt << " CFL_dt=" << CFL_dt << std::endl;
+    if (dt > CFL_dt) {
+        std::cout << "dt exceds CFL dt limit!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+    }
+    
   }
 
   void UpdateParticlesFromGridData(const systems::Context<T>& context,
