@@ -134,6 +134,13 @@ struct MpmInitialObjectParameters {
   }
 };
 
+enum class MpmIntegratorType {
+  Explicit,
+  Implicit,
+  OldSubstep,
+  NewSubstep
+};
+
 template <typename T>
 class MpmModel {
  public:
@@ -235,14 +242,13 @@ class MpmModel {
           const MpmTransfer<T>& transfer,
           const DeformationState<T>& deformation_state, double dt) const {
     if constexpr (std::is_same_v<T, double>) {
-      unused(dt);
       multibody::contact_solvers::internal::
           BlockSparseLowerTriangularOrSymmetricMatrix<Matrix3<double>, true>
               result =
                   transfer.ComputeGridDElasticEnergyDV2SparseBlockSymmetric(
                       deformation_state.particles(),
                       deformation_state.sparse_grid(),
-                      deformation_state.dPdFs(), 0.0);
+                      deformation_state.dPdFs(), integrator() == MpmIntegratorType::Implicit ? dt : 0.0);
       // add the mass part
       for (size_t i = 0; i < deformation_state.sparse_grid().num_active_nodes();
            ++i) {
@@ -304,6 +310,9 @@ class MpmModel {
 
   void SetFrictionMu(double mu) { friction_mu_ = mu; }
 
+  void SetIntegrator(MpmIntegratorType integrator) { integrator_ = integrator; }
+  const MpmIntegratorType & integrator() const { return integrator_; }
+
  private:
   // Kinetic energy = 0.5 * m * (v - v_prev)ᵀ(v - v_prev).
   // Gravitational energy = - m*dt*gᵀv. Since we only care about its gradient,
@@ -333,6 +342,8 @@ class MpmModel {
   NewtonParams newton_params_;
 
   double friction_mu_ = 0.1;
+
+  MpmIntegratorType integrator_ = MpmIntegratorType::Implicit;
 };
 
 }  // namespace mpm

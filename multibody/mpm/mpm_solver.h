@@ -43,9 +43,21 @@ class MpmSolver {
     }
 
     int count = 0;
-    bool old_substepping_scheme = false;
-    bool single_explicit_scheme = true;
-    if (single_explicit_scheme) {
+    if (model.integrator() == MpmIntegratorType::NewSubstep) {
+      transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
+                    grid_data_free_motion, &(scratch->transfer_scratch));
+        if (params.apply_ground) {
+          UpdateCollisionNodesWithGround(mpm_state.sparse_grid,
+                                        &(scratch->collision_nodes));
+
+          grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
+                                                params.sticky_ground);
+        }
+      std::cout << "New Substepping Stage \n"
+                << "num active nodes: "
+                << grid_data_free_motion->num_active_nodes() << std::endl;
+    }
+    else if (model.integrator() == MpmIntegratorType::Explicit) {
         transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
                     grid_data_free_motion, &(scratch->transfer_scratch));
         grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(dt, model.gravity());
@@ -60,12 +72,10 @@ class MpmSolver {
                 << "num active nodes: "
                 << grid_data_free_motion->num_active_nodes() << std::endl;
     }
-    else if (old_substepping_scheme) {
-      assert(false); // NOTE(changyu): This scheme is already proved wrong and deprecated. Will be deleted in future.
+    else if (model.integrator() == MpmIntegratorType::OldSubstep) {
+      throw; // NOTE(changyu): This scheme is already proved wrong and deprecated. Will be deleted in future.
       count = 50;
       double substep_dt = dt / count;
-      
-      unused(model);
 
       SparseGrid<T> temp_sparse_grid = mpm_state.sparse_grid;
       Particles<T> temp_initial_particles = mpm_state.particles;
@@ -113,7 +123,9 @@ class MpmSolver {
       std::cout << "Substepping " << count << " iterations.\n"
                 << "num active nodes: "
                 << grid_data_free_motion->num_active_nodes() << std::endl;
-    } else {
+    } 
+    
+    else {
       transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
                   grid_data_free_motion, &(scratch->transfer_scratch));
       if (params.apply_ground) {
