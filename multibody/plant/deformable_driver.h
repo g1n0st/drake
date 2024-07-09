@@ -310,8 +310,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   }
 
   void WriteMpmParticlesToBgeo(const systems::Context<T>& context) const {
-    double dt = manager_->plant().time_step();
-    int current_step = std::round(context.get_time() / dt);
+    double visualize_dt = 1e-2;
+    int current_step = std::round(context.get_time() / visualize_dt);
     const mpm::MpmState<T>& state =
         context.template get_abstract_state<mpm::MpmState<T>>(
             deformable_model_->mpm_model().mpm_state_index());
@@ -319,7 +319,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         "./f" + std::to_string(current_step) + ".bgeo";
     mpm::internal::WriteParticlesToBgeo(
         output_filename, state.particles.positions(),
-        state.particles.velocities(), state.particles.masses(), state.particles.initial_ids());
+        state.particles.velocities(), state.particles.masses(), state.particles.initial_ids(), state.particles.elastic_deformation_gradients());
 
     // WriteAvgX(context, current_step);
     std::cout << "write " << output_filename << std::endl;
