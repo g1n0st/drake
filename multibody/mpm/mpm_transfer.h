@@ -65,9 +65,6 @@ class MpmTransfer {
    */
   void UpdateParticlesState(const ParticlesData<T>& particles_data, double dt,
                             Particles<T>* particles) const;
-  
-  void UpdateParticlesVelocityStateOnly(const ParticlesData<T>& particles_data, double dt,
-                            Particles<T>* particles) const;
 
   /**
    * Computes the grid_forces at all active grid nodes.
