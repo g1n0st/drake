@@ -311,7 +311,10 @@ class MpmModel {
   void SetFrictionMu(double mu) { friction_mu_ = mu; }
 
   void SetIntegrator(MpmIntegratorType integrator) { integrator_ = integrator; }
-  const MpmIntegratorType & integrator() const { return integrator_; }
+  const MpmIntegratorType& integrator() const { return integrator_; }
+
+  void SetSubstepCount(int substep_count) { substep_count_ = substep_count; }
+  const int& substep_count() const { return substep_count_; }
 
  private:
   // Kinetic energy = 0.5 * m * (v - v_prev)ᵀ(v - v_prev).
@@ -344,6 +347,7 @@ class MpmModel {
   double friction_mu_ = 0.1;
 
   MpmIntegratorType integrator_ = MpmIntegratorType::Implicit;
+  int substep_count_ = 1;
 };
 
 }  // namespace mpm

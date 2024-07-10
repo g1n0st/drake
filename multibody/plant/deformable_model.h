@@ -82,6 +82,7 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
   double mpm_damping() const { return mpm_damping_; }
   double mpm_stiffness() const { return mpm_stiffness_; }
   void SetIntegrator(mpm::MpmIntegratorType integrator) { mpm_model_->SetIntegrator(integrator); }
+  void SetSubstepCount(int count) { mpm_model_->SetSubstepCount(count); }
   void ApplyMpmGround() { mpm_model_->ApplyMpmGround(); }
 
   // Returns the output port of the mpm particle positions for drake viz
