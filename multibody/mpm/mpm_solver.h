@@ -118,14 +118,14 @@ class MpmSolver {
       count = model.substep_count();
       double substep_dt = dt / count;
 
-      SparseGrid<T> temp_sparse_grid = mpm_state.sparse_grid;
-      Particles<T> temp_initial_particles = mpm_state.particles;
+      // Particles<T> temp_initial_particles = mpm_state.particles;
       Particles<T> temp_particles = mpm_state.particles;
+      SparseGrid<T> temp_sparse_grid = mpm_state.sparse_grid;
 
       // std::cout << "Inital Momentum" << mpm_state.particles.ComputeTotalMassMomentum().total_angular_momentum.norm() << std::endl;
 
       for (int i = 0; i < count; ++i) {
-        transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_particles));
+        // transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_particles));
         transfer.P2G(temp_particles, temp_sparse_grid,
                     grid_data_free_motion, &(scratch->transfer_scratch));
         // std::cout << "P2G Momentum" << temp_sparse_grid.ComputeTotalMassMomentum(*grid_data_free_motion).total_angular_momentum.norm() << std::endl;
@@ -141,7 +141,10 @@ class MpmSolver {
         }
 
         transfer.G2P(temp_sparse_grid, *grid_data_free_motion, temp_particles, &scratch->particles_data, &(scratch->transfer_scratch));
-        transfer.UpdateParticlesState(scratch->particles_data, substep_dt, &temp_particles);
+        temp_particles.SetVelocities(scratch->particles_data.particle_velocites_next);
+        temp_particles.SetBMatrices(scratch->particles_data.particle_B_matrices_next);
+        temp_particles.UpdateTrialDeformationGradients(substep_dt, scratch->particles_data.particle_grad_v_next);
+        temp_particles.UpdateElasticDeformationGradientsAndStresses();
 
         // std::cout << "G2P Momentum" << temp_particles.ComputeTotalMassMomentum().total_angular_momentum.norm() << std::endl;
 
