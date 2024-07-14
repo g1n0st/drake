@@ -275,7 +275,7 @@ class MpmSolver {
       if (sticky_ground) {
         (*v).segment(3 * node_idx, 3) = Vector3<T>(0, 0, 0);
       } else {
-        (*v)(3 * node_idx + 2) = 0.0;
+        (*v)(3 * node_idx + 2) = (*v)(3 * node_idx + 2) <= 0.0 ? 0.0 : (*v)(3 * node_idx + 2);
       }
     }
   }
