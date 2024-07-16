@@ -1,0 +1,37 @@
+# -*- mode: python -*-
+# vi: set ft=python :
+
+load(
+    "//tools/skylark:cuda.bzl",
+    "nvcc_library",
+)
+
+load(
+    "//tools/skylark:drake_cc.bzl",
+    "drake_cc_googletest",
+    "drake_cc_library",
+)
+
+package(
+    default_visibility = ["//visibility:public"],
+)
+
+nvcc_library(
+    name = "cuda_mpm",
+    hdrs = ["settings.h", "cuda_mpm.cuh"],
+    srcs = ["cuda_mpm.cu"],
+    deps = [
+        "//common:essential",
+    ],
+)
+
+drake_cc_googletest(
+    name = "cuda_mpm_test",
+    srcs = ["cuda_mpm_test.cc"],
+    tags = ["cuda"],
+    deps = [
+        ":cuda_mpm",
+        "@partio",
+        "@gtest//:main",
+    ],
+)
