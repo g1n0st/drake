@@ -1,4 +1,5 @@
 #include "multibody/gpu_mpm/cuda_mpm_model.cuh"
+#include "multibody/gpu_mpm/cuda_mpm_solver.cuh"
 
 #include <gtest/gtest.h>
 #include <random>
@@ -64,6 +65,9 @@ GTEST_TEST(EstTest, SmokeTest) {
   CUDA_SAFE_CALL(cudaMemcpy(export_vel.data(), mpm_state.particle_buffer[mpm_state.current_particle_buffer_id].d_velocities, sizeof(Vec3) * mpm_state.n_particles, cudaMemcpyHostToDevice));
 
   WriteParticlesToBgeo("test.bgeo", export_pos, export_vel);
+
+  multibody::gmpm::GpuMpmSolver<double> mpm_solver;
+  mpm_solver.RebuildMapping(&mpm_state);
 
   mpm_state.Destroy();
 }

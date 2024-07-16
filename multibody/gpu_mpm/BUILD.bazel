@@ -22,9 +22,10 @@ nvcc_library(
             "blelloch_scan.cuh", 
             "radix_sort.cuh", 
             "cuda_mpm_kernels.cuh", 
-            "cuda_mpm_model.cuh", ],
+            "cuda_mpm_model.cuh",
+            "cuda_mpm_solver.cuh"],
     srcs = ["blelloch_scan.cu", 
-            "cuda_mpm_model.cu"],
+            "cuda_mpm_solver.cu"],
     deps = [
         "//common:essential",
     ],
