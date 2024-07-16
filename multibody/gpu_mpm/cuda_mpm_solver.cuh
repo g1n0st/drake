@@ -16,9 +16,7 @@ namespace gmpm {
 template<typename T>
 class GpuMpmSolver {
 public:
-    void RebuildMapping(GpuMpmState<T> *state) {
-        state = state;
-    }
+    void RebuildMapping(GpuMpmState<T> *state);
 };
 
 }  // namespace gmpm

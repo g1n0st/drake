@@ -53,16 +53,15 @@ GTEST_TEST(EstTest, SmokeTest) {
 
   mpm_state.InitializeParticles(inital_pos, inital_vel, 1000.0);
 
-  EXPECT_TRUE(mpm_state.particle_buffer[0].d_positions != nullptr);
-  EXPECT_TRUE(mpm_state.particle_buffer[1].d_positions != nullptr);
+  EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
   
   std::vector<multibody::gmpm::Vec3<double>> export_pos;
   std::vector<multibody::gmpm::Vec3<double>> export_vel;
-  export_pos.resize(mpm_state.n_particles);
-  export_vel.resize(mpm_state.n_particles);
-  CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), mpm_state.particle_buffer[mpm_state.current_particle_buffer_id].d_positions, sizeof(Vec3) * mpm_state.n_particles, cudaMemcpyHostToDevice));
-  CUDA_SAFE_CALL(cudaMemcpy(export_vel.data(), mpm_state.particle_buffer[mpm_state.current_particle_buffer_id].d_velocities, sizeof(Vec3) * mpm_state.n_particles, cudaMemcpyHostToDevice));
+  export_pos.resize(mpm_state.n_particles());
+  export_vel.resize(mpm_state.n_particles());
+  CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), mpm_state.current_positions(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyHostToDevice));
+  CUDA_SAFE_CALL(cudaMemcpy(export_vel.data(), mpm_state.current_velocities(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyHostToDevice));
 
   WriteParticlesToBgeo("test.bgeo", export_pos, export_vel);
 
