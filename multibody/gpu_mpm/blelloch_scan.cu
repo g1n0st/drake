@@ -2,7 +2,6 @@
 #include <device_launch_parameters.h>
 #include <cmath>
 #include "multibody/gpu_mpm/blelloch_scan.cuh"
-#include "multibody/gpu_mpm/settings.h"
 
 #define MAX_BLOCK_SZ 128
 #define NUM_BANKS 32

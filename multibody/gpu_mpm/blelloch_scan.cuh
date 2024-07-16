@@ -5,6 +5,8 @@
 #include <device_launch_parameters.h>
 #include <cmath>
 
+#include "multibody/gpu_mpm/settings.h"
+
 __global__
 void gpu_add_block_sums(unsigned int* const d_out,
     const unsigned int* const d_in,

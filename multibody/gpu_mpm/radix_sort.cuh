@@ -5,6 +5,7 @@
 #include <device_launch_parameters.h>
 #include <cmath>
 
+#include "multibody/gpu_mpm/settings.h"
 #include "multibody/gpu_mpm/blelloch_scan.cuh"
 
 #define MAX_BLOCK_SZ 128
@@ -41,7 +42,7 @@ __global__ void gpu_radix_sort_local(keyT* d_key_out_sorted,
     extern __shared__ unsigned int shmem[];
     // s_mask_out[] will be scanned in place
     unsigned int s_mask_out_len = max_elems_per_block + 1;
-    unsigned int* s_mask_out = (unsigned int*)shmem;
+    unsigned int* s_mask_out = static_cast<unsigned int*>(shmem);
     unsigned int* s_merged_scan_mask_out = &s_mask_out[s_mask_out_len];
     unsigned int* s_mask_out_sums = &s_merged_scan_mask_out[max_elems_per_block];
     unsigned int* s_scan_mask_out_sums = &s_mask_out_sums[4];
@@ -218,7 +219,7 @@ void radix_sort(
     unsigned int d_block_sums_len = 4 * grid_sz; // 4-way split
     size_t _tmp_buffer_size = (d_prefix_sums_len + d_block_sums_len * 2) + (d_prefix_sums_len * 4);
 
-    unsigned int* d_prefix_sums = (unsigned int*)tmp_buffer;
+    unsigned int* d_prefix_sums = static_cast<unsigned int*>(tmp_buffer);
     unsigned int* d_block_sums = &d_prefix_sums[d_prefix_sums_len];
     unsigned int* d_scan_block_sums = &d_block_sums[d_block_sums_len];
     unsigned int* d_scan_tmp_buffer = &d_scan_block_sums[d_block_sums_len];
