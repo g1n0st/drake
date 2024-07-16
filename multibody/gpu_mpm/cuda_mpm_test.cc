@@ -1,4 +1,4 @@
-#include "multibody/gpu_mpm/cuda_mpm.cuh"
+#include "multibody/gpu_mpm/cuda_mpm_model.cuh"
 
 #include <gtest/gtest.h>
 #include <random>

@@ -18,8 +18,13 @@ package(
 
 nvcc_library(
     name = "cuda_mpm",
-    hdrs = ["settings.h", "cuda_mpm.cuh"],
-    srcs = ["cuda_mpm.cu"],
+    hdrs = ["settings.h", 
+            "blelloch_scan.cuh", 
+            "radix_sort.cuh", 
+            "cuda_mpm_kernels.cuh", 
+            "cuda_mpm_model.cuh", ],
+    srcs = ["blelloch_scan.cu", 
+            "cuda_mpm_model.cu"],
     deps = [
         "//common:essential",
     ],

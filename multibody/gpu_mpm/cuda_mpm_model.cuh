@@ -8,8 +8,7 @@
 #include <vector>
 #include <assert.h>
 
-#include <eigen3/Eigen/Dense>
-
+#include "multibody/gpu_mpm/cuda_mpm_kernels.cuh"
 #include "multibody/gpu_mpm/settings.h"
 
 namespace drake {

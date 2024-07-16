@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <cuda_runtime.h>
 
+#include <eigen3/Eigen/Dense>
+
 #define DEBUG 1
 
 inline void cuda_error_throw() {
@@ -47,6 +49,7 @@ template<typename T> using Mat3 = Eigen::Matrix<T, 3, 3>;
 namespace config {
     // cuda device
     constexpr int G_DEVICE_COUNT = 1;
+	constexpr int DEFAULT_CUDA_BLOCK_SIZE = 128;
 
     // background_grid
 	constexpr float GRID_BLOCK_SPACING = 1.0f;
