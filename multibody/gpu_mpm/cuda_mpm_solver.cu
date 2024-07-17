@@ -13,11 +13,34 @@ namespace gmpm {
 
 template<typename T>
 void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state) {
+    // TODO, NOTE (changyu):
+    // Since we currently adopt dense grid, it's exactly as extending Section 4.2.1 Rebuild-Mapping in [Fei et.al 2021]:
+    // "One can push to use more neighboring blocks than we do, and the extreme would end up with a dense background grid,
+    // where the rebuild mapping can be removed entirely."
+    // NOTE (changyu): Otherwise, this RebuildMapping could somehow be the bottleneck:
+    // "In our experiments (Fig. 6), when the number of particles is small, i.e., 55.3k, the rebuild-mapping
+    // itself is the bottleneck, and our free zone scheme alone brings 3.7× acceleration."
     CUDA_SAFE_CALL((
         compute_base_cell_node_index<<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (state->n_particles(), state->current_positions(), state->current_sort_keys(), state->current_sort_ids())
         ));
+
+    // TODO (changyu):
+    // as discussed by Gao et al. [2018], a histogram-sort performs more efficiently, 
+    // where the keys are computed through concatenating the block index and the cell code.
+
+    // TODO (changyu):
+    // The frequency of sorting can be further reduced as in Section 4.2.2 Particle Sorting in [Fei et.al 2021]
+    // Furthermore, as the reduction only helps to lessen the atomic operations within each warp, 
+    // instead of sorting w.r.t. cells every time step, 
+    // we can perform it only when rebuild-mapping happens.
+    // Between two rebuild-mappings, we conduct radix sort in each warp before the reduction in P2G transfer
+    // ...
+    // Our new scheme may present a less optimal particle ordering, 
+    // e.g., particles in the same cell can be distributed to several warps,
+    // resulting in several atomics instead of one. 
+    // However, this performance loss can be compensated well when particle density is not extremely high in each cell.
     CUDA_SAFE_CALL((
         radix_sort(state->next_sort_keys(), state->current_sort_keys(), state->next_sort_ids(), state->current_sort_ids(), state->sort_buffer(), state->sort_buffer_size(), static_cast<unsigned int>(state->n_particles()))
         ));
