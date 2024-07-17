@@ -37,7 +37,7 @@ inline bool cuda_error(std::string& _message) {
 	return false;
 }
 
-#define CUDA_SAFE_CALL(A) A; cuda_error_throw();
+#define CUDA_SAFE_CALL(A) (A); cuda_error_throw();
 
 namespace drake {
 namespace multibody {
