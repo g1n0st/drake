@@ -41,7 +41,9 @@ __global__ void compute_base_cell_node_index(const size_t &n_particles, const T*
         uint32_t zi = static_cast<uint32_t>(z * config::DXINV - 0.5);
         uint32_t higher_bit = morton_code({xi >> config::BLOCK_BITS, yi >> config::BLOCK_BITS, zi >> config::BLOCK_BITS});
         uint32_t lower_bit = ((xi & config::G_BLOCK_MASK) << (config::G_BLOCK_BITS * 2)) | ((yi & config::G_BLOCK_MASK) << config::G_BLOCK_BITS) | (zi & config::G_BLOCK_MASK);
-        keys[idx] = (higher_bit << config::G_BLOCK_VOLUME) | lower_bit;
+        keys[idx] = (higher_bit << (config::G_BLOCK_BITS * 3)) | lower_bit;
+        // keys[idx] = (xi << (config::G_DOMAIN_BITS * 2)) | (yi << (config::G_DOMAIN_BITS * 1)) | (zi);
+        // printf("%.3lf %.3lf %.3lf %u %u %u high=%u, low=%u, %u\n", x, y, z, xi, yi, zi, higher_bit, lower_bit, keys[idx]);
         ids[idx] = idx;
     }
 }
