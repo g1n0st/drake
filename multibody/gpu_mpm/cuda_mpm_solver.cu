@@ -17,6 +17,15 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state) {
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (state->n_particles(), state->current_positions(), state->current_sort_keys(), state->current_sort_ids());
     radix_sort(state->next_sort_keys(), state->current_sort_keys(), state->next_sort_ids(), state->current_sort_ids(), state->sort_buffer(), state->sort_buffer_size(), static_cast<unsigned int>(state->n_particles()));
+    compute_sorted_state<<<
+        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->n_particles(), 
+         state->current_positions(), state->current_velocities(), state->current_masses(), state->current_deformation_gradients(), state->current_affine_matrices(),
+         state->next_sort_ids(),
+         state->next_positions(),
+         state->next_velocities(), state->next_masses(), state->next_deformation_gradients(), state->next_affine_matrices());
+    CUDA_SAFE_CALL(cudaDeviceSynchronize());
+    state->SwitchCurrentState();
 }
 
 template class GpuMpmSolver<double>;

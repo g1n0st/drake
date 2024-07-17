@@ -21,9 +21,19 @@ public:
     GpuMpmState() = default;
 
     const size_t& n_particles() const { return n_particles_; }
+    const uint32_t& current_particle_buffer_id() const { return current_particle_buffer_id_; }
 
     T* current_positions() { return particle_buffer_[current_particle_buffer_id_].d_positions; }
     T* current_velocities() { return particle_buffer_[current_particle_buffer_id_].d_velocities; }
+    T* current_masses() { return particle_buffer_[current_particle_buffer_id_].d_masses; }
+    T* current_deformation_gradients() { return particle_buffer_[current_particle_buffer_id_].d_deformation_gradients; }
+    T* current_affine_matrices() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
+
+    T* next_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
+    T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
+    T* next_masses() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_masses; }
+    T* next_deformation_gradients() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_deformation_gradients; }
+    T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
     
     uint32_t* current_sort_keys() { return particle_buffer_[current_particle_buffer_id_].d_sort_keys; }
     uint32_t* current_sort_ids() { return particle_buffer_[current_particle_buffer_id_].d_sort_ids; }
@@ -38,6 +48,8 @@ public:
 
     // NOTE (changyu): free GPU MPM state, all gpu memory free should be done here.
     void Destroy();
+
+    void SwitchCurrentState() { current_particle_buffer_id_ ^= 1; }
 
 private:
 

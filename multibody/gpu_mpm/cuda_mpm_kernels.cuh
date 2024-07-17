@@ -46,6 +46,37 @@ __global__ void compute_base_cell_node_index(const size_t &n_particles, const T*
     }
 }
 
+template<typename T>
+__global__ void compute_sorted_state(const size_t &n_particles, 
+    const T* current_positions, 
+    const T* current_velocities,
+    const T* current_masses,
+    const T* current_deformation_gradients,
+    const T* current_affine_matrices,
+    const uint32_t* next_sort_ids,
+    T* next_positions,
+    T* next_velocities,
+    T* next_masses,
+    T* next_deformation_gradients,
+    T* next_affine_matrices
+    ) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < n_particles) {
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            next_positions[idx * 3 + i] = current_positions[next_sort_ids[idx] * 3 + i];
+            next_velocities[idx * 3 + i] = current_velocities[next_sort_ids[idx] * 3 + i];
+        }
+        next_masses[idx] = current_masses[next_sort_ids[idx]];
+
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            next_deformation_gradients[idx * 9 + i] = current_deformation_gradients[next_sort_ids[idx] * 9 + i];
+            next_affine_matrices[idx * 9 + i] = current_affine_matrices[next_sort_ids[idx] * 9 + i];
+        }
+    }
+}
+
 }  // namespace gmpm
 }  // namespace multibody
 }  // namespace drake
