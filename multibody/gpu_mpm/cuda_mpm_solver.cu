@@ -13,7 +13,10 @@ namespace gmpm {
 
 template<typename T>
 void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state) {
-    compute_base_cell_node_index<<<(state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>(state->n_particles(), state->current_positions(), state->current_sort_keys(), state->current_sort_ids());
+    compute_base_cell_node_index<<<
+        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->n_particles(), state->current_positions(), state->current_sort_keys(), state->current_sort_ids());
+    radix_sort(state->next_sort_keys(), state->current_sort_keys(), state->next_sort_ids(), state->current_sort_ids(), state->sort_buffer(), state->sort_buffer_size(), static_cast<unsigned int>(state->n_particles()));
 }
 
 template class GpuMpmSolver<double>;

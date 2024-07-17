@@ -25,6 +25,7 @@ nvcc_library(
             "cuda_mpm_model.cuh",
             "cuda_mpm_solver.cuh"],
     srcs = ["blelloch_scan.cu", 
+            "cuda_mpm_model.cu",
             "cuda_mpm_solver.cu"],
     deps = [
         "//common:essential",
