@@ -12,7 +12,7 @@ namespace multibody {
 namespace gmpm {
 
 template<typename T>
-void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state) {
+void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state) const {
     // TODO, NOTE (changyu):
     // Since we currently adopt dense grid, it's exactly as extending Section 4.2.1 Rebuild-Mapping in [Fei et.al 2021]:
     // "One can push to use more neighboring blocks than we do, and the extreme would end up with a dense background grid,

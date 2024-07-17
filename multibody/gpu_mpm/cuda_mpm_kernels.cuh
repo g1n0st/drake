@@ -22,7 +22,7 @@ inline std::uint32_t expand_bits(std::uint32_t v) noexcept {
 // Calculates a 30-bit Morton code for the
 // given 3D point located within the cube [0, 1024].
 __device__ __host__
-inline std::uint32_t morton_code(uint3 xyz) noexcept {
+inline std::uint32_t morton_code(const uint3 &xyz) noexcept {
     const std::uint32_t xx = expand_bits(static_cast<std::uint32_t>(xyz.x));
     const std::uint32_t yy = expand_bits(static_cast<std::uint32_t>(xyz.y));
     const std::uint32_t zz = expand_bits(static_cast<std::uint32_t>(xyz.z));
