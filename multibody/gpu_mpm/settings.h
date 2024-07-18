@@ -62,11 +62,11 @@ namespace config {
 	constexpr int G_DOMAIN_SIZE			 = (1 << DOMAIN_BITS);
 	constexpr int G_DOMAIN_VOLUME		 = (1 << (DOMAIN_BITS * 3));
 
-	constexpr float G_BOUNDARY_CONDITION = 2.f;
+	constexpr float G_BOUNDARY_CONDITION = 3.f;
 	constexpr float G_DX				 = 1.f / DXINV;
 	constexpr float G_DX_INV			 = DXINV;
 	constexpr float G_D_INV				 = 4.f * DXINV * DXINV;
-	constexpr float P_VOLUME = (G_DX * .5f) * (G_DX * .5f) * (G_DX * .5f);
+	constexpr float P_VOLUME = 1.f;
 
 	constexpr int G_BLOCK_BITS			 = BLOCK_BITS;
 	constexpr int G_BLOCK_SIZE			 = (1 << BLOCK_BITS);
@@ -95,7 +95,7 @@ namespace config {
 
 	// gravity
 	constexpr uint32_t GRAVITY_AXIS = 2;
-	constexpr float GRAVITY = -0.098f;
+	constexpr float GRAVITY = -0.0098f;
 };
 
 }  // namespace gmpm

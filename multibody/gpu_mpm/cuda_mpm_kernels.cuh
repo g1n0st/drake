@@ -265,9 +265,9 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
                     // apply gravity
                     val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY * dt;
 
-                    val[1] += (B[0] * xi_minus_xp[0] + B[3] * xi_minus_xp[1] + B[6] * xi_minus_xp[2]) * weight;
-                    val[2] += (B[1] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[7] * xi_minus_xp[2]) * weight;
-                    val[3] += (B[2] * xi_minus_xp[0] + B[5] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
+                    val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
+                    val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
+                    val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[4]; for (int ii = 0; ii < 4; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
@@ -333,17 +333,6 @@ __global__ void grid_to_particle_kernel(const size_t &n_particles,
     // This choice increases performance, particularly when the number of threads is large (§6.2.5).
     __shared__ T weights[BLOCK_DIM][3][3];
 
-    T new_v[3];
-    T new_C[9];
-    #pragma unroll
-    for (int i = 0; i < 3; ++i) {
-        new_v[i] = 0;
-    }
-    #pragma unroll
-    for (int i = 0; i < 9; ++i) {
-        new_C[i] = 0;
-    }
-
     if (idx < n_particles) {
         uint32_t base[3] = {
             static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - 0.5),
@@ -362,13 +351,24 @@ __global__ void grid_to_particle_kernel(const size_t &n_particles,
             weights[threadIdx.x][2][i] = 0.5 * (fx[i] - 0.5) * (fx[i] - 0.5);
         }
 
+        T new_v[3];
+        T new_C[9];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            new_v[i] = 0;
+        }
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            new_C[i] = 0;
+        }
+
         for (int i = 0; i < 3; ++i) {
             for (int j = 0; j < 3; ++j) {
                 for (int k = 0; k < 3; ++k) {
                     T xi_minus_xp[3] = {
-                        (i - fx[0]) * config::G_DX,
-                        (j - fx[1]) * config::G_DX,
-                        (k - fx[2]) * config::G_DX
+                        (i - fx[0]),
+                        (j - fx[1]),
+                        (k - fx[2])
                     };
 
                     const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
