@@ -58,6 +58,8 @@ GTEST_TEST(EstTest, SmokeTest) {
   multibody::gmpm::GpuMpmSolver<double> mpm_solver;
   mpm_solver.RebuildMapping(&mpm_state);
   mpm_solver.ParticleToGrid(&mpm_state, 1e-3);
+  mpm_solver.UpdateGrid(&mpm_state);
+  CUDA_SAFE_CALL(cudaDeviceSynchronize());
 
   EXPECT_TRUE(mpm_state.current_particle_buffer_id() == 1);
   

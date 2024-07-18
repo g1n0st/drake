@@ -18,6 +18,7 @@ class GpuMpmSolver {
 public:
     void RebuildMapping(GpuMpmState<T> *state) const;
     void ParticleToGrid(GpuMpmState<T> *state, const T& dt) const;
+    void UpdateGrid(GpuMpmState<T> *state) const;
 };
 
 }  // namespace gmpm

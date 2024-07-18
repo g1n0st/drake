@@ -71,6 +71,15 @@ void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
         ));
 }
 
+template<typename T>
+void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state) const {
+    CUDA_SAFE_CALL((
+        update_grid_kernel_naive<<<
+        (config::G_DOMAIN_VOLUME + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
+        ));
+}
+
 template class GpuMpmSolver<double>;
 template class GpuMpmSolver<float>;
 
