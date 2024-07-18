@@ -208,8 +208,9 @@ __global__ void update_grid_kernel_naive(
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < config::G_DOMAIN_VOLUME) {
         uint32_t block_idx = idx >> (config::G_BLOCK_BITS * 3);
-        if (!g_touched_flags[block_idx]) {
+        if (g_touched_flags[block_idx]) {
             if (g_masses[idx] > 0.) {
+                // printf("m=%lf mv=(%lf %lf %lf)\n", g_masses[idx], g_momentum[idx * 3 + 0], g_momentum[idx * 3 + 1], g_momentum[idx * 3 + 2]);
                 g_momentum[idx * 3 + 0] /= g_masses[idx];
                 g_momentum[idx * 3 + 1] /= g_masses[idx];
                 g_momentum[idx * 3 + 2] /= g_masses[idx];
