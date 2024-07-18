@@ -47,7 +47,7 @@ GTEST_TEST(EstTest, SmokeTest) {
   std::random_device rd;
   std::mt19937 gen(rd());
   std::uniform_real_distribution<double> dis(0.45, 0.55);
-  for (int i = 0; i < 128; ++i) {
+  for (int i = 0; i < 10000; ++i) {
     inital_pos.emplace_back(dis(gen), dis(gen), dis(gen));
     inital_vel.emplace_back(0, 0, -0.1);
   }
@@ -57,8 +57,8 @@ GTEST_TEST(EstTest, SmokeTest) {
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
   multibody::gmpm::GpuMpmSolver<double> mpm_solver;
-  double dt = 1e-3;
-  for (int frame = 0; frame < 10; frame++) {
+  double dt = 1.0 / 24.0;
+  for (int frame = 0; frame < 500; frame++) {
     mpm_solver.RebuildMapping(&mpm_state);
     mpm_solver.ParticleToGrid(&mpm_state, dt);
     mpm_solver.UpdateGrid(&mpm_state);

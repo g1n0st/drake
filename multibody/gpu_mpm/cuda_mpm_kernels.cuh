@@ -11,6 +11,16 @@ namespace multibody {
 namespace gmpm {
 
 __device__ __host__
+inline std::uint32_t contract_bits(std::uint32_t v) noexcept {
+    v &= 0x09249249u;
+    v = (v ^ (v >>  2)) & 0x030C30C3u;
+    v = (v ^ (v >>  4)) & 0x0300F00Fu;
+    v = (v ^ (v >>  8)) & 0xFF0000FFu;
+    v = (v ^ (v >> 16)) & 0x000003FFu;
+    return v;
+}
+
+__device__ __host__
 inline std::uint32_t expand_bits(std::uint32_t v) noexcept {
     v = (v * 0x00010001u) & 0xFF0000FFu;
     v = (v * 0x00000101u) & 0x0F00F00Fu;
@@ -30,12 +40,43 @@ inline std::uint32_t morton_code(const uint3 &xyz) noexcept {
 }
 
 __device__ __host__
-inline std::uint32_t cell_index(const uint32_t &xi, const uint32_t &yi, const uint32_t &zi) {
+inline uint3 inverse_morton_code(const uint32_t &code) noexcept {
+    // Implement the inverse of expand_bits to get the original x, y, z values.
+    const std::uint32_t x = contract_bits(code >> 2);
+    const std::uint32_t y = contract_bits(code >> 1);
+    const std::uint32_t z = contract_bits(code);
+    return {x, y, z};
+}
+
+__device__ __host__
+inline std::uint32_t cell_index(const uint32_t &xi, const uint32_t &yi, const uint32_t &zi) noexcept {
     // TODO (changyu): use morton code ordering within grid block (lower_bit). This should be evaluated using profiler.
     uint32_t higher_bit = morton_code({xi >> config::BLOCK_BITS, yi >> config::BLOCK_BITS, zi >> config::BLOCK_BITS});
     uint32_t lower_bit = ((xi & config::G_BLOCK_MASK) << (config::G_BLOCK_BITS * 2)) | ((yi & config::G_BLOCK_MASK) << config::G_BLOCK_BITS) | (zi & config::G_BLOCK_MASK);
     return (higher_bit << (config::G_BLOCK_BITS * 3)) | lower_bit;
     // printf("%.3lf %.3lf %.3lf %u %u %u high=%u, low=%u, %u\n", x, y, z, xi, yi, zi, higher_bit, lower_bit, keys[idx]);
+}
+
+__device__ __host__
+inline uint3 inverse_cell_index(const std::uint32_t &index) noexcept {
+    // Extract higher_bit and lower_bit
+    uint32_t higher_bit = index >> (config::G_BLOCK_BITS * 3);
+    uint32_t lower_bit = index & ((1 << (config::G_BLOCK_BITS * 3)) - 1);
+
+    // Extract xi, yi, zi from lower_bit
+    uint32_t lower_xi = (lower_bit >> (config::G_BLOCK_BITS * 2)) & config::G_BLOCK_MASK;
+    uint32_t lower_yi = (lower_bit >> config::G_BLOCK_BITS) & config::G_BLOCK_MASK;
+    uint32_t lower_zi = lower_bit & config::G_BLOCK_MASK;
+
+    // Extract xi, yi, zi from higher_bit using inverse Morton code
+    uint3 higher_xyz = inverse_morton_code(higher_bit);
+
+    // Combine higher and lower bits to get original xi, yi, zi
+    uint32_t xi = (higher_xyz.x << config::BLOCK_BITS) | lower_xi;
+    uint32_t yi = (higher_xyz.y << config::BLOCK_BITS) | lower_yi;
+    uint32_t zi = (higher_xyz.z << config::BLOCK_BITS) | lower_zi;
+
+    return {xi, yi, zi};
 }
 
 template<typename T>
@@ -48,6 +89,10 @@ __global__ void compute_base_cell_node_index(const size_t &n_particles, const T*
         uint32_t xi = static_cast<uint32_t>(x * config::G_DX_INV - 0.5);
         uint32_t yi = static_cast<uint32_t>(y * config::G_DX_INV - 0.5);
         uint32_t zi = static_cast<uint32_t>(z * config::G_DX_INV - 0.5);
+        /*uint3 inv_xyz = inverse_cell_index(cell_index(xi, yi, zi));
+        if (xi != inv_xyz.x || yi != inv_xyz.y || zi != inv_xyz.z) {
+            printf("%u,%u, %u,%u %u,%u\n", xi, inv_xyz.x, yi, inv_xyz.y, zi, inv_xyz.z);
+        }*/
         keys[idx] = cell_index(xi, yi, zi);
         ids[idx] = idx;
     }
@@ -214,6 +259,16 @@ __global__ void update_grid_kernel_naive(
                 g_momentum[idx * 3 + 0] /= g_masses[idx];
                 g_momentum[idx * 3 + 1] /= g_masses[idx];
                 g_momentum[idx * 3 + 2] /= g_masses[idx];
+
+                // apply boundary condition
+                const int boundary_condition  = static_cast<int>(std::floor(config::G_BOUNDARY_CONDITION));
+                uint3 xyz = inverse_cell_index(idx);
+                if (xyz.x < boundary_condition && g_momentum[idx * 3 + 0] < 0) g_momentum[idx * 3 + 0] = 0;
+                if (xyz.x >= config::G_GRID_SIZE - boundary_condition && g_momentum[idx * 3 + 0] > 0) g_momentum[idx * 3 + 0] = 0;
+                if (xyz.y < boundary_condition && g_momentum[idx * 3 + 1] < 0) g_momentum[idx * 3 + 1] = 0;
+                if (xyz.y >= config::G_GRID_SIZE - boundary_condition && g_momentum[idx * 3 + 1] > 0) g_momentum[idx * 3 + 1] = 0;
+                if (xyz.z < boundary_condition && g_momentum[idx * 3 + 2] < 0) g_momentum[idx * 3 + 2] = 0;
+                if (xyz.z >= config::G_GRID_SIZE - boundary_condition && g_momentum[idx * 3 + 2] > 0) g_momentum[idx * 3 + 2] = 0;
             }
         }
     }
