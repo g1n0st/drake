@@ -235,6 +235,14 @@ __global__ void grid_to_particle_kernel(const size_t &n_particles,
 
     T new_v[3];
     T new_C[9];
+    #pragma unroll
+    for (int i = 0; i < 3; ++i) {
+        new_v[i] = 0;
+    }
+    #pragma unroll
+    for (int i = 0; i < 9; ++i) {
+        new_C[i] = 0;
+    }
 
     if (idx < n_particles) {
         uint32_t base[3] = {
