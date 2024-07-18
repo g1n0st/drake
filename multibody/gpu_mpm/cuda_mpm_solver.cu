@@ -80,6 +80,16 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state) const {
         ));
 }
 
+template<typename T>
+void GpuMpmSolver<T>::GridToParticle(GpuMpmState<T> *state, const T& dt) const {
+    CUDA_SAFE_CALL((
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
+        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
+         state->grid_momentum(), dt)
+        ));
+}
+
 template class GpuMpmSolver<double>;
 template class GpuMpmSolver<float>;
 

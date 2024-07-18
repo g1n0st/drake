@@ -45,9 +45,9 @@ __global__ void compute_base_cell_node_index(const size_t &n_particles, const T*
         T x = positions[idx * 3 + 0];
         T y = positions[idx * 3 + 1];
         T z = positions[idx * 3 + 2];
-        uint32_t xi = static_cast<uint32_t>(x * config::DXINV - 0.5);
-        uint32_t yi = static_cast<uint32_t>(y * config::DXINV - 0.5);
-        uint32_t zi = static_cast<uint32_t>(z * config::DXINV - 0.5);
+        uint32_t xi = static_cast<uint32_t>(x * config::G_DX_INV - 0.5);
+        uint32_t yi = static_cast<uint32_t>(y * config::G_DX_INV - 0.5);
+        uint32_t zi = static_cast<uint32_t>(z * config::G_DX_INV - 0.5);
         keys[idx] = cell_index(xi, yi, zi);
         ids[idx] = idx;
     }
@@ -127,14 +127,14 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(positions[idx * 3 + 0] * config::DXINV - 0.5),
-            static_cast<uint32_t>(positions[idx * 3 + 1] * config::DXINV - 0.5),
-            static_cast<uint32_t>(positions[idx * 3 + 2] * config::DXINV - 0.5)
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - 0.5),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV - 0.5),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV - 0.5)
         };
         T fx[3] = {
-            positions[idx * 3 + 0] * config::DXINV - static_cast<T>(base[0]),
-            positions[idx * 3 + 1] * config::DXINV - static_cast<T>(base[1]),
-            positions[idx * 3 + 2] * config::DXINV - static_cast<T>(base[2])
+            positions[idx * 3 + 0] * config::G_DX_INV - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * config::G_DX_INV - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * config::G_DX_INV - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         for (int i = 0; i < 3; ++i) {
@@ -184,8 +184,8 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
                     }
 
                     if (boundary) {
-                        uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-                        uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
+                        const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                        const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
                         g_touched_flags[target_grid_index] = 1;
                         atomicAdd(&(g_masses[target_cell_index]), val[0]);
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[1]);
@@ -215,6 +215,91 @@ __global__ void update_grid_kernel_naive(
                 g_momentum[idx * 3 + 2] /= g_masses[idx];
             }
         }
+    }
+}
+
+template<typename T, int BLOCK_DIM>
+__global__ void grid_to_particle_kernel(const size_t &n_particles,
+    T* positions, 
+    T* velocities,
+    T* affine_matrices,
+    const T* g_momentum,
+    const T& dt) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    // In [Fei et.al 2021],
+    // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
+    // (instead of registers), although none of them is shared between threads. 
+    // This choice increases performance, particularly when the number of threads is large (§6.2.5).
+    __shared__ T weights[BLOCK_DIM][3][3];
+
+    T new_v[3];
+    T new_C[9];
+
+    if (idx < n_particles) {
+        uint32_t base[3] = {
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - 0.5),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV - 0.5),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV - 0.5)
+        };
+        T fx[3] = {
+            positions[idx * 3 + 0] * config::G_DX_INV - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * config::G_DX_INV - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * config::G_DX_INV - static_cast<T>(base[2])
+        };
+        // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
+        for (int i = 0; i < 3; ++i) {
+            weights[threadIdx.x][0][i] = 0.5 * (1.5 - fx[i]) * (1.5 - fx[i]);
+            weights[threadIdx.x][1][i] = 0.75 - (fx[i] - 1.0) * (fx[i] - 1.0);
+            weights[threadIdx.x][2][i] = 0.5 * (fx[i] - 0.5) * (fx[i] - 0.5);
+        }
+
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                for (int k = 0; k < 3; ++k) {
+                    T xi_minus_xp[3] = {
+                        (i - fx[0]) * config::G_DX,
+                        (j - fx[1]) * config::G_DX,
+                        (k - fx[2]) * config::G_DX
+                    };
+
+                    const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                    const T* g_v = &g_momentum[target_cell_index];
+
+                    T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
+                    new_v[0] += weight * g_v[0];
+                    new_v[1] += weight * g_v[1];
+                    new_v[2] += weight * g_v[2];
+
+                    new_C[0] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[0];
+                    new_C[1] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[1];
+                    new_C[2] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[2];
+                    new_C[3] += 4 * config::G_DX_INV * weight * g_v[1] * xi_minus_xp[0];
+                    new_C[4] += 4 * config::G_DX_INV * weight * g_v[1] * xi_minus_xp[1];
+                    new_C[5] += 4 * config::G_DX_INV * weight * g_v[1] * xi_minus_xp[2];
+                    new_C[6] += 4 * config::G_DX_INV * weight * g_v[2] * xi_minus_xp[0];
+                    new_C[7] += 4 * config::G_DX_INV * weight * g_v[2] * xi_minus_xp[1];
+                    new_C[8] += 4 * config::G_DX_INV * weight * g_v[2] * xi_minus_xp[2];
+                }
+            }
+        }
+
+        velocities[idx * 3 + 0] = new_v[0];
+        velocities[idx * 3 + 1] = new_v[1];
+        velocities[idx * 3 + 2] = new_v[2];
+        affine_matrices[idx * 9 + 0] = new_C[0];
+        affine_matrices[idx * 9 + 1] = new_C[1];
+        affine_matrices[idx * 9 + 2] = new_C[2];
+        affine_matrices[idx * 9 + 3] = new_C[3];
+        affine_matrices[idx * 9 + 4] = new_C[4];
+        affine_matrices[idx * 9 + 5] = new_C[5];
+        affine_matrices[idx * 9 + 6] = new_C[6];
+        affine_matrices[idx * 9 + 7] = new_C[7];
+        affine_matrices[idx * 9 + 8] = new_C[8];
+
+        // Advection
+        positions[idx * 3 + 0] += new_v[0] * dt;
+        positions[idx * 3 + 1] += new_v[1] * dt;
+        positions[idx * 3 + 2] += new_v[2] * dt;
     }
 }
 

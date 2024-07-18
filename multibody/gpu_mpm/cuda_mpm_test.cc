@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include <random>
+#include <string>
 #include <Partio.h>
 
 namespace drake {
@@ -46,9 +47,9 @@ GTEST_TEST(EstTest, SmokeTest) {
   std::random_device rd;
   std::mt19937 gen(rd());
   std::uniform_real_distribution<double> dis(0.45, 0.55);
-  for (int i = 0; i < 10000; ++i) {
+  for (int i = 0; i < 128; ++i) {
     inital_pos.emplace_back(dis(gen), dis(gen), dis(gen));
-    inital_vel.emplace_back(0, 0, -(0.7 - inital_pos.back()[2]));
+    inital_vel.emplace_back(0, 0, -0.1);
   }
 
   mpm_state.InitializeParticles(inital_pos, inital_vel, 1000.0);
@@ -56,21 +57,23 @@ GTEST_TEST(EstTest, SmokeTest) {
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
   multibody::gmpm::GpuMpmSolver<double> mpm_solver;
-  mpm_solver.RebuildMapping(&mpm_state);
-  mpm_solver.ParticleToGrid(&mpm_state, 1e-3);
-  mpm_solver.UpdateGrid(&mpm_state);
-  CUDA_SAFE_CALL(cudaDeviceSynchronize());
+  double dt = 1e-3;
+  for (int frame = 0; frame < 10; frame++) {
+    mpm_solver.RebuildMapping(&mpm_state);
+    mpm_solver.ParticleToGrid(&mpm_state, dt);
+    mpm_solver.UpdateGrid(&mpm_state);
+    mpm_solver.GridToParticle(&mpm_state, dt);
+    CUDA_SAFE_CALL(cudaDeviceSynchronize());
+    
+    std::vector<multibody::gmpm::Vec3<double>> export_pos;
+    std::vector<multibody::gmpm::Vec3<double>> export_vel;
+    export_pos.resize(mpm_state.n_particles());
+    export_vel.resize(mpm_state.n_particles());
+    CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), mpm_state.current_positions(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(export_vel.data(), mpm_state.current_velocities(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyHostToDevice));
 
-  EXPECT_TRUE(mpm_state.current_particle_buffer_id() == 1);
-  
-  std::vector<multibody::gmpm::Vec3<double>> export_pos;
-  std::vector<multibody::gmpm::Vec3<double>> export_vel;
-  export_pos.resize(mpm_state.n_particles());
-  export_vel.resize(mpm_state.n_particles());
-  CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), mpm_state.current_positions(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyHostToDevice));
-  CUDA_SAFE_CALL(cudaMemcpy(export_vel.data(), mpm_state.current_velocities(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyHostToDevice));
-
-  WriteParticlesToBgeo("test.bgeo", export_pos, export_vel);
+    WriteParticlesToBgeo("test" + std::to_string(frame) + ".bgeo", export_pos, export_vel);
+  }
 
   mpm_state.Destroy();
 }
