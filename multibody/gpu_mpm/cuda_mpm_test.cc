@@ -45,8 +45,8 @@ GTEST_TEST(EstTest, SmokeTest) {
   // TODO(changyu): integrate poisson disk sampler
   std::random_device rd;
   std::mt19937 gen(rd());
-  std::uniform_real_distribution<double> dis(0.4, 0.6);
-  for (int i = 0; i < 1000; ++i) {
+  std::uniform_real_distribution<double> dis(0.45, 0.55);
+  for (int i = 0; i < 10000; ++i) {
     inital_pos.emplace_back(dis(gen), dis(gen), dis(gen));
     inital_vel.emplace_back(0, 0, -(0.7 - inital_pos.back()[2]));
   }
@@ -57,6 +57,7 @@ GTEST_TEST(EstTest, SmokeTest) {
 
   multibody::gmpm::GpuMpmSolver<double> mpm_solver;
   mpm_solver.RebuildMapping(&mpm_state);
+  mpm_solver.ParticleToGrid(&mpm_state, 1e-3);
 
   EXPECT_TRUE(mpm_state.current_particle_buffer_id() == 1);
   
