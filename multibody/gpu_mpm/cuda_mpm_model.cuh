@@ -40,6 +40,10 @@ public:
     uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
     uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
 
+    T* grid_masses() { return grid_buffer_.d_g_masses; }
+    T* grid_momentum() { return grid_buffer_.d_g_momentum; }
+    uint32_t* grid_touched_flags() { return grid_buffer_.d_g_touched_flags; }
+
     unsigned int* sort_buffer() { return sort_buffer_; };
     size_t& sort_buffer_size() { return sort_buffer_size_; }
 
@@ -86,7 +90,7 @@ private:
     struct GridBuffer {
         T* d_g_masses;
         T* d_g_momentum;
-        uint32_t* d_g_flags;
+        uint32_t* d_g_touched_flags;
     };
 
     GridBuffer grid_buffer_;
