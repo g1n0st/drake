@@ -12,12 +12,12 @@ namespace multibody {
 namespace gmpm {
 
 template<typename T>
-void GpuMpmState<T>::InitializeParticles(const std::vector<Vec3<T>> &pos, const std::vector<Vec3<T>> &vel, const T& mass) {
+void GpuMpmState<T>::InitializeParticles(const std::vector<Vec3<T>> &pos, const std::vector<Vec3<T>> &vel, const T& rho) {
     n_particles_ = pos.size();
 
     h_positions_ = pos;
     h_velocities_ = vel;
-    h_masses_.resize(n_particles_, mass);
+    h_masses_.resize(n_particles_, rho * config::P_VOLUME);
     h_deformation_gradients_.resize(n_particles_, Mat3<T>::Identity());
     h_affine_matrices_.resize(n_particles_, Mat3<T>::Zero());
 

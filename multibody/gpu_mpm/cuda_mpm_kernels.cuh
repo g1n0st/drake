@@ -187,8 +187,50 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
             weights[threadIdx.x][1][i] = 0.75 - (fx[i] - 1.0) * (fx[i] - 1.0);
             weights[threadIdx.x][2][i] = 0.5 * (fx[i] - 0.5) * (fx[i] - 0.5);
         }
-        // TODO(changyu): deformation gradient update here.
-        // ...
+        
+        // update deformation gradient
+        T* F = &deformation_gradients[idx * 9];
+        const T* C = &affine_matrices[idx * 9];
+        float new_F[9];
+        new_F[0] = (1.0 + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
+        new_F[1] = (1.0 + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
+        new_F[2] = (1.0 + dt * C[0]) * F[2] + dt * C[1] * F[5] + dt * C[2] * F[8];
+
+        new_F[3] = dt * C[3] * F[0] + (1.0 + dt * C[4]) * F[3] + dt * C[5] * F[6];
+        new_F[4] = dt * C[3] * F[1] + (1.0 + dt * C[4]) * F[4] + dt * C[5] * F[7];
+        new_F[5] = dt * C[3] * F[2] + (1.0 + dt * C[4]) * F[5] + dt * C[5] * F[8];
+
+        new_F[6] = dt * C[6] * F[0] + dt * C[7] * F[3] + (1.0 + dt * C[8]) * F[6];
+        new_F[7] = dt * C[6] * F[1] + dt * C[7] * F[4] + (1.0 + dt * C[8]) * F[7];
+        new_F[8] = dt * C[6] * F[2] + dt * C[7] * F[5] + (1.0 + dt * C[8]) * F[8];
+
+        // TODO (changyu): return mapping projection here
+        
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            F[i] = new_F[i];
+        }
+
+        // NOTE, TODO (changyu): currently svd only supports float, all set float here
+        float U[9], sigma[9], V[9];
+        ssvd3x3<float>(new_F, U, sigma, V);
+        
+        // TODO (changyu): many register used here. Most of them could be reused to optimize performance.
+        float J = determinant3(new_F);
+        float stress[9];
+        float R[9];
+        matmulT<3, 3, 3, float>(U, V, R);
+        
+        float *two_mu_F_minus_R = R;
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            two_mu_F_minus_R[i] = 2.0 * config::MU * (new_F[i] - R[i]);
+        }
+        matmulT<3, 3, 3, float>(two_mu_F_minus_R, new_F, stress);
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            stress[i * 3 + i] += config::LAMBDA * J * (J - 1.0);
+        }
 
         T mass = masses[idx];
         T vel[3] = {
@@ -200,7 +242,7 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = affine_matrices[idx * 9 + i] * mass;
+            B[i] = (-dt * config::P_VOLUME * config::G_D_INV) * stress[i] + C[i] * mass;
         }
 
         T val[4];
@@ -240,7 +282,6 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
                 }
             }
         }
-
     }
 }
 

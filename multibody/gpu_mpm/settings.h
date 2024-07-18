@@ -62,10 +62,11 @@ namespace config {
 	constexpr int G_DOMAIN_SIZE			 = (1 << DOMAIN_BITS);
 	constexpr int G_DOMAIN_VOLUME		 = (1 << (DOMAIN_BITS * 3));
 
-	constexpr float G_BOUNDARY_CONDITION = 2.0;
+	constexpr float G_BOUNDARY_CONDITION = 2.f;
 	constexpr float G_DX				 = 1.f / DXINV;
 	constexpr float G_DX_INV			 = DXINV;
 	constexpr float G_D_INV				 = 4.f * DXINV * DXINV;
+	constexpr float P_VOLUME = (G_DX * .5f) * (G_DX * .5f) * (G_DX * .5f);
 
 	constexpr int G_BLOCK_BITS			 = BLOCK_BITS;
 	constexpr int G_BLOCK_SIZE			 = (1 << BLOCK_BITS);
@@ -83,6 +84,14 @@ namespace config {
 	constexpr int G_MAX_PARTICLES_IN_CELL  = MAX_PARTICLES_IN_CELL;
 	constexpr int G_BIN_CAPACITY		   = 32;
 	constexpr int G_PARTICLE_NUM_PER_BLOCK = (MAX_PARTICLES_IN_CELL * (1 << (BLOCK_BITS * 3)));
+
+	// material parameters
+	constexpr float YOUNGS_MODULUS = 5e3;
+	constexpr float POISSON_RATIO  = 0.4f;
+
+	// Lame parameters
+	constexpr float MU = YOUNGS_MODULUS / (2 * (1 + POISSON_RATIO));
+	constexpr float LAMBDA = YOUNGS_MODULUS * POISSON_RATIO / ((1 + POISSON_RATIO) * (1 - 2 * POISSON_RATIO));
 };
 
 }  // namespace gmpm

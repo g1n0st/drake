@@ -8,6 +8,7 @@
 
 #include "multibody/gpu_mpm/sifakis_svd.cuh"
 
+// A[n,m], B[m,l] ==> C[n,l]
 template <int n, int m, int l, class T>
 inline __host__ __device__ void matmul(const T* a, const T* b, T* c)
 {
@@ -16,6 +17,18 @@ inline __host__ __device__ void matmul(const T* a, const T* b, T* c)
             c[i * l + k] = 0;
             for (int j = 0; j < m; ++j)
                 c[i * l + k] += a[i * m + j] * b[j * l + k];
+        }
+}
+
+// A[n,m], B[l,m] ==> C[n,l]
+template <int n, int m, int l, class T>
+inline __host__ __device__ void matmulT(const T* a, const T* b, T* c)
+{
+    for (int i = 0; i < n; ++i)
+        for (int k = 0; k < l; ++k) {
+            c[i * l + k] = 0;
+            for (int j = 0; j < m; ++j)
+                c[i * l + k] += a[i * m + j] * b[k * m + j];
         }
 }
 

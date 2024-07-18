@@ -48,7 +48,7 @@ GTEST_TEST(EstTest, SmokeTest) {
   std::mt19937 gen(rd());
   std::uniform_real_distribution<double> dis(0.45, 0.55);
   for (int i = 0; i < 10000; ++i) {
-    inital_pos.emplace_back(dis(gen), dis(gen), dis(gen));
+    inital_pos.emplace_back(dis(gen), dis(gen), dis(gen) - 0.3);
     inital_vel.emplace_back(0, 0, -0.1);
   }
 
@@ -57,13 +57,15 @@ GTEST_TEST(EstTest, SmokeTest) {
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
   multibody::gmpm::GpuMpmSolver<double> mpm_solver;
-  double dt = 1.0 / 24.0;
-  for (int frame = 0; frame < 500; frame++) {
-    mpm_solver.RebuildMapping(&mpm_state);
-    mpm_solver.ParticleToGrid(&mpm_state, dt);
-    mpm_solver.UpdateGrid(&mpm_state);
-    mpm_solver.GridToParticle(&mpm_state, dt);
-    CUDA_SAFE_CALL(cudaDeviceSynchronize());
+  double dt = 1e-3;
+  for (int frame = 0; frame < 200; frame++) {
+    for (int substep = 0; substep < 40; substep++) {
+      mpm_solver.RebuildMapping(&mpm_state);
+      mpm_solver.ParticleToGrid(&mpm_state, dt);
+      mpm_solver.UpdateGrid(&mpm_state);
+      mpm_solver.GridToParticle(&mpm_state, dt);
+      CUDA_SAFE_CALL(cudaDeviceSynchronize());
+    }
     
     std::vector<multibody::gmpm::Vec3<double>> export_pos;
     std::vector<multibody::gmpm::Vec3<double>> export_vel;
