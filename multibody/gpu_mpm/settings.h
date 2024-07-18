@@ -92,6 +92,10 @@ namespace config {
 	// Lame parameters
 	constexpr float MU = YOUNGS_MODULUS / (2 * (1 + POISSON_RATIO));
 	constexpr float LAMBDA = YOUNGS_MODULUS * POISSON_RATIO / ((1 + POISSON_RATIO) * (1 - 2 * POISSON_RATIO));
+
+	// gravity
+	constexpr uint32_t GRAVITY_AXIS = 2;
+	constexpr float GRAVITY = -0.098f;
 };
 
 }  // namespace gmpm

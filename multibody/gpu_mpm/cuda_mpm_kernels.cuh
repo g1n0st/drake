@@ -261,6 +261,10 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
                     val[1] = vel[0] * val[0];
                     val[2] = vel[1] * val[0];
                     val[3] = vel[2] * val[0];
+
+                    // apply gravity
+                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY * dt;
+
                     val[1] += (B[0] * xi_minus_xp[0] + B[3] * xi_minus_xp[1] + B[6] * xi_minus_xp[2]) * weight;
                     val[2] += (B[1] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[7] * xi_minus_xp[2]) * weight;
                     val[3] += (B[2] * xi_minus_xp[0] + B[5] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
