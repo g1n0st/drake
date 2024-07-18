@@ -272,12 +272,13 @@ __global__ void grid_to_particle_kernel(const size_t &n_particles,
                     };
 
                     const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-                    const T* g_v = &g_momentum[target_cell_index];
+                    const T* g_v = &g_momentum[target_cell_index * 3];
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
                     new_v[0] += weight * g_v[0];
                     new_v[1] += weight * g_v[1];
                     new_v[2] += weight * g_v[2];
+                    // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
 
                     new_C[0] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[0];
                     new_C[1] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[1];
