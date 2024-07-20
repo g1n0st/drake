@@ -380,6 +380,10 @@ __global__ void grid_to_particle_kernel(const size_t &n_particles,
                     new_v[2] += weight * g_v[2];
                     // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
 
+                    // printf("i=%d j=%d k=%d\n", i, j, k);
+                    // printf("weight=%.8lf\n", weight);
+                    // printf("g_v=[%.8lf   %.8lf   %.8lf]\n", g_v[0], g_v[1], g_v[2]);
+                    // printf("xip=[%.8lf   %.8lf   %.8lf]\n", xi_minus_xp[0], xi_minus_xp[1], xi_minus_xp[2]);
                     new_C[0] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[0];
                     new_C[1] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[1];
                     new_C[2] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[2];
@@ -410,6 +414,13 @@ __global__ void grid_to_particle_kernel(const size_t &n_particles,
         positions[idx * 3 + 0] += new_v[0] * dt;
         positions[idx * 3 + 1] += new_v[1] * dt;
         positions[idx * 3 + 2] += new_v[2] * dt;
+
+        // printf("v=\n");
+        // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);
+        // printf("C=\n");
+        // printf("[[%.8lf   %.8lf   %.8lf] \n", new_C[0], new_C[1], new_C[2]);
+        // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
+        // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
     }
 }
 
