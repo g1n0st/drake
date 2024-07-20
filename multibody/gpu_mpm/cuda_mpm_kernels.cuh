@@ -309,11 +309,11 @@ __global__ void update_grid_kernel_naive(
                 const int boundary_condition  = static_cast<int>(std::floor(config::G_BOUNDARY_CONDITION));
                 uint3 xyz = inverse_cell_index(idx);
                 if (xyz.x < boundary_condition && g_momentum[idx * 3 + 0] < 0) g_momentum[idx * 3 + 0] = 0;
-                if (xyz.x >= config::G_GRID_SIZE - boundary_condition && g_momentum[idx * 3 + 0] > 0) g_momentum[idx * 3 + 0] = 0;
+                if (xyz.x >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[idx * 3 + 0] > 0) g_momentum[idx * 3 + 0] = 0;
                 if (xyz.y < boundary_condition && g_momentum[idx * 3 + 1] < 0) g_momentum[idx * 3 + 1] = 0;
-                if (xyz.y >= config::G_GRID_SIZE - boundary_condition && g_momentum[idx * 3 + 1] > 0) g_momentum[idx * 3 + 1] = 0;
+                if (xyz.y >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[idx * 3 + 1] > 0) g_momentum[idx * 3 + 1] = 0;
                 if (xyz.z < boundary_condition && g_momentum[idx * 3 + 2] < 0) g_momentum[idx * 3 + 2] = 0;
-                if (xyz.z >= config::G_GRID_SIZE - boundary_condition && g_momentum[idx * 3 + 2] > 0) g_momentum[idx * 3 + 2] = 0;
+                if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[idx * 3 + 2] > 0) g_momentum[idx * 3 + 2] = 0;
             }
         }
     }
