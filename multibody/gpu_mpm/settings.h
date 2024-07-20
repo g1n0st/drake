@@ -86,8 +86,8 @@ namespace config {
 	constexpr int G_PARTICLE_NUM_PER_BLOCK = (MAX_PARTICLES_IN_CELL * (1 << (BLOCK_BITS * 3)));
 
 	// material parameters
-	constexpr float YOUNGS_MODULUS = 5e3;
-	constexpr float POISSON_RATIO  = 0.4f;
+	constexpr float YOUNGS_MODULUS = 1e5f;
+	constexpr float POISSON_RATIO  = 0.3f;
 
 	// Lame parameters
 	constexpr float MU = YOUNGS_MODULUS / (2 * (1 + POISSON_RATIO));
@@ -95,7 +95,7 @@ namespace config {
 
 	// gravity
 	constexpr uint32_t GRAVITY_AXIS = 2;
-	constexpr float GRAVITY = -0.0098f;
+	constexpr float GRAVITY = -9.8f;
 };
 
 }  // namespace gmpm
