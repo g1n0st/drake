@@ -52,20 +52,21 @@ GTEST_TEST(EstTest, SmokeTest) {
     inital_vel.emplace_back(0, 0, -0.1);
   }
 
-  mpm_state.InitializeParticles(inital_pos, inital_vel, 1000.0);
+  mpm_state.InitializeParticles(inital_pos, inital_vel, 2000.0);
 
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
   multibody::gmpm::GpuMpmSolver<double> mpm_solver;
-  double dt = 1e-3;
-  for (int frame = 0; frame < 200; frame++) {
-    for (int substep = 0; substep < 40; substep++) {
+  double dt = 1e-4;
+  for (int frame = 0; frame < 240; frame++) {
+    printf("\033[32mstep= %d\033[0m\n", frame);
+    for (int substep = 0; substep < 100; substep++) {
       mpm_solver.RebuildMapping(&mpm_state);
       mpm_solver.ParticleToGrid(&mpm_state, dt);
       mpm_solver.UpdateGrid(&mpm_state);
       mpm_solver.GridToParticle(&mpm_state, dt);
-      CUDA_SAFE_CALL(cudaDeviceSynchronize());
     }
+    CUDA_SAFE_CALL(cudaDeviceSynchronize());
     
     std::vector<multibody::gmpm::Vec3<double>> export_pos;
     std::vector<multibody::gmpm::Vec3<double>> export_vel;
