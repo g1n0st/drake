@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include <random>
+#include <chrono>
 #include <string>
 #include <Partio.h>
 
@@ -57,16 +58,18 @@ GTEST_TEST(EstTest, SmokeTest) {
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
   multibody::gmpm::GpuMpmSolver<double> mpm_solver;
-  double dt = 1e-4;
+  double dt = 5e-4;
   for (int frame = 0; frame < 240; frame++) {
-    printf("\033[32mstep= %d\033[0m\n", frame);
-    for (int substep = 0; substep < 100; substep++) {
+    long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    for (int substep = 0; substep < 20; substep++) {
       mpm_solver.RebuildMapping(&mpm_state);
       mpm_solver.ParticleToGrid(&mpm_state, dt);
       mpm_solver.UpdateGrid(&mpm_state);
       mpm_solver.GridToParticle(&mpm_state, dt);
     }
     CUDA_SAFE_CALL(cudaDeviceSynchronize());
+    long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    printf("\033[32mstep=%d time=%lldms\033[0m\n", frame, (after_ts - before_ts));
     
     std::vector<multibody::gmpm::Vec3<double>> export_pos;
     std::vector<multibody::gmpm::Vec3<double>> export_vel;
