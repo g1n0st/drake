@@ -62,7 +62,7 @@ GTEST_TEST(EstTest, SmokeTest) {
   for (int frame = 0; frame < 240; frame++) {
     long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     for (int substep = 0; substep < 20; substep++) {
-      mpm_solver.RebuildMapping(&mpm_state);
+      mpm_solver.RebuildMapping(&mpm_state, false);
       mpm_solver.ParticleToGrid(&mpm_state, dt);
       mpm_solver.UpdateGrid(&mpm_state);
       mpm_solver.GridToParticle(&mpm_state, dt);

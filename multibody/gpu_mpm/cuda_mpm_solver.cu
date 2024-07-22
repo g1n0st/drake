@@ -12,7 +12,7 @@ namespace multibody {
 namespace gmpm {
 
 template<typename T>
-void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state) const {
+void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
     // TODO, NOTE (changyu):
     // Since we currently adopt dense grid, it's exactly as extending Section 4.2.1 Rebuild-Mapping in [Fei et.al 2021]:
     // "One can push to use more neighboring blocks than we do, and the extreme would end up with a dense background grid,
@@ -41,19 +41,21 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state) const {
     // e.g., particles in the same cell can be distributed to several warps,
     // resulting in several atomics instead of one. 
     // However, this performance loss can be compensated well when particle density is not extremely high in each cell.
-    CUDA_SAFE_CALL((
-        radix_sort(state->next_sort_keys(), state->current_sort_keys(), state->next_sort_ids(), state->current_sort_ids(), state->sort_buffer(), state->sort_buffer_size(), static_cast<unsigned int>(state->n_particles()))
-        ));
-    CUDA_SAFE_CALL((
-        compute_sorted_state<<<
-        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_particles(), 
-         state->current_positions(), state->current_velocities(), state->current_masses(), state->current_deformation_gradients(), state->current_affine_matrices(),
-         state->next_sort_ids(),
-         state->next_positions(),
-         state->next_velocities(), state->next_masses(), state->next_deformation_gradients(), state->next_affine_matrices())
-        ));
-    state->SwitchCurrentState();
+    if (sort) {
+        CUDA_SAFE_CALL((
+            radix_sort(state->next_sort_keys(), state->current_sort_keys(), state->next_sort_ids(), state->current_sort_ids(), state->sort_buffer(), state->sort_buffer_size(), static_cast<unsigned int>(state->n_particles()))
+            ));
+        CUDA_SAFE_CALL((
+            compute_sorted_state<<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), 
+            state->current_positions(), state->current_velocities(), state->current_masses(), state->current_deformation_gradients(), state->current_affine_matrices(),
+            state->next_sort_ids(),
+            state->next_positions(),
+            state->next_velocities(), state->next_masses(), state->next_deformation_gradients(), state->next_affine_matrices())
+            ));
+        state->SwitchCurrentState();
+    }
 }
 
 template<typename T>
