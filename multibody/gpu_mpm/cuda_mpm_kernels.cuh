@@ -291,6 +291,25 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
 
 // TODO (changyu): This kernel will be replaced, just a naive implementation.
 template<typename T>
+__global__ void clean_grid_kernel_naive(
+    uint32_t* g_touched_flags,
+    T* g_masses,
+    T* g_momentum) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < config::G_DOMAIN_VOLUME) {
+        uint32_t block_idx = idx >> (config::G_BLOCK_BITS * 3);
+        if (g_touched_flags[block_idx]) {
+            g_touched_flags[block_idx] = 0;
+            g_masses[idx] = 0;
+            g_momentum[idx * 3 + 0] = 0;
+            g_momentum[idx * 3 + 1] = 0;
+            g_momentum[idx * 3 + 2] = 0;
+        }
+    }
+}
+
+// TODO (changyu): This kernel will be replaced, just a naive implementation.
+template<typename T>
 __global__ void update_grid_kernel_naive(
     uint32_t* g_touched_flags,
     T* g_masses,

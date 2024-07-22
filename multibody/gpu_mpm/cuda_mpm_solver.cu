@@ -60,10 +60,12 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
 
 template<typename T>
 void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
-    CUDA_SAFE_CALL(cudaMemset(state->grid_touched_flags(), 0, config::G_GRID_VOLUME * sizeof(uint32_t)));
     // TODO(changyu): we should gather the grid block that are really touched and just clean them, would be done with GridOperaton
-    CUDA_SAFE_CALL(cudaMemset(state->grid_masses(), 0, config::G_DOMAIN_VOLUME * sizeof(T)));
-    CUDA_SAFE_CALL(cudaMemset(state->grid_momentum(), 0, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL((
+        clean_grid_kernel_naive<<<
+        (config::G_DOMAIN_VOLUME + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
+        ));
     CUDA_SAFE_CALL((
         particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
