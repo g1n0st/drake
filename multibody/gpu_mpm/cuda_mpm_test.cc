@@ -75,8 +75,8 @@ GTEST_TEST(EstTest, SmokeTest) {
     std::vector<multibody::gmpm::Vec3<double>> export_vel;
     export_pos.resize(mpm_state.n_particles());
     export_vel.resize(mpm_state.n_particles());
-    CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), mpm_state.current_positions(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyHostToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(export_vel.data(), mpm_state.current_velocities(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), mpm_state.current_positions(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(export_vel.data(), mpm_state.current_velocities(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyDeviceToHost));
 
     WriteParticlesToBgeo("test" + std::to_string(frame) + ".bgeo", export_pos, export_vel);
   }
