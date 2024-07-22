@@ -53,7 +53,6 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state) const {
          state->next_positions(),
          state->next_velocities(), state->next_masses(), state->next_deformation_gradients(), state->next_affine_matrices())
         ));
-    CUDA_SAFE_CALL(cudaDeviceSynchronize());
     state->SwitchCurrentState();
 }
 
