@@ -69,12 +69,15 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
 
 template<typename T>
 void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
-    // TODO(changyu): we should gather the grid block that are really touched and just clean them, would be done with GridOperaton
+    const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
+    const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
+    if (touched_cells_cnt > 0) {
     CUDA_SAFE_CALL((
-        clean_grid_kernel_naive<<<
-        (config::G_DOMAIN_VOLUME + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
+        clean_grid_kernel<<<
+        (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (touched_cells_cnt, state->grid_touched_ids(), state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
         ));
+    }
     CUDA_SAFE_CALL((
         particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
@@ -85,10 +88,20 @@ void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
 
 template<typename T>
 void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state) const {
+    // NOTE (changyu): we gather the grid block that are really touched
+    CUDA_SAFE_CALL(cudaMemset(state->grid_touched_cnt(), 0, sizeof(uint32_t)));
     CUDA_SAFE_CALL((
-        update_grid_kernel_naive<<<
-        (config::G_DOMAIN_VOLUME + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
+        gather_touched_grid_kernel<<<
+        (config::G_GRID_VOLUME + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->grid_touched_flags(), state->grid_touched_ids(), state->grid_touched_cnt(), state->grid_masses())
+        ));
+
+    const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
+    const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
+    CUDA_SAFE_CALL((
+        update_grid_kernel<<<
+        (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum())
         ));
 }
 

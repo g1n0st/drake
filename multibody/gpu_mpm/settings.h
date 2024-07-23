@@ -72,6 +72,7 @@ namespace config {
 	constexpr int G_BLOCK_SIZE			 = (1 << BLOCK_BITS);
 	constexpr int G_BLOCK_MASK			 = ((1 << BLOCK_BITS) - 1);
 	constexpr int G_BLOCK_VOLUME		 = (1 << (BLOCK_BITS * 3));
+	constexpr int G_BLOCK_VOLUME_MASK	 = ((1 << (BLOCK_BITS * 3)) - 1);
 
 	constexpr int G_GRID_BITS			 = (DOMAIN_BITS - BLOCK_BITS);
 	constexpr int G_GRID_SIZE			 = (1 << (DOMAIN_BITS - BLOCK_BITS));

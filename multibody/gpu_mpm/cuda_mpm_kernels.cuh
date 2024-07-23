@@ -289,51 +289,67 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
     }
 }
 
-// TODO (changyu): This kernel will be replaced, just a naive implementation.
 template<typename T>
-__global__ void clean_grid_kernel_naive(
-    uint32_t* g_touched_flags,
-    T* g_masses,
-    T* g_momentum) {
+__global__ void gather_touched_grid_kernel(
+    const uint32_t* g_touched_flags,
+    uint32_t* g_touched_ids,
+    uint32_t* g_touched_cnt,
+    T* g_masses /*NOTE (changyu): placeholder here to avoid template re-instantialization error*/
+) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
-    if (idx < config::G_DOMAIN_VOLUME) {
-        uint32_t block_idx = idx >> (config::G_BLOCK_BITS * 3);
-        if (g_touched_flags[block_idx]) {
-            g_touched_flags[block_idx] = 0;
-            g_masses[idx] = 0;
-            g_momentum[idx * 3 + 0] = 0;
-            g_momentum[idx * 3 + 1] = 0;
-            g_momentum[idx * 3 + 2] = 0;
+    if (idx < config::G_GRID_VOLUME) {
+        if (g_touched_flags[idx]) {
+            // TODO (changyu): use warp-level intrinsics to accelerate this
+            uint32_t block_idx = atomicAdd(g_touched_cnt, 1u);
+            g_touched_ids[block_idx] = idx;
         }
     }
 }
 
-// TODO (changyu): This kernel will be replaced, just a naive implementation.
 template<typename T>
-__global__ void update_grid_kernel_naive(
+__global__ void clean_grid_kernel(
+    const uint32_t touched_cells_cnt,
+    uint32_t* g_touched_ids,
     uint32_t* g_touched_flags,
     T* g_masses,
     T* g_momentum) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
-    if (idx < config::G_DOMAIN_VOLUME) {
-        uint32_t block_idx = idx >> (config::G_BLOCK_BITS * 3);
-        if (g_touched_flags[block_idx]) {
-            if (g_masses[idx] > 0.) {
-                // printf("m=%lf mv=(%lf %lf %lf)\n", g_masses[idx], g_momentum[idx * 3 + 0], g_momentum[idx * 3 + 1], g_momentum[idx * 3 + 2]);
-                g_momentum[idx * 3 + 0] /= g_masses[idx];
-                g_momentum[idx * 3 + 1] /= g_masses[idx];
-                g_momentum[idx * 3 + 2] /= g_masses[idx];
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        g_touched_flags[block_idx] = 0;
+        g_masses[cell_idx] = 0;
+        g_momentum[cell_idx * 3 + 0] = 0;
+        g_momentum[cell_idx * 3 + 1] = 0;
+        g_momentum[cell_idx * 3 + 2] = 0;
+    }
+}
 
-                // apply boundary condition
-                const int boundary_condition  = static_cast<int>(std::floor(config::G_BOUNDARY_CONDITION));
-                uint3 xyz = inverse_cell_index(idx);
-                if (xyz.x < boundary_condition && g_momentum[idx * 3 + 0] < 0) g_momentum[idx * 3 + 0] = 0;
-                if (xyz.x >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[idx * 3 + 0] > 0) g_momentum[idx * 3 + 0] = 0;
-                if (xyz.y < boundary_condition && g_momentum[idx * 3 + 1] < 0) g_momentum[idx * 3 + 1] = 0;
-                if (xyz.y >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[idx * 3 + 1] > 0) g_momentum[idx * 3 + 1] = 0;
-                if (xyz.z < boundary_condition && g_momentum[idx * 3 + 2] < 0) g_momentum[idx * 3 + 2] = 0;
-                if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[idx * 3 + 2] > 0) g_momentum[idx * 3 + 2] = 0;
-            }
+template<typename T>
+__global__ void update_grid_kernel(
+    const uint32_t touched_cells_cnt,
+    uint32_t* g_touched_ids,
+    T* g_masses,
+    T* g_momentum) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        if (g_masses[cell_idx] > 0.) {
+            // printf("m=%lf mv=(%lf %lf %lf)\n", g_masses[cell_idx], g_momentum[cell_idx * 3 + 0], g_momentum[cell_idx * 3 + 1], g_momentum[cell_idx * 3 + 2]);
+            g_momentum[cell_idx * 3 + 0] /= g_masses[cell_idx];
+            g_momentum[cell_idx * 3 + 1] /= g_masses[cell_idx];
+            g_momentum[cell_idx * 3 + 2] /= g_masses[cell_idx];
+
+            // apply boundary condition
+            const int boundary_condition  = static_cast<int>(std::floor(config::G_BOUNDARY_CONDITION));
+            uint3 xyz = inverse_cell_index(cell_idx);
+            if (xyz.x < boundary_condition && g_momentum[cell_idx * 3 + 0] < 0) g_momentum[cell_idx * 3 + 0] = 0;
+            if (xyz.x >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[cell_idx * 3 + 0] > 0) g_momentum[cell_idx * 3 + 0] = 0;
+            if (xyz.y < boundary_condition && g_momentum[cell_idx * 3 + 1] < 0) g_momentum[cell_idx * 3 + 1] = 0;
+            if (xyz.y >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[cell_idx * 3 + 1] > 0) g_momentum[cell_idx * 3 + 1] = 0;
+            if (xyz.z < boundary_condition && g_momentum[cell_idx * 3 + 2] < 0) g_momentum[cell_idx * 3 + 2] = 0;
+            if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[cell_idx * 3 + 2] > 0) g_momentum[cell_idx * 3 + 2] = 0;
         }
     }
 }

@@ -43,6 +43,14 @@ public:
     T* grid_masses() { return grid_buffer_.d_g_masses; }
     T* grid_momentum() { return grid_buffer_.d_g_momentum; }
     uint32_t* grid_touched_flags() { return grid_buffer_.d_g_touched_flags; }
+    uint32_t* grid_touched_ids() { return grid_buffer_.d_g_touched_ids; }
+    uint32_t* grid_touched_cnt() { return grid_buffer_.d_g_touched_cnt; }
+    uint32_t grid_touched_cnt_host() {
+        uint32_t h_g_touched_cnt = 0u;
+        CUDA_SAFE_CALL(cudaDeviceSynchronize());
+        CUDA_SAFE_CALL(cudaMemcpy(&h_g_touched_cnt, this->grid_touched_cnt(), sizeof(uint32_t), cudaMemcpyDeviceToHost));
+        return h_g_touched_cnt;
+    }
 
     unsigned int* sort_buffer() { return sort_buffer_; };
     size_t& sort_buffer_size() { return sort_buffer_size_; }
@@ -88,9 +96,11 @@ private:
     // Grid state device ptrs
 
     struct GridBuffer {
-        T* d_g_masses;
-        T* d_g_momentum;
-        uint32_t* d_g_touched_flags;
+        T* d_g_masses = nullptr;
+        T* d_g_momentum = nullptr;
+        uint32_t* d_g_touched_flags = nullptr;
+        uint32_t* d_g_touched_ids   = nullptr;
+        uint32_t* d_g_touched_cnt   = nullptr;
     };
 
     GridBuffer grid_buffer_;
