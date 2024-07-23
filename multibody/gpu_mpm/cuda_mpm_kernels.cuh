@@ -80,7 +80,7 @@ inline uint3 inverse_cell_index(const std::uint32_t &index) noexcept {
 }
 
 template<typename T>
-__global__ void compute_base_cell_node_index(const size_t &n_particles, const T* positions, uint32_t* keys, uint32_t* ids) {
+__global__ void compute_base_cell_node_index(const size_t n_particles, const T* positions, uint32_t* keys, uint32_t* ids) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_particles) {
         T x = positions[idx * 3 + 0];
@@ -99,7 +99,7 @@ __global__ void compute_base_cell_node_index(const size_t &n_particles, const T*
 }
 
 template<typename T>
-__global__ void compute_sorted_state(const size_t &n_particles, 
+__global__ void compute_sorted_state(const size_t n_particles, 
     const T* current_positions, 
     const T* current_velocities,
     const T* current_masses,
@@ -130,7 +130,7 @@ __global__ void compute_sorted_state(const size_t &n_particles,
 }
 
 template<typename T, int BLOCK_DIM>
-__global__ void particle_to_grid_kernel(const size_t &n_particles,
+__global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
     const T* masses,
@@ -140,7 +140,7 @@ __global__ void particle_to_grid_kernel(const size_t &n_particles,
     uint32_t* g_touched_flags,
     T* g_masses,
     T* g_momentum,
-    const T& dt) {
+    const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -339,12 +339,12 @@ __global__ void update_grid_kernel_naive(
 }
 
 template<typename T, int BLOCK_DIM>
-__global__ void grid_to_particle_kernel(const size_t &n_particles,
+__global__ void grid_to_particle_kernel(const size_t n_particles,
     T* positions, 
     T* velocities,
     T* affine_matrices,
     const T* g_momentum,
-    const T& dt) {
+    const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
