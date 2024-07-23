@@ -289,20 +289,43 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
     }
 }
 
-template<typename T>
+template<typename T, int BLOCK_DIM>
 __global__ void gather_touched_grid_kernel(
     const uint32_t* g_touched_flags,
     uint32_t* g_touched_ids,
     uint32_t* g_touched_cnt,
-    T* g_masses /*NOTE (changyu): placeholder here to avoid template re-instantialization error*/
+    T* g_masses // NOTE (changyu): placeholder here to avoid template re-instantialization error
 ) {
+    __shared__ uint32_t shared_touched_ids[BLOCK_DIM];
+
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
-    if (idx < config::G_GRID_VOLUME) {
-        if (g_touched_flags[idx]) {
-            // TODO (changyu): use warp-level intrinsics to accelerate this
-            uint32_t block_idx = atomicAdd(g_touched_cnt, 1u);
-            g_touched_ids[block_idx] = idx;
-        }
+    uint32_t lane_id = threadIdx.x % warpSize;
+    uint32_t warp_id = threadIdx.x / warpSize;
+
+    uint32_t touched_count = 0;
+    uint32_t touched_idx = 0;
+
+    if (idx < config::G_GRID_VOLUME && g_touched_flags[idx]) {
+        touched_idx = idx;
+        touched_count = 1;
+    }
+
+    uint32_t warp_mask = __ballot_sync(0xFFFFFFFF, touched_count);
+    uint32_t warp_pos = __popc(warp_mask & ((1U << lane_id) - 1));
+
+    if (touched_count) {
+        shared_touched_ids[warp_id * warpSize + warp_pos] = touched_idx;
+    }
+
+    if (lane_id == 0) {
+        uint32_t block_offset = atomicAdd(g_touched_cnt, __popc(warp_mask));
+        shared_touched_ids[warp_id * warpSize + 31] = block_offset;
+    }
+    __syncwarp();
+
+    uint32_t global_offset = shared_touched_ids[warp_id * warpSize + 31];
+    if (touched_count) {
+        g_touched_ids[global_offset + warp_pos] = touched_idx;
     }
 }
 

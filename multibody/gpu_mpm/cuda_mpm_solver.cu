@@ -91,7 +91,7 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state) const {
     // NOTE (changyu): we gather the grid block that are really touched
     CUDA_SAFE_CALL(cudaMemset(state->grid_touched_cnt(), 0, sizeof(uint32_t)));
     CUDA_SAFE_CALL((
-        gather_touched_grid_kernel<<<
+        gather_touched_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
         (config::G_GRID_VOLUME + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (state->grid_touched_flags(), state->grid_touched_ids(), state->grid_touched_cnt(), state->grid_masses())
         ));
