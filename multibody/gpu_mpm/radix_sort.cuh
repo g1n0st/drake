@@ -207,7 +207,8 @@ void radix_sort(
     valueT* const d_value_in,
     unsigned int* tmp_buffer,
     size_t &tmp_buffer_size,
-    unsigned int d_key_in_len) {
+    unsigned int d_key_in_len,
+    unsigned int bit_num = bitNum) {
     unsigned int block_sz = MAX_BLOCK_SZ;
     unsigned int max_elems_per_block = block_sz;
     unsigned int grid_sz = d_key_in_len / max_elems_per_block;
@@ -248,7 +249,7 @@ void radix_sort(
 
     // for every 2 bits from LSB to MSB:
     //  block-wise radix sort (write blocks back to global memory)
-    for (unsigned int shift_width = 0; shift_width <= bitNum - 2; shift_width += 2) {
+    for (unsigned int shift_width = 0; shift_width < bit_num; shift_width += 2) {
         gpu_radix_sort_local<<<grid_sz, block_sz, shmem_sz>>>(d_key_out, 
                                                               d_value_out,
                                                                 d_prefix_sums, 

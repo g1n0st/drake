@@ -42,8 +42,17 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
     // resulting in several atomics instead of one. 
     // However, this performance loss can be compensated well when particle density is not extremely high in each cell.
     if (sort) {
+        // NOTE, TODO (changyu): radix sort with the first 16 bits is good enough to balance the performance between P2G and sort itself,
+        // but more tuning could be conducted here.
         CUDA_SAFE_CALL((
-            radix_sort(state->next_sort_keys(), state->current_sort_keys(), state->next_sort_ids(), state->current_sort_ids(), state->sort_buffer(), state->sort_buffer_size(), static_cast<unsigned int>(state->n_particles()))
+            radix_sort(state->next_sort_keys(), 
+                       state->current_sort_keys(), 
+                       state->next_sort_ids(), 
+                       state->current_sort_ids(), 
+                       state->sort_buffer(), 
+                       state->sort_buffer_size(), 
+                       static_cast<unsigned int>(state->n_particles()),
+                       /*num_bit = */ std::min((config::G_DOMAIN_BITS * 3), 16))
             ));
         CUDA_SAFE_CALL((
             compute_sorted_state<<<
