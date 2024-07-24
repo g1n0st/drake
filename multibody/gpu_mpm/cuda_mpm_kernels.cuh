@@ -50,7 +50,7 @@ inline uint3 inverse_morton_code(const uint32_t &code) noexcept {
 
 __device__ __host__
 inline std::uint32_t cell_index(const uint32_t &xi, const uint32_t &yi, const uint32_t &zi) noexcept {
-    // TODO (changyu): use morton code ordering within grid block (lower_bit). This should be evaluated using profiler.
+    // NOTE (changyu): using morton code ordering within grid block (lower_bit) seems nothing different
     uint32_t higher_bit = morton_code({xi >> config::BLOCK_BITS, yi >> config::BLOCK_BITS, zi >> config::BLOCK_BITS});
     uint32_t lower_bit = ((xi & config::G_BLOCK_MASK) << (config::G_BLOCK_BITS * 2)) | ((yi & config::G_BLOCK_MASK) << config::G_BLOCK_BITS) | (zi & config::G_BLOCK_MASK);
     return (higher_bit << (config::G_BLOCK_BITS * 3)) | lower_bit;
