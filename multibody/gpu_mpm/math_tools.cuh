@@ -120,6 +120,22 @@ inline __host__ __device__ void inverse3(T* m, T* m_inv)
 }
 
 template <class T>
+inline __host__ __device__ T determinant2(const T* m)
+{
+    return m[0 * 2 + 0] * m[1 * 2 + 1] - m[0 * 2 + 1] * m[1 * 2 + 0];
+}
+
+template <class T>
+inline __host__ __device__ void inverse2(const T* m, T* m_inv)
+{
+    T det_inv = 1. / determinant2(m);
+    m_inv[0 * 2 + 0] =  m[1 * 2 + 1] * det_inv;
+    m_inv[0 * 2 + 1] = -m[0 * 2 + 1] * det_inv;
+    m_inv[1 * 2 + 0] = -m[1 * 2 + 0] * det_inv;
+    m_inv[1 * 2 + 1] =  m[0 * 2 + 0] * det_inv;
+}
+
+template <class T>
 inline __host__ __device__ void dsytrd3(const T *A, T *Q, T *d, T *e) {
     Q[0*3+0] = 1.0;
     Q[1*3+1] = 1.0;
@@ -403,6 +419,59 @@ inline __host__ __device__ void ssvd3x3(const T *A, T *U, T *sigma, T *V) {
     if (determinant3(V) < 0) {
         for (int i = 0; i < 3; i++) V[i*3+2] *= -1.;
         sigma[2*3+2] = -sigma[2*3+2];
+    }
+}
+
+template<int n, int m, class T>
+inline __host__ __device__ void givens_QR(const T *A, T *Q, T *R) {
+    #pragma unroll
+    for (int i = 0; i < 9; i++) R[i] = A[i]; // R [n, m]
+    Q[0] = T(1); Q[1] = T(0); Q[2] = T(0);   // Q [n, n]
+    Q[3] = T(0); Q[4] = T(1); Q[5] = T(0);
+    Q[6] = T(0); Q[7] = T(0); Q[8] = T(1);
+    
+    #pragma unroll
+    for (int j = 0; j < m; ++j) {
+        for (int i = n - 1; i > j; i--) {
+            int rowi = i - 1;
+            int rowk = i;
+            const T &a = R[rowi * m + j];
+            const T &b = R[rowk * m + j];
+            T d = a * a + b * b;
+            T c = T(1);
+            T s = T(0);
+            T sqrtd = sqrt(d);
+            if (sqrtd > 0) {
+                T t = 1. / sqrtd;
+                c = a * t;
+                s = -b * t;
+            }
+
+            #pragma unroll
+            for (int jj = 0; jj < m; ++jj) {
+                T tau1 = R[rowi * m + jj];
+                T tau2 = R[rowk * m + jj];
+                R[rowi * m + jj] = c * tau1 - s * tau2;
+                R[rowk * m + jj] = s * tau1 + c * tau2;
+            }
+
+            #pragma unroll
+            for (int jj = 0; jj < m; ++jj) {
+                T tau1 = Q[rowi * n + jj];
+                T tau2 = Q[rowk * n + jj];
+                Q[rowi * n + jj] = c * tau1 - s * tau2;
+                Q[rowk * n + jj] = s * tau1 + c * tau2;
+            }
+        }
+    }
+
+    #pragma unroll
+    for (int i = 0; i < n; ++i) {
+        for (int j = i + 1; j < n; ++j) {
+            T tmp = Q[i * n + j];
+            Q[i * n + j] = Q[j * n + i];
+            Q[j * n + i] = tmp;
+        }
     }
 }
 
