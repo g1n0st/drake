@@ -475,4 +475,91 @@ inline __host__ __device__ void givens_QR(const T *A, T *Q, T *R) {
     }
 }
 
+template<class T>
+inline __host__ __device__ void polar_decompose2x2(const T *A, T *U, T *P) {
+    U[0] = T(1); U[1] = T(0);
+    U[2] = T(0); U[3] = T(1);
+    P[0] = A[0]; P[1] = A[1];
+    P[2] = A[2]; P[3] = A[3];
+
+    // if A is a zero matrix we simply return the pair (I, A)
+    if (A[0] == 0 && A[1] == 0 && A[2] == 0 && A[3] == 0) {
+
+    } else {
+        T detA = determinant2(A);
+        T adetA = abs(detA);
+        T B[4] = {
+            A[0] + A[3], A[1] - A[2],
+            A[2] - A[1], A[3] + A[0]
+        };
+
+        if (detA < 0) {
+            B[0] = A[0] - A[3];
+            B[1] = A[1] + A[2];
+            B[2] = A[2] + A[1];
+            B[3] = A[3] - A[0];
+        }
+        
+        // here det(B) != 0 if A is not the zero matrix
+        T adetB = abs(determinant2(B));
+        T k = 1. / sqrt(adetB);
+        U[0] = B[0] * k;
+        U[1] = B[1] * k;
+        U[2] = B[2] * k;
+        U[3] = B[3] * k;
+        P[0] = (A[0] * A[0] + A[2] * A[2] + adetA) * k;
+        P[1] = (A[0] * A[1] + A[2] * A[3]) * k;
+        P[2] = (A[0] * A[1] + A[2] * A[3]) * k;
+        P[3] = (A[1] * A[1] + A[3] * A[3] + adetA) * k;
+    }
+}
+
+template<class T>
+inline __host__ __device__ void svd2x2(const T *A, T *U, T *sigma, T *V) {
+    T R[4], S[4];
+    polar_decompose2x2(A, R, S);
+    T c = 0;
+    T s = 0;
+    T s1 = 0;
+    T s2 = 0;
+    if (abs(S[1]) < T(1e-5)) {
+        c = 1.;
+        s = 0.;
+        s1 = S[0];
+        s2 = S[3];
+    } else {
+        T tao = T(.5) * (S[0] - S[3]);
+        T w = sqrt(tao * tao + S[1] * S[1]);
+        T t = 0;
+        if (tao > 0) {
+            t = S[1] / (tao + w);
+        } else {
+            t = S[1] / (tao - w);
+        }
+        c = T(1.) / sqrt(t * t + T(1.));
+        s = -t * c;
+        s1 = c * c * S[0] - T(2.) * c * s * S[1] + s * s * S[3];
+        s2 = s * s * S[0] + T(2.) * c * s * S[1] + c * c * S[3];
+    }
+    if (s1 < s2) {
+        T tmp = s1;
+        s1 = s2;
+        s2 = tmp;
+        V[0] = -s;
+        V[1] = c;
+        V[2] = -c;
+        V[3] = -s;
+    } else {
+        V[0] = c;
+        V[1] = s;
+        V[2] = -s;
+        V[3] = -c;
+    }
+    matmul<2, 2, 2, T>(R, V, U);
+    sigma[0] = s1;
+    sigma[1] = 0;
+    sigma[2] = 0;
+    sigma[3] = s2;
+}
+
 #endif
