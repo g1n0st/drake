@@ -53,7 +53,7 @@ GTEST_TEST(EstTest, SmokeTest) {
     inital_vel.emplace_back(0, 0, -0.1);
   }
 
-  mpm_state.InitializeParticles(inital_pos, inital_vel, 2000.0);
+  mpm_state.InitializeParticles(inital_pos, inital_vel);
 
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 

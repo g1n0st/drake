@@ -12,12 +12,12 @@ namespace multibody {
 namespace gmpm {
 
 template<typename T>
-void GpuMpmState<T>::InitializeParticles(const std::vector<Vec3<T>> &pos, const std::vector<Vec3<T>> &vel, const T& rho) {
+void GpuMpmState<T>::InitializeParticles(const std::vector<Vec3<T>> &pos, const std::vector<Vec3<T>> &vel) {
     n_particles_ = pos.size();
 
     h_positions_ = pos;
     h_velocities_ = vel;
-    h_masses_.resize(n_particles_, rho * config::P_VOLUME);
+    h_volumes_.resize(n_particles_, config::P_VOLUME);
     h_deformation_gradients_.resize(n_particles_, Mat3<T>::Identity());
     h_affine_matrices_.resize(n_particles_, Mat3<T>::Zero());
 
@@ -25,7 +25,7 @@ void GpuMpmState<T>::InitializeParticles(const std::vector<Vec3<T>> &pos, const 
     for (uint32_t i = 0; i < 2; ++i) {
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_positions, sizeof(Vec3<T>) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_velocities, sizeof(Vec3<T>) * n_particles_));
-        CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_masses, sizeof(T) * n_particles_));
+        CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_volumes, sizeof(T) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_deformation_gradients, sizeof(Mat3<T>) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_affine_matrices, sizeof(Mat3<T>) * n_particles_));
 
@@ -37,7 +37,7 @@ void GpuMpmState<T>::InitializeParticles(const std::vector<Vec3<T>> &pos, const 
         if (i == current_particle_buffer_id_) {
             CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_positions, h_positions_.data(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyHostToDevice));
             CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_velocities, h_velocities_.data(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyHostToDevice));
-            CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_masses, h_masses_.data(), sizeof(T) * n_particles_, cudaMemcpyHostToDevice));
+            CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_volumes, h_volumes_.data(), sizeof(T) * n_particles_, cudaMemcpyHostToDevice));
             CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_deformation_gradients, h_deformation_gradients_.data(), sizeof(Mat3<T>) * n_particles_, cudaMemcpyHostToDevice));
             CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_affine_matrices, h_affine_matrices_.data(), sizeof(Mat3<T>) * n_particles_, cudaMemcpyHostToDevice));
         }
@@ -61,7 +61,7 @@ void GpuMpmState<T>::Destroy() {
     for (uint32_t i = 0; i < 2; ++i) {
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_positions));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_velocities));
-        CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_masses));
+        CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_volumes));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_deformation_gradients));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_affine_matrices));
 
@@ -71,7 +71,7 @@ void GpuMpmState<T>::Destroy() {
         // make sure to throw error when illegal access happens
         particle_buffer_[i].d_positions = nullptr;
         particle_buffer_[i].d_velocities = nullptr;
-        particle_buffer_[i].d_masses = nullptr;
+        particle_buffer_[i].d_volumes = nullptr;
         particle_buffer_[i].d_deformation_gradients = nullptr;
         particle_buffer_[i].d_affine_matrices = nullptr;
         particle_buffer_[i].d_sort_keys = nullptr;

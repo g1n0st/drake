@@ -102,13 +102,13 @@ template<typename T>
 __global__ void compute_sorted_state(const size_t n_particles, 
     const T* current_positions, 
     const T* current_velocities,
-    const T* current_masses,
+    const T* current_volumes,
     const T* current_deformation_gradients,
     const T* current_affine_matrices,
     const uint32_t* next_sort_ids,
     T* next_positions,
     T* next_velocities,
-    T* next_masses,
+    T* next_volumes,
     T* next_deformation_gradients,
     T* next_affine_matrices
     ) {
@@ -119,7 +119,7 @@ __global__ void compute_sorted_state(const size_t n_particles,
             next_positions[idx * 3 + i] = current_positions[next_sort_ids[idx] * 3 + i];
             next_velocities[idx * 3 + i] = current_velocities[next_sort_ids[idx] * 3 + i];
         }
-        next_masses[idx] = current_masses[next_sort_ids[idx]];
+        next_volumes[idx] = current_volumes[next_sort_ids[idx]];
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
@@ -133,7 +133,7 @@ template<typename T, int BLOCK_DIM>
 __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
-    const T* masses,
+    const T* volumes,
     T* deformation_gradients,
     const T* affine_matrices,
     const uint32_t* grid_index,
@@ -232,7 +232,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
             stress[i * 3 + i] += config::LAMBDA * J * (J - 1.0);
         }
 
-        T mass = masses[idx];
+        T mass = volumes[idx] * config::DENSITY;
         T vel[3] = {
             velocities[idx * 3 + 0],
             velocities[idx * 3 + 1],
@@ -242,7 +242,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * config::P_VOLUME * config::G_D_INV) * stress[i] + C[i] * mass;
+            B[i] = (-dt * volumes[idx] * config::G_D_INV) * stress[i] + C[i] * mass;
         }
 
         T val[4];
