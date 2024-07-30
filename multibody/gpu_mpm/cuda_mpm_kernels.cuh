@@ -10,6 +10,32 @@ namespace drake {
 namespace multibody {
 namespace gmpm {
 
+template<typename T>
+__global__ void initialize_fem_state(
+    const size_t n_faces,
+    const int *indices,
+    T *positions,
+    T *velocities,
+    T *volumes,
+    T *deformation_gradients,
+    T *Dm_inverses) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < n_faces) {
+        int v0 = indices[idx * 3 + 0];
+        int v1 = indices[idx * 3 + 1];
+        int v2 = indices[idx * 3 + 2];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / 3.;
+            velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / 3.;
+        }
+        volumes[idx] += 1.;
+        atomicAdd(&volumes[v0], 1.);
+        atomicAdd(&volumes[v1], 1.);
+        atomicAdd(&volumes[v2], 1.);
+    }
+}
+
 __device__ __host__
 inline std::uint32_t contract_bits(std::uint32_t v) noexcept {
     v &= 0x09249249u;
@@ -103,13 +129,11 @@ __global__ void compute_sorted_state(const size_t n_particles,
     const T* current_positions, 
     const T* current_velocities,
     const T* current_volumes,
-    const T* current_deformation_gradients,
     const T* current_affine_matrices,
     const uint32_t* next_sort_ids,
     T* next_positions,
     T* next_velocities,
     T* next_volumes,
-    T* next_deformation_gradients,
     T* next_affine_matrices
     ) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -123,7 +147,6 @@ __global__ void compute_sorted_state(const size_t n_particles,
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            next_deformation_gradients[idx * 9 + i] = current_deformation_gradients[next_sort_ids[idx] * 9 + i];
             next_affine_matrices[idx * 9 + i] = current_affine_matrices[next_sort_ids[idx] * 9 + i];
         }
     }
@@ -134,7 +157,6 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
     const T* volumes,
-    T* deformation_gradients,
     const T* affine_matrices,
     const uint32_t* grid_index,
     uint32_t* g_touched_flags,
@@ -188,49 +210,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
             weights[threadIdx.x][2][i] = 0.5 * (fx[i] - 0.5) * (fx[i] - 0.5);
         }
         
-        // update deformation gradient
-        T* F = &deformation_gradients[idx * 9];
         const T* C = &affine_matrices[idx * 9];
-        float new_F[9];
-        new_F[0] = (1.0 + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
-        new_F[1] = (1.0 + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
-        new_F[2] = (1.0 + dt * C[0]) * F[2] + dt * C[1] * F[5] + dt * C[2] * F[8];
-
-        new_F[3] = dt * C[3] * F[0] + (1.0 + dt * C[4]) * F[3] + dt * C[5] * F[6];
-        new_F[4] = dt * C[3] * F[1] + (1.0 + dt * C[4]) * F[4] + dt * C[5] * F[7];
-        new_F[5] = dt * C[3] * F[2] + (1.0 + dt * C[4]) * F[5] + dt * C[5] * F[8];
-
-        new_F[6] = dt * C[6] * F[0] + dt * C[7] * F[3] + (1.0 + dt * C[8]) * F[6];
-        new_F[7] = dt * C[6] * F[1] + dt * C[7] * F[4] + (1.0 + dt * C[8]) * F[7];
-        new_F[8] = dt * C[6] * F[2] + dt * C[7] * F[5] + (1.0 + dt * C[8]) * F[8];
-
-        // TODO (changyu): return mapping projection here
-        
-        #pragma unroll
-        for (int i = 0; i < 9; ++i) {
-            F[i] = new_F[i];
-        }
-
-        // NOTE, TODO (changyu): currently svd only supports float, all set float here
-        float U[9], sigma[9], V[9];
-        ssvd3x3<float>(new_F, U, sigma, V);
-        
-        // TODO (changyu): many register used here. Most of them could be reused to optimize performance.
-        float J = determinant3(new_F);
-        float stress[9];
-        float R[9];
-        matmulT<3, 3, 3, float>(U, V, R);
-        
-        float *two_mu_F_minus_R = R;
-        #pragma unroll
-        for (int i = 0; i < 9; ++i) {
-            two_mu_F_minus_R[i] = 2.0 * config::MU * (new_F[i] - R[i]);
-        }
-        matmulT<3, 3, 3, float>(two_mu_F_minus_R, new_F, stress);
-        #pragma unroll
-        for (int i = 0; i < 3; ++i) {
-            stress[i * 3 + i] += config::LAMBDA * J * (J - 1.0);
-        }
 
         T mass = volumes[idx] * config::DENSITY;
         T vel[3] = {
@@ -242,7 +222,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * volumes[idx] * config::G_D_INV) * stress[i] + C[i] * mass;
+            B[i] = (-dt * volumes[idx] * config::G_D_INV) * 0 /*TODO (changyu): put tau here*/ + C[i] * mass;
         }
 
         T val[4];

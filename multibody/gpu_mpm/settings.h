@@ -8,7 +8,7 @@
 
 #include <eigen3/Eigen/Dense>
 
-#define DEBUG 0
+#define DEBUG 1
 
 inline void cuda_error_throw() {
 #if DEBUG
@@ -45,6 +45,8 @@ namespace gmpm {
 
 template<typename T> using Vec3 = Eigen::Vector<T, 3>;
 template<typename T> using Mat3 = Eigen::Matrix<T, 3, 3>;
+template<typename T> using Vec2 = Eigen::Vector<T, 2>;
+template<typename T> using Mat2 = Eigen::Matrix<T, 2, 2>;
 
 namespace config {
     // cuda device

@@ -20,19 +20,25 @@ struct GpuMpmState {
 public:
     GpuMpmState() = default;
 
+    const size_t& n_verts() const { return n_verts_; }
+    const size_t& n_faces() const { return n_faces_; }
     const size_t& n_particles() const { return n_particles_; }
     const uint32_t& current_particle_buffer_id() const { return current_particle_buffer_id_; }
 
     T* current_positions() { return particle_buffer_[current_particle_buffer_id_].d_positions; }
     T* current_velocities() { return particle_buffer_[current_particle_buffer_id_].d_velocities; }
     T* current_volumes() { return particle_buffer_[current_particle_buffer_id_].d_volumes; }
-    T* current_deformation_gradients() { return particle_buffer_[current_particle_buffer_id_].d_deformation_gradients; }
     T* current_affine_matrices() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
+
+    T* forces() { return d_forces_; }
+    T* taus() { return d_taus_; }
+    T* deformation_gradients() { return d_deformation_gradients_; }
+    T* Dm_inverses() { return d_Dm_inverses_; }
+    int* indices() { return d_indices_; }
 
     T* next_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
     T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
     T* next_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
-    T* next_deformation_gradients() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_deformation_gradients; }
     T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
     
     uint32_t* current_sort_keys() { return particle_buffer_[current_particle_buffer_id_].d_sort_keys; }
@@ -56,7 +62,9 @@ public:
     size_t& sort_buffer_size() { return sort_buffer_size_; }
 
     // NOTE (changyu): initialize GPU MPM state, all gpu memory allocation should be done here to avoid re-allocation.
-    void InitializeParticles(const std::vector<Vec3<T>> &pos, const std::vector<Vec3<T>> &vel);
+    void InitializeQRCloth(const std::vector<Vec3<T>> &pos, 
+                           const std::vector<Vec3<T>> &vel,
+                           const std::vector<int> &indices);
 
     // NOTE (changyu): free GPU MPM state, all gpu memory free should be done here.
     void Destroy();
@@ -66,14 +74,24 @@ public:
 private:
 
     // Particles state device ptrs
+    size_t n_verts_;
+    size_t n_faces_;
     size_t n_particles_;
+
+    // scratch data
+    T* d_forces_ = nullptr;      // size: n_faces + n_verts, NO sort
+    T* d_taus_ = nullptr;        // size: n_faces + n_verts, NO sort
+
+    // element-based data
+    int* d_indices_ = nullptr; // size: n_faces NO sort
+    T* d_deformation_gradients_ = nullptr; // size: n_faces NO sort
+    T* d_Dm_inverses_ = nullptr; // size: n_faces NO sort
     
     struct ParticleBuffer {
-        T* d_positions = nullptr;
-        T* d_velocities = nullptr;
-        T* d_volumes = nullptr;
-        T* d_deformation_gradients = nullptr;
-        T* d_affine_matrices = nullptr;
+        T* d_positions = nullptr;   // size: n_faces + n_verts
+        T* d_velocities = nullptr;  // size: n_faces + n_verts
+        T* d_volumes = nullptr;     // size: n_faces + n_verts
+        T* d_affine_matrices = nullptr; // size: n_faces + n_verts
 
         uint32_t* d_sort_keys = nullptr;
         uint32_t* d_sort_ids = nullptr;
@@ -89,9 +107,7 @@ private:
     // TODO(changyu): Host memory should be managed by Drake context instead of here.
     std::vector<Vec3<T>> h_positions_;
     std::vector<Vec3<T>> h_velocities_;
-    std::vector<T> h_volumes_;
-    std::vector<Mat3<T>> h_deformation_gradients_;
-    std::vector<Mat3<T>> h_affine_matrices_;
+    std::vector<int> h_indices_;
 
     // Grid state device ptrs
 
