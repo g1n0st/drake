@@ -42,12 +42,12 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
         CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_sort_ids, 0, sizeof(uint32_t) * n_particles_));
 
         if (i == current_particle_buffer_id_) {
-            CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_positions, 
-                                      h_positions_.data() + sizeof(Vec3<T>) * n_faces_, 
+            CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_positions + n_faces_ * 3, 
+                                      h_positions_.data(), 
                                       sizeof(Vec3<T>) * n_verts_, 
                                       cudaMemcpyHostToDevice));
-            CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_velocities, 
-                                      h_velocities_.data() + sizeof(Vec3<T>) * n_faces_, 
+            CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_velocities + n_faces_ * 3, 
+                                      h_velocities_.data(), 
                                       sizeof(Vec3<T>) * n_verts_, 
                                       cudaMemcpyHostToDevice));
             CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_volumes, 0, sizeof(T) * n_particles_));
