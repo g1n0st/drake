@@ -29,10 +29,39 @@ __global__ void initialize_fem_state(
             positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / 3.;
             velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / 3.;
         }
-        volumes[idx] += 1.;
-        atomicAdd(&volumes[v0], 1.);
-        atomicAdd(&volumes[v1], 1.);
-        atomicAdd(&volumes[v2], 1.);
+
+        T D0[3], D1[3];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            D0[i] = positions[v1 * 3 + i] - positions[v0 * 3 + i];
+            D1[i] = positions[v2 * 3 + i] - positions[v0 * 3 + i];
+        }
+        T Ds[6] {
+            D0[0], D1[0],
+            D0[1], D1[1],
+            D0[2], D1[2]
+        };
+        T Q[9], R[6];
+        givens_QR<3, 2, T>(Ds, Q, R);
+        T Dm[4] = {
+            R[0], R[1],
+            0   , R[3]
+        };
+        inverse2(Dm, &Dm_inverses[idx * 4]);
+
+        T *F = &deformation_gradients[idx * 9];
+        F[0] = T(1.); F[1] = T(0.); F[2] = T(0.);
+        F[3] = T(0.); F[4] = T(1.); F[5] = T(0.);
+        F[6] = T(0.); F[7] = T(0.); F[8] = T(1.);
+
+        T D0xD1[3];
+        cross_product3(D0, D1, D0xD1);
+        T volume_4 = norm<3>(D0xD1) / T(8.);
+
+        volumes[idx] += volume_4;
+        atomicAdd(&volumes[v0], volume_4);
+        atomicAdd(&volumes[v1], volume_4);
+        atomicAdd(&volumes[v2], volume_4);
     }
 }
 
