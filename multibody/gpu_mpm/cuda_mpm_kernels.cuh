@@ -47,6 +47,9 @@ __global__ void initialize_fem_state_kernel(
             R[0], R[1],
             0   , R[3]
         };
+
+        // For co-dimensional mesh, Dm_inverse stores (R(Ds))^{-1} (e.g. isotropic cloth in 3d)
+        // The rotational part is discarded.
         inverse2(Dm, &Dm_inverses[idx * 4]);
 
         T *F = &deformation_gradients[idx * 9];
