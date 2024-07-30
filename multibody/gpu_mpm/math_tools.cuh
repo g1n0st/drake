@@ -562,4 +562,20 @@ inline __host__ __device__ void svd2x2(const T *A, T *U, T *sigma, T *V) {
     sigma[3] = s2;
 }
 
+
+template<int n, int m, typename T>
+__device__ __host__
+inline void watch(const char *name, const T *M) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx == 0) {
+        printf("%s\n", name);
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < m; j++) {
+                printf("%.3f ", M[i*m+j]);
+            }
+            printf("\n");
+        }
+    }
+}
+
 #endif
