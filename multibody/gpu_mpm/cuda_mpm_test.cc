@@ -58,10 +58,10 @@ GTEST_TEST(EstTest, SmokeTest) {
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
   multibody::gmpm::GpuMpmSolver<float> mpm_solver;
-  float dt = 5e-4;
-  for (int frame = 0; frame < 240; frame++) {
+  float dt = 1e-3;
+  for (int frame = 0; frame < 200; frame++) {
     long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    for (int substep = 0; substep < 20; substep++) {
+    for (int substep = 0; substep < 40; substep++) {
       // NOTE, TODO (changyu): DON'T DO sort until we can correctly handle the index mapping.
       mpm_solver.RebuildMapping(&mpm_state, false);
       mpm_solver.CalcFemStateAndForce(&mpm_state, dt);
