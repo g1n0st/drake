@@ -183,6 +183,7 @@ __global__ void calc_fem_state_and_force_kernel(
     const int* indices,
     const T* volumes,
     const T* affine_matrices,
+    const T* Dm_inverses,
     T* positions, 
     T* velocities,
     T* deformation_gradients,
@@ -198,6 +199,85 @@ __global__ void calc_fem_state_and_force_kernel(
         for (int i = 0; i < 3; ++i) {
             positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / 3.;
             velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / 3.;
+        }
+
+        T* F = &deformation_gradients[idx * 9];
+        const T* C = &affine_matrices[idx * 9];
+        T ctF[9]; // cotangent F
+        ctF[0] = (1.0 + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
+        ctF[1] = (1.0 + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
+        ctF[2] = (1.0 + dt * C[0]) * F[2] + dt * C[1] * F[5] + dt * C[2] * F[8];
+
+        ctF[3] = dt * C[3] * F[0] + (1.0 + dt * C[4]) * F[3] + dt * C[5] * F[6];
+        ctF[4] = dt * C[3] * F[1] + (1.0 + dt * C[4]) * F[4] + dt * C[5] * F[7];
+        ctF[5] = dt * C[3] * F[2] + (1.0 + dt * C[4]) * F[5] + dt * C[5] * F[8];
+
+        ctF[6] = dt * C[6] * F[0] + dt * C[7] * F[3] + (1.0 + dt * C[8]) * F[6];
+        ctF[7] = dt * C[6] * F[1] + dt * C[7] * F[4] + (1.0 + dt * C[8]) * F[7];
+        ctF[8] = dt * C[6] * F[2] + dt * C[7] * F[5] + (1.0 + dt * C[8]) * F[8];
+
+        project_strain(ctF);
+
+        T d0[3], d1[3];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            d0[i] = positions[v1 * 3 + i] - positions[v0 * 3 + i];
+            d1[i] = positions[v2 * 3 + i] - positions[v0 * 3 + i];
+        }
+        T ds[6] {
+            d0[0], d1[0],
+            d0[1], d1[1],
+            d0[2], d1[2]
+        };
+
+        T tangent_F[6];
+        const T* Dm_inverse = &Dm_inverses[idx * 4];
+        matmul<3, 2, 2>(ds, Dm_inverse, tangent_F);
+        ctF[0] = tangent_F[0];
+        ctF[1] = tangent_F[1];
+        ctF[3] = tangent_F[2];
+        ctF[4] = tangent_F[3];
+        ctF[6] = tangent_F[4];
+        ctF[7] = tangent_F[5];
+
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            F[i] = ctF[i];
+        }
+
+        T VP_local[9];
+        compute_dphi_dF(ctF, VP_local);
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            VP_local[i] *= volumes[idx];
+        }
+
+        // technical document .(15) part 2
+        T VP_local_c2[3] = { VP_local[2], VP_local[5], VP_local[8] };
+        T ctF_c2[3] = { ctF[2], ctF[5], ctF[8] };
+        outer_product<3, T>(VP_local_c2, ctF_c2, &taus[idx * 9]);
+
+        T grad_N_hat[6] = {
+            T(-1.), T(1.), T(0.),
+            T(-1.), T(0.), T(1.)
+        };
+        T grad_N[6];
+        matmul<2, 2, 3, T>(Dm_inverse, grad_N_hat, grad_N);
+        T VP_local_c01[6] = { 
+            VP_local[0], VP_local[1],
+            VP_local[3], VP_local[4],
+            VP_local[6], VP_local[7]
+        };
+
+        T G[9];
+        matmul<3, 2, 3, T>(VP_local_c01, grad_N, G);
+
+        // technical document .(15) part 1
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            atomicAdd(&forces[v0 * 3 + i], -G[i * 3 + 0]);
+            atomicAdd(&forces[v1 * 3 + i], -G[i * 3 + 1]);
+            atomicAdd(&forces[v2 * 3 + i], -G[i * 3 + 2]);
         }
     }
 }

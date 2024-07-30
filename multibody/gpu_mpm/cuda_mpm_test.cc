@@ -64,6 +64,7 @@ GTEST_TEST(EstTest, SmokeTest) {
     for (int substep = 0; substep < 20; substep++) {
       // NOTE, TODO (changyu): DON'T DO sort until we can correctly handle the index mapping.
       mpm_solver.RebuildMapping(&mpm_state, false);
+      mpm_solver.CalcFemStateAndForce(&mpm_state, dt);
       mpm_solver.ParticleToGrid(&mpm_state, dt);
       mpm_solver.UpdateGrid(&mpm_state);
       mpm_solver.GridToParticle(&mpm_state, dt);

@@ -75,7 +75,7 @@ void GpuMpmSolver<T>::CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt) c
     CUDA_SAFE_CALL((
         calc_fem_state_and_force_kernel<<<
         (state->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_faces(), state->indices(), state->current_volumes(), state->current_affine_matrices(),
+        (state->n_faces(), state->indices(), state->current_volumes(), state->current_affine_matrices(), state->Dm_inverses(),
          state->current_positions(), state->current_velocities(), state->deformation_gradients(),
          state->forces(), state->taus(), dt)
         ));
