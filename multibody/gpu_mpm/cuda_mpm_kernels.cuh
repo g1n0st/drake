@@ -187,6 +187,8 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* velocities,
     const T* volumes,
     const T* affine_matrices,
+    const T* forces, 
+    const T* taus,
     const uint32_t* grid_index,
     uint32_t* g_touched_flags,
     T* g_masses,
@@ -248,10 +250,12 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
             velocities[idx * 3 + 2]
         };
         T B[9];
+        const T* stress = &taus[idx * 9];
+        const T* force = &forces[idx * 3];
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * volumes[idx] * config::G_D_INV) * 0 /*TODO (changyu): put tau here*/ + C[i] * mass;
+            B[i] = (-dt * volumes[idx] * config::G_D_INV) * stress[i] + C[i] * mass;
         }
 
         T val[4];
@@ -277,6 +281,9 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
                     val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
                     val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
+                    val[1] += force[0] * dt * weight;
+                    val[2] += force[1] * dt * weight;
+                    val[3] += force[2] * dt * weight;
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[4]; for (int ii = 0; ii < 4; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);

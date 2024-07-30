@@ -17,6 +17,7 @@ template<typename T>
 class GpuMpmSolver {
 public:
     void RebuildMapping(GpuMpmState<T> *state, bool sort) const;
+    void CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt) const;
     void ParticleToGrid(GpuMpmState<T> *state, const T& dt) const;
     void UpdateGrid(GpuMpmState<T> *state) const;
     void GridToParticle(GpuMpmState<T> *state, const T& dt) const;
