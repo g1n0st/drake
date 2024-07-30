@@ -455,6 +455,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
             positions[idx * 3 + 2] * config::G_DX_INV - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
+        #pragma unroll
         for (int i = 0; i < 3; ++i) {
             weights[threadIdx.x][0][i] = T(0.5) * (T(1.5) - fx[i]) * (T(1.5) - fx[i]);
             weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
@@ -480,8 +481,11 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
         T val[4];
 
+        #pragma unroll
         for (int i = 0; i < 3; ++i) {
+            #pragma unroll
             for (int j = 0; j < 3; ++j) {
+                #pragma unroll
                 for (int k = 0; k < 3; ++k) {
                     T xi_minus_xp[3] = {
                         (i - fx[0]) * config::G_DX,
@@ -506,8 +510,13 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     val[3] += force[2] * dt * weight;
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
-                        T tmp[4]; for (int ii = 0; ii < 4; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
-                        if (interval >= iter) for (int ii = 0; ii < 4; ++ii) val[ii] += tmp[ii];
+                        T tmp[4]; 
+                        #pragma unroll
+                        for (int ii = 0; ii < 4; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
+                        if (interval >= iter) {
+                            #pragma unroll
+                            for (int ii = 0; ii < 4; ++ii) val[ii] += tmp[ii];
+                        }
                     }
 
                     if (boundary) {
@@ -688,6 +697,7 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             positions[idx * 3 + 2] * config::G_DX_INV - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
+        #pragma unroll
         for (int i = 0; i < 3; ++i) {
             weights[threadIdx.x][0][i] = T(0.5) * (T(1.5) - fx[i]) * (T(1.5) - fx[i]);
             weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
@@ -705,8 +715,11 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             new_C[i] = 0;
         }
 
+        #pragma unroll
         for (int i = 0; i < 3; ++i) {
+            #pragma unroll
             for (int j = 0; j < 3; ++j) {
+                #pragma unroll
                 for (int k = 0; k < 3; ++k) {
                     T xi_minus_xp[3] = {
                         (i - fx[0]),

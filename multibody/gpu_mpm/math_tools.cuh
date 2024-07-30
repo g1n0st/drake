@@ -12,9 +12,12 @@
 template <int n, int m, int l, class T>
 inline __host__ __device__ void matmul(const T* a, const T* b, T* c)
 {
+    #pragma unroll
     for (int i = 0; i < n; ++i)
+        #pragma unroll
         for (int k = 0; k < l; ++k) {
             c[i * l + k] = 0;
+            #pragma unroll
             for (int j = 0; j < m; ++j)
                 c[i * l + k] += a[i * m + j] * b[j * l + k];
         }
@@ -24,9 +27,12 @@ inline __host__ __device__ void matmul(const T* a, const T* b, T* c)
 template <int n, int m, int l, class T>
 inline __host__ __device__ void matmulT(const T* a, const T* b, T* c)
 {
+    #pragma unroll
     for (int i = 0; i < n; ++i)
+        #pragma unroll
         for (int k = 0; k < l; ++k) {
             c[i * l + k] = 0;
+            #pragma unroll
             for (int j = 0; j < m; ++j)
                 c[i * l + k] += a[i * m + j] * b[k * m + j];
         }
@@ -35,7 +41,9 @@ inline __host__ __device__ void matmulT(const T* a, const T* b, T* c)
 template <int n, int m, class T>
 inline __host__ __device__ void transpose(const T* a, T* aT)
 {
+    #pragma unroll
     for (int i = 0; i < n; ++i)
+        #pragma unroll
         for (int j = 0; j < m; ++j)
             aT[j * n + i] = a[i * m + j];
 }
@@ -44,6 +52,7 @@ template <int n, class T>
 inline __host__ __device__ T norm_sqr(const T* x)
 {
     T result = 0;
+    #pragma unroll
     for (int i = 0; i < n; ++i)
         result += x[i] * x[i];
     return result;
@@ -58,6 +67,7 @@ template <int n, class T>
 inline __host__ __device__ T distance(const T* x, const T* y)
 {
     T xy[n];
+    #pragma unroll
     for (int i = 0; i < n; ++i) 
         xy[i] = x[i] - y[i];
     return sqrt(norm_sqr<n>(xy));
@@ -67,6 +77,7 @@ template <int n, class T>
 inline __host__ __device__ void normalize(T* v)
 {
     T norm_inv = 1. / norm<n>(v);
+    #pragma unroll
     for (int i = 0; i < n; ++i)
         v[i] *= norm_inv;
 }
@@ -75,6 +86,7 @@ template <int n, class T>
 inline __host__ __device__ T dot(const T* x, const T* y)
 {
     T result = 0;
+    #pragma unroll
     for (int i = 0; i < n; ++i)
         result += x[i] * y[i];
     return result;
@@ -91,7 +103,9 @@ inline __host__ __device__ void cross_product3(const T* v1, const T* v2, T* resu
 template <int n, class T>
 inline __host__ __device__ void outer_product(T* a, T* b, T* ab)
 {
+    #pragma unroll
     for (int i = 0; i < n; ++i)
+        #pragma unroll
         for (int j = 0; j < n; ++j)
             ab[i * n + j] = a[i] * b[j];
 }
@@ -200,7 +214,9 @@ inline __host__ __device__ void dsytrd3(const T *A, T *Q, T *d, T *e) {
 
 template<class T>
 inline __host__ __device__ void dsyevq3(const T *A, const T *Q0, const T *w0, T *Q, T *w) {
+    #pragma unroll
     for (int i = 0; i < 9; i++) Q[i] = Q0[i];
+    #pragma unroll
     for (int i = 0; i < 3; i++) w[i] = w0[i];
     T e[3] = {0.0, 0.0, 0.0};
     dsytrd3(A, Q, w, e);
@@ -318,6 +334,7 @@ inline __host__ __device__ void sym_eig3x3(const T *A, T *eigenvalues, T *Q) {
         u = t * t;
     }
     T error = 256.0 * 2.2204460492503131e-16 * u * u;
+    #pragma unroll
     for (int i = 0; i < 9; i++) Q[i] = 0;
     T Q_final[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -362,7 +379,9 @@ inline __host__ __device__ void sym_eig3x3(const T *A, T *eigenvalues, T *Q) {
     }
 
     if (early_ret) {
+        #pragma unroll
         for (int i = 0; i < 9; i++) Q[i] = Q_final[i];
+        #pragma unroll
         for (int i = 0; i < 3; i++) eigenvalues[i] = eigenvalues_final[i];
     }
 
@@ -372,8 +391,11 @@ inline __host__ __device__ void sym_eig3x3(const T *A, T *eigenvalues, T *Q) {
         eigenvalues[1] = tmp;
 
         T tmp2[3];
+        #pragma unroll
         for (int i = 0; i < 3; i++) tmp2[i] = Q[i*3+0];
+        #pragma unroll
         for (int i = 0; i < 3; i++) Q[i*3+0] = Q[i*3+1];
+        #pragma unroll
         for (int i = 0; i < 3; i++) Q[i*3+1] = tmp2[i];
     }
 
@@ -383,8 +405,11 @@ inline __host__ __device__ void sym_eig3x3(const T *A, T *eigenvalues, T *Q) {
         eigenvalues[2] = tmp;
 
         T tmp2[3];
+        #pragma unroll
         for (int i = 0; i < 3; i++) tmp2[i] = Q[i*3+0];
+        #pragma unroll
         for (int i = 0; i < 3; i++) Q[i*3+0] = Q[i*3+2];
+        #pragma unroll
         for (int i = 0; i < 3; i++) Q[i*3+2] = tmp2[i];
     }
 
@@ -394,14 +419,18 @@ inline __host__ __device__ void sym_eig3x3(const T *A, T *eigenvalues, T *Q) {
         eigenvalues[2] = tmp;
 
         T tmp2[3];
+        #pragma unroll
         for (int i = 0; i < 3; i++) tmp2[i] = Q[i*3+1];
+        #pragma unroll
         for (int i = 0; i < 3; i++) Q[i*3+1] = Q[i*3+2];
+        #pragma unroll
         for (int i = 0; i < 3; i++) Q[i*3+2] = tmp2[i];
     }
 }
 
 template<class T>
 inline __host__ __device__ void svd3x3(const T *A, T *U, T *sigma, T *V) {
+    #pragma unroll
     for (int i = 0; i < 9; i++) sigma[i] = 0;
     SifakisSVD::svd(A[0], A[1], A[2], A[3], A[4], A[5], A[6], A[7], A[8],
                     U[0], U[1], U[2], U[3], U[4], U[5], U[6], U[7], U[8],
@@ -413,10 +442,12 @@ template<class T>
 inline __host__ __device__ void ssvd3x3(const T *A, T *U, T *sigma, T *V) {
     svd3x3(A, U, sigma, V);
     if (determinant3(U) < 0) {
+        #pragma unroll
         for (int i = 0; i < 3; i++) U[i*3+2] *= -1.;
         sigma[2*3+2] = -sigma[2*3+2];
     }
     if (determinant3(V) < 0) {
+        #pragma unroll
         for (int i = 0; i < 3; i++) V[i*3+2] *= -1.;
         sigma[2*3+2] = -sigma[2*3+2];
     }
