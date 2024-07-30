@@ -89,9 +89,13 @@ namespace config {
 	constexpr int G_PARTICLE_NUM_PER_BLOCK = (MAX_PARTICLES_IN_CELL * (1 << (BLOCK_BITS * 3)));
 
 	// material parameters
-	constexpr float YOUNGS_MODULUS = 1e5f;
+	constexpr float YOUNGS_MODULUS = 400.f;
 	constexpr float POISSON_RATIO  = 0.3f;
-	constexpr float DENSITY = 2000.0f;
+	constexpr float DENSITY = 2.0f;
+	constexpr float GAMMA = 0.f;
+	constexpr float K = 100.f;
+	constexpr float V = 0.8f;
+	constexpr float c_F = 0.f;
 	constexpr float SDF_FRICTION = 0.f;
 
 	// Lame parameters
