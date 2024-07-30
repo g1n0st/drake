@@ -475,7 +475,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * volumes[idx] * config::G_D_INV) * stress[i] + C[i] * mass;
+            B[i] = (-dt * config::G_D_INV) * stress[i] + C[i] * mass;
         }
 
         T val[4];
