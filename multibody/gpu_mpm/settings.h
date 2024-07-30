@@ -68,7 +68,6 @@ namespace config {
 	constexpr float G_DX				 = 1.f / DXINV;
 	constexpr float G_DX_INV			 = DXINV;
 	constexpr float G_D_INV				 = 4.f * DXINV * DXINV;
-	constexpr float P_VOLUME = 1.f;
 
 	constexpr int G_BLOCK_BITS			 = BLOCK_BITS;
 	constexpr int G_BLOCK_SIZE			 = (1 << BLOCK_BITS);

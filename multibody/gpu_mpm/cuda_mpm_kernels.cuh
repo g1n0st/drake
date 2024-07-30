@@ -75,10 +75,131 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
     T J = determinant2(F);
     T Finv[4];
     inverse2(F, Finv);
-    dphi_dF[0] = 2. * config::MU * (F[0] - R[0]) + config::LAMBDA * (J - 1.) * J * Finv[0];
-    dphi_dF[1] = 2. * config::MU * (F[1] - R[1]) + config::LAMBDA * (J - 1.) * J * Finv[2];
-    dphi_dF[2] = 2. * config::MU * (F[2] - R[2]) + config::LAMBDA * (J - 1.) * J * Finv[1];
-    dphi_dF[3] = 2. * config::MU * (F[3] - R[3]) + config::LAMBDA * (J - 1.) * J * Finv[3];
+    dphi_dF[0] = T(2.) * config::MU * (F[0] - R[0]) + config::LAMBDA * (J - T(1.)) * J * Finv[0];
+    dphi_dF[1] = T(2.) * config::MU * (F[1] - R[1]) + config::LAMBDA * (J - T(1.)) * J * Finv[2];
+    dphi_dF[2] = T(2.) * config::MU * (F[2] - R[2]) + config::LAMBDA * (J - T(1.)) * J * Finv[1];
+    dphi_dF[3] = T(2.) * config::MU * (F[3] - R[3]) + config::LAMBDA * (J - T(1.)) * J * Finv[3];
+}
+
+template<typename T>
+__device__ __host__
+inline void compute_dphi_dF(const T* F, T* dphi_dF) {
+    // TODO (changyu): optimize local variable usage
+    T Q[9], R[9];
+    // 0, 1, 2
+    // 3, 4, 5
+    // 6, 7, 8
+    givens_QR<3, 3, T>(F, Q, R);
+    T R_hat[4] = {
+        R[0], R[1],
+        R[3], R[4]
+    };
+    T dphi_dF_2x2[4];
+    fixed_corotated_PK1_2D(R_hat, dphi_dF_2x2);
+    T P_hat[9] = {
+        dphi_dF_2x2[0], dphi_dF_2x2[1], 0,
+        dphi_dF_2x2[2], dphi_dF_2x2[3], 0,
+        0             ,              0, 0
+    };
+    T P_plane[9];
+    matmul<3, 3, 3, T>(Q, P_hat, P_plane);
+
+    T rr = R[2] * R[2] + R[5] * R[5];
+    T g = config::GAMMA * rr;
+    T gp = config::GAMMA;
+    T fp = 0;
+    if (R[8] < T(1.)) {
+        fp = -config::K * (T(1.) - R[8]) * (T(1.) - R[8]);
+    }
+
+    T A[9];
+    A[0] = gp * R[2] * R[2];
+    A[1] = gp * R[2] * R[5];
+    A[2] = gp * R[8] * R[2];
+    A[4] = gp * R[5] * R[5];
+    A[5] = gp * R[8] * R[8];
+    A[8] = fp * R[8];
+    A[3] = A[1];
+    A[6] = A[2];
+    A[7] = A[5];
+
+    T P_nonplane[9];
+    T Rinv[9], QA[9];
+    inverse3(R, Rinv);
+    matmul<3, 3, 3, T>(Q, A, QA);
+    matmulT<3, 3, 3, T>(QA, Rinv, P_nonplane);
+    
+    dphi_dF[0] = P_plane[0] + P_nonplane[0];
+    dphi_dF[1] = P_plane[1] + P_nonplane[1];
+    dphi_dF[2] = P_plane[2] + P_nonplane[2];
+    dphi_dF[3] = P_plane[3] + P_nonplane[3];
+    dphi_dF[4] = P_plane[4] + P_nonplane[4];
+    dphi_dF[5] = P_plane[5] + P_nonplane[5];
+    dphi_dF[6] = P_plane[6] + P_nonplane[6];
+    dphi_dF[7] = P_plane[7] + P_nonplane[7];
+    dphi_dF[8] = P_plane[8] + P_nonplane[8];
+}
+
+template<typename T>
+__device__ __host__
+inline void project_strain(T* F) {
+    T Q[9], R[9];
+    givens_QR<3, 3, T>(F, Q, R);
+
+    // return mapping
+    if (config::GAMMA == T(0.)) { // CASE 1: no friction
+        R[8] = min(R[8], T(1.));
+        R[2] = T(0.);
+        R[5] = T(0.);
+    }
+    else if (R[8] > T(1.)) {
+        R[8] = min(R[8], T(1.));
+        R[2] = T(0.);
+        R[5] = T(0.);
+    }
+    else if (R[8] <= T(0.)) { // inversion
+        R[2] = T(0.);
+        R[5] = T(0.);
+        R[8] = max(R[8], T(-1.));
+    }
+    else {
+        T rr = R[2] * R[2] + R[5] * R[5];
+        const T gamma_over_k = config::GAMMA / config::K;
+        T zz = config::c_F * (R[8] - T(1.)) * (R[8] - T(1.));
+        T f = (gamma_over_k * gamma_over_k) * rr - (zz * zz);
+        if (f > T(0.)) {
+            T c = zz / (gamma_over_k * sqrt(rr));
+            R[2] *= c;
+            R[5] *= c;
+        }
+    }
+
+    matmul<3, 3, 3, T>(Q, R, F);
+}
+
+template<typename T>
+__global__ void calc_fem_state_and_force_kernel(
+    const size_t n_faces,
+    const int* indices,
+    const T* volumes,
+    const T* affine_matrices,
+    T* positions, 
+    T* velocities,
+    T* deformation_gradients,
+    T* forces, 
+    T* taus,
+    const T dt) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < n_faces) {
+        int v0 = indices[idx * 3 + 0];
+        int v1 = indices[idx * 3 + 1];
+        int v2 = indices[idx * 3 + 2];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / 3.;
+            velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / 3.;
+        }
+    }
 }
 
 __device__ __host__
