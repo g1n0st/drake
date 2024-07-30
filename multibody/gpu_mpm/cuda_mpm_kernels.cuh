@@ -71,7 +71,7 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
     T U[4], sig[4], V[4];
     svd2x2(F, U, sig, V);
     T R[4];
-    matmulT<3, 3, 3, T>(U, V, R);
+    matmulT<2, 2, 2, T>(U, V, R);
     T J = determinant2(F);
     T Finv[4];
     inverse2(F, Finv);
