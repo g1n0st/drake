@@ -79,7 +79,7 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
     CUDA_SAFE_CALL(cudaMalloc(&sort_buffer_, sizeof(unsigned int) * sort_buffer_size_));
 
     CUDA_SAFE_CALL((
-        initialize_fem_state<<<
+        initialize_fem_state_kernel<<<
         (this->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (this->n_faces(), this->indices(), this->current_positions(), this->current_velocities(), this->current_volumes(),
          this->deformation_gradients(), this->Dm_inverses())

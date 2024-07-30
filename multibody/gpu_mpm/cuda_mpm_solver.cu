@@ -21,7 +21,7 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
     // "In our experiments (Fig. 6), when the number of particles is small, i.e., 55.3k, the rebuild-mapping
     // itself is the bottleneck, and our free zone scheme alone brings 3.7× acceleration."
     CUDA_SAFE_CALL((
-        compute_base_cell_node_index<<<
+        compute_base_cell_node_index_kernel<<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (state->n_particles(), state->current_positions(), state->current_sort_keys(), state->current_sort_ids())
         ));
@@ -55,7 +55,7 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
                        /*num_bit = */ std::min((config::G_DOMAIN_BITS * 3), 16))
             ));
         CUDA_SAFE_CALL((
-            compute_sorted_state<<<
+            compute_sorted_state_kernel<<<
             (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
             (state->n_particles(), 
             state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
