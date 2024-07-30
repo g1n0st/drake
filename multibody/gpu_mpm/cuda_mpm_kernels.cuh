@@ -65,6 +65,22 @@ __global__ void initialize_fem_state(
     }
 }
 
+template<typename T>
+__device__ __host__
+inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
+    T U[4], sig[4], V[4];
+    svd2x2(F, U, sig, V);
+    T R[4];
+    matmulT<3, 3, 3, T>(U, V, R);
+    T J = determinant2(F);
+    T Finv[4];
+    inverse2(F, Finv);
+    dphi_dF[0] = 2. * config::MU * (F[0] - R[0]) + config::LAMBDA * (J - 1.) * J * Finv[0];
+    dphi_dF[1] = 2. * config::MU * (F[1] - R[1]) + config::LAMBDA * (J - 1.) * J * Finv[2];
+    dphi_dF[2] = 2. * config::MU * (F[2] - R[2]) + config::LAMBDA * (J - 1.) * J * Finv[1];
+    dphi_dF[3] = 2. * config::MU * (F[3] - R[3]) + config::LAMBDA * (J - 1.) * J * Finv[3];
+}
+
 __device__ __host__
 inline std::uint32_t contract_bits(std::uint32_t v) noexcept {
     v &= 0x09249249u;
