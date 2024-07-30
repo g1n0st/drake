@@ -26,8 +26,8 @@ __global__ void initialize_fem_state_kernel(
         int v2 = indices[idx * 3 + 2];
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
-            positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / 3.;
-            velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / 3.;
+            positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / T(3.);
+            velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / T(3.);
         }
 
         T D0[3], D1[3];
@@ -200,24 +200,24 @@ __global__ void calc_fem_state_and_force_kernel(
         int v2 = indices[idx * 3 + 2];
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
-            positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / 3.;
-            velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / 3.;
+            positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / T(3.);
+            velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / T(3.);
         }
 
         T* F = &deformation_gradients[idx * 9];
         const T* C = &affine_matrices[idx * 9];
         T ctF[9]; // cotangent F
-        ctF[0] = (1.0 + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
-        ctF[1] = (1.0 + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
-        ctF[2] = (1.0 + dt * C[0]) * F[2] + dt * C[1] * F[5] + dt * C[2] * F[8];
+        ctF[0] = (T(1.0) + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
+        ctF[1] = (T(1.0) + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
+        ctF[2] = (T(1.0) + dt * C[0]) * F[2] + dt * C[1] * F[5] + dt * C[2] * F[8];
 
-        ctF[3] = dt * C[3] * F[0] + (1.0 + dt * C[4]) * F[3] + dt * C[5] * F[6];
-        ctF[4] = dt * C[3] * F[1] + (1.0 + dt * C[4]) * F[4] + dt * C[5] * F[7];
-        ctF[5] = dt * C[3] * F[2] + (1.0 + dt * C[4]) * F[5] + dt * C[5] * F[8];
+        ctF[3] = dt * C[3] * F[0] + (T(1.0) + dt * C[4]) * F[3] + dt * C[5] * F[6];
+        ctF[4] = dt * C[3] * F[1] + (T(1.0) + dt * C[4]) * F[4] + dt * C[5] * F[7];
+        ctF[5] = dt * C[3] * F[2] + (T(1.0) + dt * C[4]) * F[5] + dt * C[5] * F[8];
 
-        ctF[6] = dt * C[6] * F[0] + dt * C[7] * F[3] + (1.0 + dt * C[8]) * F[6];
-        ctF[7] = dt * C[6] * F[1] + dt * C[7] * F[4] + (1.0 + dt * C[8]) * F[7];
-        ctF[8] = dt * C[6] * F[2] + dt * C[7] * F[5] + (1.0 + dt * C[8]) * F[8];
+        ctF[6] = dt * C[6] * F[0] + dt * C[7] * F[3] + (T(1.0) + dt * C[8]) * F[6];
+        ctF[7] = dt * C[6] * F[1] + dt * C[7] * F[4] + (T(1.0) + dt * C[8]) * F[7];
+        ctF[8] = dt * C[6] * F[2] + dt * C[7] * F[5] + (T(1.0) + dt * C[8]) * F[8];
 
         project_strain(ctF);
 
@@ -361,9 +361,9 @@ __global__ void compute_base_cell_node_index_kernel(const size_t n_particles, co
         T x = positions[idx * 3 + 0];
         T y = positions[idx * 3 + 1];
         T z = positions[idx * 3 + 2];
-        uint32_t xi = static_cast<uint32_t>(x * config::G_DX_INV - 0.5);
-        uint32_t yi = static_cast<uint32_t>(y * config::G_DX_INV - 0.5);
-        uint32_t zi = static_cast<uint32_t>(z * config::G_DX_INV - 0.5);
+        uint32_t xi = static_cast<uint32_t>(x * config::G_DX_INV - T(0.5));
+        uint32_t yi = static_cast<uint32_t>(y * config::G_DX_INV - T(0.5));
+        uint32_t zi = static_cast<uint32_t>(z * config::G_DX_INV - T(0.5));
         /*uint3 inv_xyz = inverse_cell_index(cell_index(xi, yi, zi));
         if (xi != inv_xyz.x || yi != inv_xyz.y || zi != inv_xyz.z) {
             printf("%u,%u, %u,%u %u,%u\n", xi, inv_xyz.x, yi, inv_xyz.y, zi, inv_xyz.z);
@@ -445,9 +445,9 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - 0.5),
-            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV - 0.5),
-            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV - 0.5)
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV - T(0.5))
         };
         T fx[3] = {
             positions[idx * 3 + 0] * config::G_DX_INV - static_cast<T>(base[0]),
@@ -456,9 +456,9 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         for (int i = 0; i < 3; ++i) {
-            weights[threadIdx.x][0][i] = 0.5 * (1.5 - fx[i]) * (1.5 - fx[i]);
-            weights[threadIdx.x][1][i] = 0.75 - (fx[i] - 1.0) * (fx[i] - 1.0);
-            weights[threadIdx.x][2][i] = 0.5 * (fx[i] - 0.5) * (fx[i] - 0.5);
+            weights[threadIdx.x][0][i] = T(0.5) * (T(1.5) - fx[i]) * (T(1.5) - fx[i]);
+            weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
+            weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
         
         const T* C = &affine_matrices[idx * 9];
@@ -594,7 +594,7 @@ __global__ void update_grid_kernel(
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
-        if (g_masses[cell_idx] > 0.) {
+        if (g_masses[cell_idx] > T(0.)) {
             // printf("m=%lf mv=(%lf %lf %lf)\n", g_masses[cell_idx], g_momentum[cell_idx * 3 + 0], g_momentum[cell_idx * 3 + 1], g_momentum[cell_idx * 3 + 2]);
             g_momentum[cell_idx * 3 + 0] /= g_masses[cell_idx];
             g_momentum[cell_idx * 3 + 1] /= g_masses[cell_idx];
@@ -618,9 +618,9 @@ __global__ void update_grid_kernel(
                     (xyz.z + T(.5)) * config::G_DX
                 };
                 
-                const T sphere_radius = 0.08;
-                const T sphere_pos[3] = { 0.5, 0.5, 0.5 };
-                const T sphere_vel[3] = { 0., 0., 0. };
+                const T sphere_radius = T(0.08);
+                const T sphere_pos[3] = { T(0.5), T(0.5), T(0.5) };
+                const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
                 const bool fixed = true;
 
                 T dist = distance<3>(pos, sphere_pos) - sphere_radius;
@@ -633,12 +633,12 @@ __global__ void update_grid_kernel(
                 bool inside = false;
                 T dotnv = T(0.);
                 T diff_vel[3] = { T(0.), T(0.), T(0.) };
-                if (dist < 0.) {
+                if (dist < T(0.)) {
                     diff_vel[0] = sphere_vel[0] - g_momentum[cell_idx * 3 + 0];
                     diff_vel[1] = sphere_vel[1] - g_momentum[cell_idx * 3 + 1];
                     diff_vel[2] = sphere_vel[2] - g_momentum[cell_idx * 3 + 2];
                     dotnv = dot<3>(normal, diff_vel);
-                    if (dotnv > 0. || fixed) {
+                    if (dotnv > T(0.) || fixed) {
                         inside = true;
                     }
                 }
@@ -646,9 +646,9 @@ __global__ void update_grid_kernel(
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
                 if (inside) {
                     if (fixed) {
-                        g_momentum[cell_idx * 3 + 0] = 0.;
-                        g_momentum[cell_idx * 3 + 1] = 0.;
-                        g_momentum[cell_idx * 3 + 2] = 0.;
+                        g_momentum[cell_idx * 3 + 0] = T(0.);
+                        g_momentum[cell_idx * 3 + 1] = T(0.);
+                        g_momentum[cell_idx * 3 + 2] = T(0.);
                     } else {
                         T dotnv_frac = dotnv * (1. - config::SDF_FRICTION);
                         g_momentum[cell_idx * 3 + 0] += diff_vel[0] * config::SDF_FRICTION + normal[0] * dotnv_frac;
@@ -677,9 +677,9 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - 0.5),
-            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV - 0.5),
-            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV - 0.5)
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV - T(0.5))
         };
         T fx[3] = {
             positions[idx * 3 + 0] * config::G_DX_INV - static_cast<T>(base[0]),
@@ -688,9 +688,9 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         for (int i = 0; i < 3; ++i) {
-            weights[threadIdx.x][0][i] = 0.5 * (1.5 - fx[i]) * (1.5 - fx[i]);
-            weights[threadIdx.x][1][i] = 0.75 - (fx[i] - 1.0) * (fx[i] - 1.0);
-            weights[threadIdx.x][2][i] = 0.5 * (fx[i] - 0.5) * (fx[i] - 0.5);
+            weights[threadIdx.x][0][i] = T(0.5) * (T(1.5) - fx[i]) * (T(1.5) - fx[i]);
+            weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
+            weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
         T new_v[3];
