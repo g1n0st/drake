@@ -595,20 +595,21 @@ __global__ void update_grid_kernel(
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
         if (g_masses[cell_idx] > T(0.)) {
-            // printf("m=%lf mv=(%lf %lf %lf)\n", g_masses[cell_idx], g_momentum[cell_idx * 3 + 0], g_momentum[cell_idx * 3 + 1], g_momentum[cell_idx * 3 + 2]);
-            g_momentum[cell_idx * 3 + 0] /= g_masses[cell_idx];
-            g_momentum[cell_idx * 3 + 1] /= g_masses[cell_idx];
-            g_momentum[cell_idx * 3 + 2] /= g_masses[cell_idx];
+            T *g_vel = &g_momentum[cell_idx * 3];
+            // printf("m=%lf mv=(%lf %lf %lf)\n", g_masses[cell_idx], g_vel[0], g_vel[1], g_vel[2]);
+            g_vel[0] /= g_masses[cell_idx];
+            g_vel[1] /= g_masses[cell_idx];
+            g_vel[2] /= g_masses[cell_idx];
 
             // apply boundary condition
             const int boundary_condition  = static_cast<int>(std::floor(config::G_BOUNDARY_CONDITION));
             uint3 xyz = inverse_cell_index(cell_idx);
-            if (xyz.x < boundary_condition && g_momentum[cell_idx * 3 + 0] < 0) g_momentum[cell_idx * 3 + 0] = 0;
-            if (xyz.x >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[cell_idx * 3 + 0] > 0) g_momentum[cell_idx * 3 + 0] = 0;
-            if (xyz.y < boundary_condition && g_momentum[cell_idx * 3 + 1] < 0) g_momentum[cell_idx * 3 + 1] = 0;
-            if (xyz.y >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[cell_idx * 3 + 1] > 0) g_momentum[cell_idx * 3 + 1] = 0;
-            if (xyz.z < boundary_condition && g_momentum[cell_idx * 3 + 2] < 0) g_momentum[cell_idx * 3 + 2] = 0;
-            if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[cell_idx * 3 + 2] > 0) g_momentum[cell_idx * 3 + 2] = 0;
+            if (xyz.x < boundary_condition && g_vel[0] < 0) g_vel[0] = 0;
+            if (xyz.x >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[0] > 0) g_vel[0] = 0;
+            if (xyz.y < boundary_condition && g_vel[1] < 0) g_vel[1] = 0;
+            if (xyz.y >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[1] > 0) g_vel[1] = 0;
+            if (xyz.z < boundary_condition && g_vel[2] < 0) g_vel[2] = 0;
+            if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[2] > 0) g_vel[2] = 0;
         
             // TODO, NOTE (changyu): ad-hoc hack for a sphere sdf
             {
@@ -634,9 +635,9 @@ __global__ void update_grid_kernel(
                 T dotnv = T(0.);
                 T diff_vel[3] = { T(0.), T(0.), T(0.) };
                 if (dist < T(0.)) {
-                    diff_vel[0] = sphere_vel[0] - g_momentum[cell_idx * 3 + 0];
-                    diff_vel[1] = sphere_vel[1] - g_momentum[cell_idx * 3 + 1];
-                    diff_vel[2] = sphere_vel[2] - g_momentum[cell_idx * 3 + 2];
+                    diff_vel[0] = sphere_vel[0] - g_vel[0];
+                    diff_vel[1] = sphere_vel[1] - g_vel[1];
+                    diff_vel[2] = sphere_vel[2] - g_vel[2];
                     dotnv = dot<3>(normal, diff_vel);
                     if (dotnv > T(0.) || fixed) {
                         inside = true;
@@ -646,14 +647,14 @@ __global__ void update_grid_kernel(
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
                 if (inside) {
                     if (fixed) {
-                        g_momentum[cell_idx * 3 + 0] = T(0.);
-                        g_momentum[cell_idx * 3 + 1] = T(0.);
-                        g_momentum[cell_idx * 3 + 2] = T(0.);
+                        g_vel[0] = T(0.);
+                        g_vel[1] = T(0.);
+                        g_vel[2] = T(0.);
                     } else {
                         T dotnv_frac = dotnv * (1. - config::SDF_FRICTION);
-                        g_momentum[cell_idx * 3 + 0] += diff_vel[0] * config::SDF_FRICTION + normal[0] * dotnv_frac;
-                        g_momentum[cell_idx * 3 + 1] += diff_vel[1] * config::SDF_FRICTION + normal[1] * dotnv_frac;
-                        g_momentum[cell_idx * 3 + 2] += diff_vel[2] * config::SDF_FRICTION + normal[2] * dotnv_frac;
+                        g_vel[0] += diff_vel[0] * config::SDF_FRICTION + normal[0] * dotnv_frac;
+                        g_vel[1] += diff_vel[1] * config::SDF_FRICTION + normal[1] * dotnv_frac;
+                        g_vel[2] += diff_vel[2] * config::SDF_FRICTION + normal[2] * dotnv_frac;
                     }
                 }
             }
