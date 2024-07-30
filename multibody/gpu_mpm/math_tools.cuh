@@ -425,10 +425,13 @@ inline __host__ __device__ void ssvd3x3(const T *A, T *U, T *sigma, T *V) {
 template<int n, int m, class T>
 inline __host__ __device__ void givens_QR(const T *A, T *Q, T *R) {
     #pragma unroll
-    for (int i = 0; i < 9; i++) R[i] = A[i]; // R [n, m]
-    Q[0] = T(1); Q[1] = T(0); Q[2] = T(0);   // Q [n, n]
-    Q[3] = T(0); Q[4] = T(1); Q[5] = T(0);
-    Q[6] = T(0); Q[7] = T(0); Q[8] = T(1);
+    for (int i = 0; i < n * m; ++i) R[i] = A[i]; // R [n, m]
+    #pragma unroll
+    for (int i = 0; i < n * n; ++i) Q[i] = T(0.); // Q [n, n]
+    #pragma unroll
+    for (int i = 0; i < n; ++i) {
+        Q[i * n + i] = T(1.);
+    }
     
     #pragma unroll
     for (int j = 0; j < m; ++j) {
