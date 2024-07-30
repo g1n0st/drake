@@ -69,6 +69,17 @@ class ConstitutiveModel {
     derived().CalcFirstPiolaStressImpl(data, P);
   }
 
+  Matrix3<T> CalcFirstPiolaStress(const Matrix3<T>& F) const {
+    // TODO(xuchenhan-tri): Make the previous time step deformation gradient
+    // optional and allow direct construction of non-identity deformation
+    // gradient.
+    Data data;
+    data.UpdateData(F, F);
+    Matrix3<T> P;
+    CalcFirstPiolaStress(data, &P);
+    return P;
+  }
+
   /* Calculates the derivative of first Piola stress with respect to the
    deformation gradient, given the deformation gradient related quantities
    contained in `data`. The stress derivative dPᵢⱼ/dFₖₗ is a 4-th order tensor

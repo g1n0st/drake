@@ -46,6 +46,7 @@ drake_cc_library(
     ],
     deps = [
         "//common:essential",
+        "//multibody/fem",
     ],
 )
 
@@ -96,6 +97,27 @@ drake_cc_library(
     ],
 )
 
+cc_library(
+    name = "mpm_driver",
+    srcs = [
+        "mpm_driver.cc",
+    ],
+    hdrs = [
+        "mpm_driver.h",
+    ],
+    deps = [
+        ":particles",
+        ":poisson_disk",
+        ":simd_scalar",
+        ":sparse_grid",
+        ":transfer",
+        "//common:essential",
+        "//common:parallelism",
+        "//geometry",
+        "//math:geometric_transform",
+    ],
+)
+
 # This setting governs when we'll compile with Intel AVX2 and FMA enabled.
 # Compiling for Broadwell (or later) gets those instructions.
 #
@@ -127,17 +149,19 @@ drake_cc_library(
 )
 
 drake_cc_googletest(
-    name = "sparse_grid_test",
+    name = "math_test",
     deps = [
-        ":sparse_grid",
-        "//common/test_utilities:eigen_matrix_compare",
+        ":math",
     ],
 )
 
 drake_cc_googletest(
-    name = "math_test",
+    name = "mpm_driver_test",
+    srcs = [
+        "test/mpm_driver_test.cc",
+    ],
     deps = [
-        ":math",
+        ":mpm_driver",
     ],
 )
 
@@ -154,6 +178,14 @@ drake_cc_googletest(
     copts = ["-march=native"],
     deps = [
         ":simd_scalar",
+    ],
+)
+
+drake_cc_googletest(
+    name = "sparse_grid_test",
+    deps = [
+        ":sparse_grid",
+        "//common/test_utilities:eigen_matrix_compare",
     ],
 )
 

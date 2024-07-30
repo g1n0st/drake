@@ -70,6 +70,7 @@ void LinearConstitutiveModel<T>::CalcFirstPiolaStressDerivativeImpl(
 }
 
 template class LinearConstitutiveModel<double>;
+template class LinearConstitutiveModel<float>;
 template class LinearConstitutiveModel<AutoDiffXd>;
 
 }  // namespace internal

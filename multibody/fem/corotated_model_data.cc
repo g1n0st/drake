@@ -25,6 +25,7 @@ void CorotatedModelData<T>::UpdateFromDeformationGradient() {
 }
 
 template class CorotatedModelData<double>;
+template class CorotatedModelData<float>;
 template class CorotatedModelData<AutoDiffXd>;
 
 }  // namespace internal

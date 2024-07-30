@@ -25,6 +25,7 @@ void LinearConstitutiveModelData<T>::UpdateFromDeformationGradient() {
 }
 
 template class LinearConstitutiveModelData<double>;
+template class LinearConstitutiveModelData<float>;
 template class LinearConstitutiveModelData<AutoDiffXd>;
 
 }  // namespace internal

@@ -1,8 +1,12 @@
 #pragma once
 
+#include <variant>
 #include <vector>
 
 #include "drake/common/eigen_types.h"
+#include "drake/multibody/fem/corotated_model.h"
+#include "drake/multibody/fem/linear_constitutive_model.h"
+#include "drake/multibody/fem/linear_corotated_model.h"
 #include "drake/multibody/mpm/math.h"
 
 namespace drake {
@@ -25,9 +29,16 @@ struct Particle {
   Matrix3<T>& tau_v0;
 };
 
+template <typename T>
+using ConstitutiveModelVariant =
+    std::variant<fem::internal::CorotatedModel<T>,
+                 fem::internal::LinearCorotatedModel<T>,
+                 fem::internal::LinearConstitutiveModel<T>>;
+
 /* The collection of all physical attributes we care about for all particles.
  All quantities are measured and expressed in the world frame (when
- applicable). */
+ applicable).
+ @tparam double or float. */
 template <typename T>
 struct ParticleData {
   Particle<T> particle(int i) {
@@ -40,7 +51,13 @@ struct ParticleData {
   std::vector<Matrix3<T>> F;  // deformation gradient
   std::vector<Matrix3<T>> C;  // affine velocity field
   std::vector<Matrix3<T>>
-      tau_v0;  // Kirchhoff stress scaled by reference volume
+      tau_v0;             // Kirchhoff stress scaled by reference volume
+  std::vector<T> volume;  // reference volume
+
+  std::vector<ConstitutiveModelVariant<T>> constitutive_models;
+  std::vector<std::pair<int, int>>
+      materials;  // Suppose materials[k] = (i, j), then particles with indices
+                  // in [i, j) have the same material: constitutive_models[k].
 };
 
 template <typename T>

@@ -102,6 +102,7 @@ void LinearCorotatedModel<T>::CalcFirstPiolaStressDerivativeImpl(
 }
 
 template class LinearCorotatedModel<double>;
+template class LinearCorotatedModel<float>;
 template class LinearCorotatedModel<AutoDiffXd>;
 
 }  // namespace internal
