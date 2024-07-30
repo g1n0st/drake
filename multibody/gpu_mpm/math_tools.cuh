@@ -505,7 +505,7 @@ inline __host__ __device__ void polar_decompose2x2(const T *A, T *U, T *P) {
         
         // here det(B) != 0 if A is not the zero matrix
         T adetB = abs(determinant2(B));
-        T k = 1. / sqrt(adetB);
+        T k = T(1.) / sqrt(adetB);
         U[0] = B[0] * k;
         U[1] = B[1] * k;
         U[2] = B[2] * k;
@@ -556,7 +556,7 @@ inline __host__ __device__ void svd2x2(const T *A, T *U, T *sigma, T *V) {
         V[0] = c;
         V[1] = s;
         V[2] = -s;
-        V[3] = -c;
+        V[3] = c;
     }
     matmul<2, 2, 2, T>(R, V, U);
     sigma[0] = s1;
