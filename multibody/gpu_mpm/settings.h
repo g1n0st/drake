@@ -92,6 +92,7 @@ namespace config {
 	constexpr float YOUNGS_MODULUS = 1e5f;
 	constexpr float POISSON_RATIO  = 0.3f;
 	constexpr float DENSITY = 2000.0f;
+	constexpr float SDF_FRICTION = 0.f;
 
 	// Lame parameters
 	constexpr float MU = YOUNGS_MODULUS / (2 * (1 + POISSON_RATIO));

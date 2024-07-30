@@ -389,6 +389,54 @@ __global__ void update_grid_kernel(
             if (xyz.y >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[cell_idx * 3 + 1] > 0) g_momentum[cell_idx * 3 + 1] = 0;
             if (xyz.z < boundary_condition && g_momentum[cell_idx * 3 + 2] < 0) g_momentum[cell_idx * 3 + 2] = 0;
             if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_momentum[cell_idx * 3 + 2] > 0) g_momentum[cell_idx * 3 + 2] = 0;
+        
+            // TODO, NOTE (changyu): ad-hoc hack for a sphere sdf
+            {
+                T pos[3] = {
+                    (xyz.x + T(.5)) * config::G_DX,
+                    (xyz.y + T(.5)) * config::G_DX,
+                    (xyz.z + T(.5)) * config::G_DX
+                };
+                
+                const T sphere_radius = 0.08;
+                const T sphere_pos[3] = { 0.5, 0.5, 0.5 };
+                const T sphere_vel[3] = { 0., 0., 0. };
+                const bool fixed = true;
+
+                T dist = distance<3>(pos, sphere_pos) - sphere_radius;
+                T normal[3] = { 
+                    (pos[0] - sphere_pos[0]) / (dist + T(1e-10)),
+                    (pos[1] - sphere_pos[1]) / (dist + T(1e-10)),
+                    (pos[2] - sphere_pos[2]) / (dist + T(1e-10))
+                };
+
+                bool inside = false;
+                T dotnv = T(0.);
+                T diff_vel[3] = { T(0.), T(0.), T(0.) };
+                if (dist < 0.) {
+                    diff_vel[0] = sphere_vel[0] - g_momentum[cell_idx * 3 + 0];
+                    diff_vel[1] = sphere_vel[1] - g_momentum[cell_idx * 3 + 1];
+                    diff_vel[2] = sphere_vel[2] - g_momentum[cell_idx * 3 + 2];
+                    dotnv = dot<3>(normal, diff_vel);
+                    if (dotnv > 0. || fixed) {
+                        inside = true;
+                    }
+                }
+
+                // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
+                if (inside) {
+                    if (fixed) {
+                        g_momentum[cell_idx * 3 + 0] = 0.;
+                        g_momentum[cell_idx * 3 + 1] = 0.;
+                        g_momentum[cell_idx * 3 + 2] = 0.;
+                    } else {
+                        T dotnv_frac = dotnv * (1. - config::SDF_FRICTION);
+                        g_momentum[cell_idx * 3 + 0] += diff_vel[0] * config::SDF_FRICTION + normal[0] * dotnv_frac;
+                        g_momentum[cell_idx * 3 + 1] += diff_vel[1] * config::SDF_FRICTION + normal[1] * dotnv_frac;
+                        g_momentum[cell_idx * 3 + 2] += diff_vel[2] * config::SDF_FRICTION + normal[2] * dotnv_frac;
+                    }
+                }
+            }
         }
     }
 }
