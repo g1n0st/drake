@@ -11,22 +11,23 @@
 namespace drake {
 namespace {
 
-using Vec3 = multibody::gmpm::Vec3<float>;
+using T = float;
+using Vec3 = multibody::gmpm::Vec3<T>;
 
 
 GTEST_TEST(EstTest, SmokeTest) {
   
-  multibody::gmpm::GpuMpmState<float> mpm_state;
+  multibody::gmpm::GpuMpmState<T> mpm_state;
 
-  std::vector<multibody::gmpm::Vec3<float>> inital_pos;
-  std::vector<multibody::gmpm::Vec3<float>> inital_vel;
+  std::vector<multibody::gmpm::Vec3<T>> inital_pos;
+  std::vector<multibody::gmpm::Vec3<T>> inital_vel;
   std::vector<int> indices;
   
   const int res = 100;
-  const float l = 0.5;
+  const T l = T(0.5);
   int length = res;
   int width = res;
-  float dx = l / width;
+  T dx = l / width;
 
   auto p = [&](int i, int j) {
     return i * width + j;
@@ -34,8 +35,8 @@ GTEST_TEST(EstTest, SmokeTest) {
 
   for (int i = 0; i < length; ++i) {
     for (int j = 0; j < width; ++j) {
-      inital_pos.emplace_back(0.25f + i * dx, 0.25f + j * dx, 0.75f);
-      inital_vel.emplace_back(0.f, 0.f, 0.f);
+      inital_pos.emplace_back(T(0.25 + i * dx), T(0.25 + j * dx), T(0.75));
+      inital_vel.emplace_back(T(0.), T(0.), T(0.f));
     }
   }
 
@@ -57,8 +58,8 @@ GTEST_TEST(EstTest, SmokeTest) {
 
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
-  multibody::gmpm::GpuMpmSolver<float> mpm_solver;
-  float dt = 1e-3;
+  multibody::gmpm::GpuMpmSolver<T> mpm_solver;
+  T dt = T(1e-3);
   for (int frame = 0; frame < 200; frame++) {
     long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     for (int substep = 0; substep < 40; substep++) {
@@ -73,8 +74,8 @@ GTEST_TEST(EstTest, SmokeTest) {
     long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     printf("\033[32mstep=%d time=%lldms\033[0m\n", frame, (after_ts - before_ts));
     
-    std::vector<multibody::gmpm::Vec3<float>> export_pos;
-    std::vector<multibody::gmpm::Vec3<float>> export_vel;
+    std::vector<multibody::gmpm::Vec3<T>> export_pos;
+    std::vector<multibody::gmpm::Vec3<T>> export_vel;
     export_pos.resize(mpm_state.n_particles());
     export_vel.resize(mpm_state.n_particles());
     CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), mpm_state.current_positions(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyDeviceToHost));

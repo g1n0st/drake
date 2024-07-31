@@ -78,10 +78,10 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
     T J = determinant2(F);
     T Finv[4];
     inverse2(F, Finv);
-    dphi_dF[0] = T(2.) * config::MU * (F[0] - R[0]) + config::LAMBDA * (J - T(1.)) * J * Finv[0];
-    dphi_dF[1] = T(2.) * config::MU * (F[1] - R[1]) + config::LAMBDA * (J - T(1.)) * J * Finv[2];
-    dphi_dF[2] = T(2.) * config::MU * (F[2] - R[2]) + config::LAMBDA * (J - T(1.)) * J * Finv[1];
-    dphi_dF[3] = T(2.) * config::MU * (F[3] - R[3]) + config::LAMBDA * (J - T(1.)) * J * Finv[3];
+    dphi_dF[0] = T(2.) * config::MU<T> * (F[0] - R[0]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[0];
+    dphi_dF[1] = T(2.) * config::MU<T> * (F[1] - R[1]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[2];
+    dphi_dF[2] = T(2.) * config::MU<T> * (F[2] - R[2]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[1];
+    dphi_dF[3] = T(2.) * config::MU<T> * (F[3] - R[3]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[3];
 }
 
 template<typename T>
@@ -108,11 +108,11 @@ inline void compute_dphi_dF(const T* F, T* dphi_dF) {
     matmul<3, 3, 3, T>(Q, P_hat, P_plane);
 
     T rr = R[2] * R[2] + R[5] * R[5];
-    T g = config::GAMMA * rr;
-    T gp = config::GAMMA;
+    T g = config::GAMMA<T> * rr;
+    T gp = config::GAMMA<T>;
     T fp = 0;
     if (R[8] < T(1.)) {
-        fp = -config::K * (T(1.) - R[8]) * (T(1.) - R[8]);
+        fp = -config::K<T> * (T(1.) - R[8]) * (T(1.) - R[8]);
     }
 
     T A[9];
@@ -150,7 +150,7 @@ inline void project_strain(T* F) {
     givens_QR<3, 3, T>(F, Q, R);
 
     // return mapping
-    if (config::GAMMA == T(0.)) { // CASE 1: no friction
+    if (config::GAMMA<T> == T(0.)) { // CASE 1: no friction
         R[8] = min(R[8], T(1.));
         R[2] = T(0.);
         R[5] = T(0.);
@@ -167,8 +167,8 @@ inline void project_strain(T* F) {
     }
     else {
         T rr = R[2] * R[2] + R[5] * R[5];
-        const T gamma_over_k = config::GAMMA / config::K;
-        T zz = config::c_F * (R[8] - T(1.)) * (R[8] - T(1.));
+        const T gamma_over_k = config::GAMMA<T> / config::K<T>;
+        T zz = config::c_F<T> * (R[8] - T(1.)) * (R[8] - T(1.));
         T f = (gamma_over_k * gamma_over_k) * rr - (zz * zz);
         if (f > T(0.)) {
             T c = zz / (gamma_over_k * sqrt(rr));
@@ -361,9 +361,9 @@ __global__ void compute_base_cell_node_index_kernel(const size_t n_particles, co
         T x = positions[idx * 3 + 0];
         T y = positions[idx * 3 + 1];
         T z = positions[idx * 3 + 2];
-        uint32_t xi = static_cast<uint32_t>(x * config::G_DX_INV - T(0.5));
-        uint32_t yi = static_cast<uint32_t>(y * config::G_DX_INV - T(0.5));
-        uint32_t zi = static_cast<uint32_t>(z * config::G_DX_INV - T(0.5));
+        uint32_t xi = static_cast<uint32_t>(x * config::G_DX_INV<T> - T(0.5));
+        uint32_t yi = static_cast<uint32_t>(y * config::G_DX_INV<T> - T(0.5));
+        uint32_t zi = static_cast<uint32_t>(z * config::G_DX_INV<T> - T(0.5));
         /*uint3 inv_xyz = inverse_cell_index(cell_index(xi, yi, zi));
         if (xi != inv_xyz.x || yi != inv_xyz.y || zi != inv_xyz.z) {
             printf("%u,%u, %u,%u %u,%u\n", xi, inv_xyz.x, yi, inv_xyz.y, zi, inv_xyz.z);
@@ -445,14 +445,14 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV - T(0.5))
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
         };
         T fx[3] = {
-            positions[idx * 3 + 0] * config::G_DX_INV - static_cast<T>(base[0]),
-            positions[idx * 3 + 1] * config::G_DX_INV - static_cast<T>(base[1]),
-            positions[idx * 3 + 2] * config::G_DX_INV - static_cast<T>(base[2])
+            positions[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         #pragma unroll
@@ -464,7 +464,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         
         const T* C = &affine_matrices[idx * 9];
 
-        T mass = volumes[idx] * config::DENSITY;
+        T mass = volumes[idx] * config::DENSITY<T>;
         T vel[3] = {
             velocities[idx * 3 + 0],
             velocities[idx * 3 + 1],
@@ -476,7 +476,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * config::G_D_INV) * stress[i] + C[i] * mass;
+            B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
         }
 
         T val[4];
@@ -488,9 +488,9 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                 #pragma unroll
                 for (int k = 0; k < 3; ++k) {
                     T xi_minus_xp[3] = {
-                        (i - fx[0]) * config::G_DX,
-                        (j - fx[1]) * config::G_DX,
-                        (k - fx[2]) * config::G_DX
+                        (i - fx[0]) * config::G_DX<T>,
+                        (j - fx[1]) * config::G_DX<T>,
+                        (k - fx[2]) * config::G_DX<T>
                     };
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
@@ -500,7 +500,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     val[3] = vel[2] * val[0];
 
                     // apply gravity
-                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY * dt;
+                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
 
                     val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
                     val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
@@ -611,7 +611,7 @@ __global__ void update_grid_kernel(
             g_vel[2] /= g_masses[cell_idx];
 
             // apply boundary condition
-            const int boundary_condition  = static_cast<int>(std::floor(config::G_BOUNDARY_CONDITION));
+            const int boundary_condition = config::G_BOUNDARY_CONDITION;
             uint3 xyz = inverse_cell_index(cell_idx);
             if (xyz.x < boundary_condition && g_vel[0] < 0) g_vel[0] = 0;
             if (xyz.x >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[0] > 0) g_vel[0] = 0;
@@ -623,9 +623,9 @@ __global__ void update_grid_kernel(
             // TODO, NOTE (changyu): ad-hoc hack for a sphere sdf
             {
                 T pos[3] = {
-                    (xyz.x + T(.5)) * config::G_DX,
-                    (xyz.y + T(.5)) * config::G_DX,
-                    (xyz.z + T(.5)) * config::G_DX
+                    (xyz.x + T(.5)) * config::G_DX<T>,
+                    (xyz.y + T(.5)) * config::G_DX<T>,
+                    (xyz.z + T(.5)) * config::G_DX<T>
                 };
                 
                 const T sphere_radius = T(0.08);
@@ -660,10 +660,10 @@ __global__ void update_grid_kernel(
                         g_vel[1] = T(0.);
                         g_vel[2] = T(0.);
                     } else {
-                        T dotnv_frac = dotnv * (1. - config::SDF_FRICTION);
-                        g_vel[0] += diff_vel[0] * config::SDF_FRICTION + normal[0] * dotnv_frac;
-                        g_vel[1] += diff_vel[1] * config::SDF_FRICTION + normal[1] * dotnv_frac;
-                        g_vel[2] += diff_vel[2] * config::SDF_FRICTION + normal[2] * dotnv_frac;
+                        T dotnv_frac = dotnv * (1. - config::SDF_FRICTION<T>);
+                        g_vel[0] += diff_vel[0] * config::SDF_FRICTION<T> + normal[0] * dotnv_frac;
+                        g_vel[1] += diff_vel[1] * config::SDF_FRICTION<T> + normal[1] * dotnv_frac;
+                        g_vel[2] += diff_vel[2] * config::SDF_FRICTION<T> + normal[2] * dotnv_frac;
                     }
                 }
             }
@@ -687,14 +687,14 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV - T(0.5))
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
         };
         T fx[3] = {
-            positions[idx * 3 + 0] * config::G_DX_INV - static_cast<T>(base[0]),
-            positions[idx * 3 + 1] * config::G_DX_INV - static_cast<T>(base[1]),
-            positions[idx * 3 + 2] * config::G_DX_INV - static_cast<T>(base[2])
+            positions[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         #pragma unroll
@@ -740,15 +740,15 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                     // printf("weight=%.8lf\n", weight);
                     // printf("g_v=[%.8lf   %.8lf   %.8lf]\n", g_v[0], g_v[1], g_v[2]);
                     // printf("xip=[%.8lf   %.8lf   %.8lf]\n", xi_minus_xp[0], xi_minus_xp[1], xi_minus_xp[2]);
-                    new_C[0] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[0];
-                    new_C[1] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[1];
-                    new_C[2] += 4 * config::G_DX_INV * weight * g_v[0] * xi_minus_xp[2];
-                    new_C[3] += 4 * config::G_DX_INV * weight * g_v[1] * xi_minus_xp[0];
-                    new_C[4] += 4 * config::G_DX_INV * weight * g_v[1] * xi_minus_xp[1];
-                    new_C[5] += 4 * config::G_DX_INV * weight * g_v[1] * xi_minus_xp[2];
-                    new_C[6] += 4 * config::G_DX_INV * weight * g_v[2] * xi_minus_xp[0];
-                    new_C[7] += 4 * config::G_DX_INV * weight * g_v[2] * xi_minus_xp[1];
-                    new_C[8] += 4 * config::G_DX_INV * weight * g_v[2] * xi_minus_xp[2];
+                    new_C[0] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[0];
+                    new_C[1] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[1];
+                    new_C[2] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[2];
+                    new_C[3] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[0];
+                    new_C[4] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[1];
+                    new_C[5] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[2];
+                    new_C[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
+                    new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
+                    new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
                 }
             }
         }
