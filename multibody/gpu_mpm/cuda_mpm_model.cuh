@@ -35,14 +35,17 @@ public:
     T* deformation_gradients() { return d_deformation_gradients_; }
     T* Dm_inverses() { return d_Dm_inverses_; }
     int* indices() { return d_indices_; }
+    int* index_mappings() { return d_index_mappings_; }
 
     T* next_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
     T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
     T* next_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
     T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
     
+    int* current_pids() { return particle_buffer_[current_particle_buffer_id_].d_pids; }
     uint32_t* current_sort_keys() { return particle_buffer_[current_particle_buffer_id_].d_sort_keys; }
     uint32_t* current_sort_ids() { return particle_buffer_[current_particle_buffer_id_].d_sort_ids; }
+    int* next_pids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_pids; }
     uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
     uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
 
@@ -79,8 +82,12 @@ private:
     size_t n_particles_;
 
     // scratch data
-    T* d_forces_ = nullptr;      // size: n_faces + n_verts, NO sort
-    T* d_taus_ = nullptr;        // size: n_faces + n_verts, NO sort
+    T* d_forces_ = nullptr;       // size: n_faces + n_verts, NO sort
+    T* d_taus_ = nullptr;         // size: n_faces + n_verts, NO sort
+    // NOTE (changyu): when particle data get sorted, 
+    // the index mapping from element/vertex index to particle index will be changed,
+    // need to be updated in `compute_sorted_state_kernel`.
+    int* d_index_mappings_ = nullptr; // size: n_faces + n_verts
 
     // element-based data
     int* d_indices_ = nullptr; // size: n_faces NO sort
@@ -93,6 +100,8 @@ private:
         T* d_volumes = nullptr;     // size: n_faces + n_verts
         T* d_affine_matrices = nullptr; // size: n_faces + n_verts
 
+        // used to work with index_mapping to get the original -> reordered mapping.
+        int* d_pids = nullptr; // size: n_faces + n_verts
         uint32_t* d_sort_keys = nullptr;
         uint32_t* d_sort_ids = nullptr;
     };

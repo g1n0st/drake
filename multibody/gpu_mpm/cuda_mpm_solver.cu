@@ -58,10 +58,10 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
             compute_sorted_state_kernel<<<
             (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
             (state->n_particles(), 
-            state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(), state->current_pids(),
             state->next_sort_ids(),
             state->next_positions(),
-            state->next_velocities(), state->next_volumes(), state->next_affine_matrices())
+            state->next_velocities(), state->next_volumes(), state->next_affine_matrices(), state->next_pids(), state->index_mappings())
             ));
         state->SwitchCurrentState();
     }
@@ -75,7 +75,7 @@ void GpuMpmSolver<T>::CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt) c
     CUDA_SAFE_CALL((
         calc_fem_state_and_force_kernel<<<
         (state->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_faces(), state->indices(), state->current_volumes(), state->current_affine_matrices(), state->Dm_inverses(),
+        (state->n_faces(), state->indices(), state->index_mappings(), state->current_volumes(), state->current_affine_matrices(), state->Dm_inverses(),
          state->current_positions(), state->current_velocities(), state->deformation_gradients(),
          state->forces(), state->taus(), dt)
         ));

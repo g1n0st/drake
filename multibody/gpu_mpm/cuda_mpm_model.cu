@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <iostream>
+#include <numeric>
 #include <cuda_runtime.h>
 
 #include "multibody/gpu_mpm/cuda_mpm_model.cuh"
@@ -36,12 +37,20 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_volumes, sizeof(T) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_affine_matrices, sizeof(Mat3<T>) * n_particles_));
 
+        CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_pids, sizeof(int) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_sort_keys, sizeof(uint32_t) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_sort_ids, sizeof(uint32_t) * n_particles_));
         CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_sort_keys, 0, sizeof(uint32_t) * n_particles_));
         CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_sort_ids, 0, sizeof(uint32_t) * n_particles_));
 
         if (i == current_particle_buffer_id_) {
+            std::vector<int> id_sequence(n_particles_);
+            std::iota(id_sequence.begin(), id_sequence.end(), 0);
+            CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_pids, 
+                                      id_sequence.data(), 
+                                      sizeof(int) * n_particles_, 
+                                      cudaMemcpyHostToDevice));
+
             CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_positions + n_faces_ * 3, 
                                       h_positions_.data(), 
                                       sizeof(Vec3<T>) * n_verts_, 
@@ -58,6 +67,7 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
     // scratch data
     CUDA_SAFE_CALL(cudaMalloc(&d_forces_, sizeof(Vec3<T>) * n_particles_));
     CUDA_SAFE_CALL(cudaMalloc(&d_taus_, sizeof(Mat3<T>) * n_particles_));
+    CUDA_SAFE_CALL(cudaMalloc(&d_index_mappings_, sizeof(int) * n_particles_));
 
     // element-based data
     CUDA_SAFE_CALL(cudaMalloc(&d_deformation_gradients_, sizeof(Mat3<T>) * n_faces_));
@@ -94,6 +104,7 @@ void GpuMpmState<T>::Destroy() {
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_volumes));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_affine_matrices));
 
+        CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_pids));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_sort_keys));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_sort_ids));
 
@@ -102,17 +113,20 @@ void GpuMpmState<T>::Destroy() {
         particle_buffer_[i].d_velocities = nullptr;
         particle_buffer_[i].d_volumes = nullptr;
         particle_buffer_[i].d_affine_matrices = nullptr;
+        particle_buffer_[i].d_pids = nullptr;
         particle_buffer_[i].d_sort_keys = nullptr;
         particle_buffer_[i].d_sort_ids = nullptr;
     }
 
     CUDA_SAFE_CALL(cudaFree(d_forces_));
     CUDA_SAFE_CALL(cudaFree(d_taus_));
+    CUDA_SAFE_CALL(cudaFree(d_index_mappings_));
     CUDA_SAFE_CALL(cudaFree(d_deformation_gradients_));
     CUDA_SAFE_CALL(cudaFree(d_Dm_inverses_));
     CUDA_SAFE_CALL(cudaFree(d_indices_));
     d_forces_ = nullptr;
     d_taus_ = nullptr;
+    d_index_mappings_ = nullptr;
     d_deformation_gradients_ = nullptr;
     d_Dm_inverses_ = nullptr;
     d_indices_ = nullptr;

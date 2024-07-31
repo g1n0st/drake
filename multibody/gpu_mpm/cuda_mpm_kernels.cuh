@@ -184,6 +184,7 @@ template<typename T>
 __global__ void calc_fem_state_and_force_kernel(
     const size_t n_faces,
     const int* indices,
+    const int* index_mappings,
     const T* volumes,
     const T* affine_matrices,
     const T* Dm_inverses,
@@ -194,18 +195,19 @@ __global__ void calc_fem_state_and_force_kernel(
     T* taus,
     const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    int face_pid = index_mappings[idx];
     if (idx < n_faces) {
-        int v0 = indices[idx * 3 + 0];
-        int v1 = indices[idx * 3 + 1];
-        int v2 = indices[idx * 3 + 2];
+        int v0 = index_mappings[indices[idx * 3 + 0]];
+        int v1 = index_mappings[indices[idx * 3 + 1]];
+        int v2 = index_mappings[indices[idx * 3 + 2]];
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
-            positions[idx * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / T(3.);
-            velocities[idx * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / T(3.);
+            positions[face_pid * 3 + i] = (positions[v0 * 3 + i] + positions[v1 * 3 + i] + positions[v2 * 3 + i]) / T(3.);
+            velocities[face_pid * 3 + i] = (velocities[v0 * 3 + i] + velocities[v1 * 3 + i] + velocities[v2 * 3 + i]) / T(3.);
         }
 
         T* F = &deformation_gradients[idx * 9];
-        const T* C = &affine_matrices[idx * 9];
+        const T* C = &affine_matrices[face_pid * 9];
         T ctF[9]; // cotangent F
         ctF[0] = (T(1.0) + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
         ctF[1] = (T(1.0) + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
@@ -252,13 +254,13 @@ __global__ void calc_fem_state_and_force_kernel(
         compute_dphi_dF(ctF, VP_local);
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            VP_local[i] *= volumes[idx];
+            VP_local[i] *= volumes[face_pid];
         }
 
         // technical document .(15) part 2
         T VP_local_c2[3] = { VP_local[2], VP_local[5], VP_local[8] };
         T ctF_c2[3] = { ctF[2], ctF[5], ctF[8] };
-        outer_product<3, T>(VP_local_c2, ctF_c2, &taus[idx * 9]);
+        outer_product<3, T>(VP_local_c2, ctF_c2, &taus[face_pid * 9]);
 
         T grad_N_hat[6] = {
             T(-1.), T(1.), T(0.),
@@ -379,11 +381,14 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     const T* current_velocities,
     const T* current_volumes,
     const T* current_affine_matrices,
+    const int* current_pids,
     const uint32_t* next_sort_ids,
     T* next_positions,
     T* next_velocities,
     T* next_volumes,
-    T* next_affine_matrices
+    T* next_affine_matrices,
+    int* next_pids,
+    int* index_mappings
     ) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_particles) {
@@ -393,6 +398,8 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
             next_velocities[idx * 3 + i] = current_velocities[next_sort_ids[idx] * 3 + i];
         }
         next_volumes[idx] = current_volumes[next_sort_ids[idx]];
+        next_pids[idx] = current_pids[next_sort_ids[idx]];
+        index_mappings[next_pids[idx]] = idx;
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
