@@ -87,11 +87,10 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
 template<typename T>
 __device__ __host__
 inline void compute_dphi_dF(const T* F, T* dphi_dF) {
-    // TODO (changyu): optimize local variable usage
+    // A00=0, A01=1, A02=2
+    // A10=3, A11=4, A12=5
+    // A20=6, A21=7, A22=8
     T Q[9], R[9];
-    // 0, 1, 2
-    // 3, 4, 5
-    // 6, 7, 8
     givens_QR<3, 3, T>(F, Q, R);
     T R_hat[4] = {
         R[0], R[1],
@@ -209,6 +208,10 @@ __global__ void calc_fem_state_and_force_kernel(
         T* F = &deformation_gradients[idx * 9];
         const T* C = &affine_matrices[face_pid * 9];
         T ctF[9]; // cotangent F
+
+        // Eq.4 in Jiang et.al 2017, dE_p, β(x̂) = (∇x̂)p dE,n_p, β
+        // but we could reuse traditional MPM deformation gradient updated as:
+        // F̂E_p(x̂) = (∇x̂)p FE,n_p
         ctF[0] = (T(1.0) + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
         ctF[1] = (T(1.0) + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
         ctF[2] = (T(1.0) + dt * C[0]) * F[2] + dt * C[1] * F[5] + dt * C[2] * F[8];

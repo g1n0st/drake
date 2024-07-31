@@ -13,7 +13,7 @@ namespace gmpm {
 
 template<typename T>
 void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
-    // TODO, NOTE (changyu):
+    // NOTE (changyu):
     // Since we currently adopt dense grid, it's exactly as extending Section 4.2.1 Rebuild-Mapping in [Fei et.al 2021]:
     // "One can push to use more neighboring blocks than we do, and the extreme would end up with a dense background grid,
     // where the rebuild mapping can be removed entirely."
@@ -30,7 +30,7 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
     // as discussed by Gao et al. [2018], a histogram-sort performs more efficiently, 
     // where the keys are computed through concatenating the block index and the cell code.
 
-    // TODO (changyu):
+    // NOTE (changyu):
     // The frequency of sorting can be further reduced as in Section 4.2.2 Particle Sorting in [Fei et.al 2021]
     // Furthermore, as the reduction only helps to lessen the atomic operations within each warp, 
     // instead of sorting w.r.t. cells every time step, 
@@ -42,8 +42,7 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
     // resulting in several atomics instead of one. 
     // However, this performance loss can be compensated well when particle density is not extremely high in each cell.
     if (sort) {
-        // NOTE, TODO (changyu): radix sort with the first 16 bits is good enough to balance the performance between P2G and sort itself,
-        // but more tuning could be conducted here.
+        // NOTE (changyu): radix sort with the first 16 bits is good enough to balance the performance between P2G and sort itself
         CUDA_SAFE_CALL((
             radix_sort(state->next_sort_keys(), 
                        state->current_sort_keys(), 
