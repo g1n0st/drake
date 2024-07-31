@@ -392,14 +392,15 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     ) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_particles) {
+        next_volumes[idx] = current_volumes[next_sort_ids[idx]];
+        next_pids[idx] = current_pids[next_sort_ids[idx]];
+        index_mappings[next_pids[idx]] = idx;
+
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
             next_positions[idx * 3 + i] = current_positions[next_sort_ids[idx] * 3 + i];
             next_velocities[idx * 3 + i] = current_velocities[next_sort_ids[idx] * 3 + i];
         }
-        next_volumes[idx] = current_volumes[next_sort_ids[idx]];
-        next_pids[idx] = current_pids[next_sort_ids[idx]];
-        index_mappings[next_pids[idx]] = idx;
 
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
@@ -468,19 +469,14 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
             weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
-        
-        const T* C = &affine_matrices[idx * 9];
 
-        T mass = volumes[idx] * config::DENSITY<T>;
-        T vel[3] = {
-            velocities[idx * 3 + 0],
-            velocities[idx * 3 + 1],
-            velocities[idx * 3 + 2]
-        };
-        T B[9];
+        const T mass = volumes[idx] * config::DENSITY<T>;
+        const T* C = &affine_matrices[idx * 9];
+        const T* vel = &velocities[idx * 3];
         const T* stress = &taus[idx * 9];
         const T* force = &forces[idx * 3];
 
+        T B[9];
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
