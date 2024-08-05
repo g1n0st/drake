@@ -207,6 +207,10 @@ class PhysicalModel : public internal::ScalarConvertibleComponent<T> {
   */
   systems::DiscreteStateIndex DeclareDiscreteState(
       const VectorX<T>& model_value);
+  
+  // NOTE (changyu): add for GPU MPM state
+  systems::AbstractStateIndex DeclareAbstractState(
+      const AbstractValue& model_value);
 
   systems::LeafOutputPort<T>& DeclareAbstractOutputPort(
       std::string name,

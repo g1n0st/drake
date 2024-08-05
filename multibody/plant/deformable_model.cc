@@ -420,13 +420,17 @@ void DeformableModel<T>::DoDeclareSystemResources() {
   }
 
   // NOTE (changyu): add for GPU MPM resource allocation
-  gmpm::GpuMpmState<T> mpm_state();
+  using GpuT = float;
+  gmpm::GpuMpmState<GpuT> mpm_state;
   // TODO (changyu): adhoc test here, need to be initialized by a corresponding CPU MPM state
+  std::vector<multibody::gmpm::Vec3<GpuT>> inital_pos;
+  std::vector<multibody::gmpm::Vec3<GpuT>> inital_vel;
+  std::vector<int> indices;
   const int res = 100;
-  const T l = T(0.5);
+  const GpuT l = GpuT(0.5);
   int length = res;
   int width = res;
-  T dx = l / width;
+  GpuT dx = l / width;
 
   auto p = [&](int i, int j) {
     return i * width + j;
@@ -434,8 +438,8 @@ void DeformableModel<T>::DoDeclareSystemResources() {
 
   for (int i = 0; i < length; ++i) {
     for (int j = 0; j < width; ++j) {
-      inital_pos.emplace_back(T(0.25 + i * dx), T(0.25 + j * dx), T(0.75));
-      inital_vel.emplace_back(T(0.), T(0.), T(0.f));
+      inital_pos.emplace_back(GpuT(0.25 + i * dx), GpuT(0.25 + j * dx), GpuT(0.75));
+      inital_vel.emplace_back(GpuT(0.), GpuT(0.), GpuT(0.f));
     }
   }
 
@@ -454,7 +458,7 @@ void DeformableModel<T>::DoDeclareSystemResources() {
   }
 
   mpm_state.InitializeQRCloth(inital_pos, inital_vel, indices);
-  this->DeclareAbstractState(plant, Value<gmpm::GpuMpmState<T>>(mpm_state));
+  this->DeclareAbstractState(Value<gmpm::GpuMpmState<GpuT>>(mpm_state));
 
   /* Add user defined external forces to each body. */
   body_index_to_force_densities_.resize(num_bodies());

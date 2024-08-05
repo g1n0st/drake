@@ -100,6 +100,15 @@ systems::DiscreteStateIndex PhysicalModel<T>::DeclareDiscreteState(
       owning_plant_, model_value);
 }
 
+// NOTE (changyu): add for GPU MPM state
+template <typename T>
+systems::AbstractStateIndex PhysicalModel<T>::DeclareAbstractState(
+    const AbstractValue& model_value) {
+  DRAKE_THROW_UNLESS(owning_plant_ != nullptr);
+  return internal::MultibodyPlantModelAttorney<T>::DeclareAbstractState(
+      owning_plant_, model_value);
+}
+
 template <typename T>
 systems::LeafOutputPort<T>& PhysicalModel<T>::DeclareAbstractOutputPort(
     std::string name,

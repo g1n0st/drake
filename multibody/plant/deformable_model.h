@@ -17,7 +17,8 @@
 #include "drake/multibody/tree/rigid_body.h"
 
 // NOTE (changyu): GPU MPM header files
-#include "drake/multibody/gpu_mpm/cuda_mpm_model.cuh"
+#include "drake/systems/framework/context.h"
+#include "multibody/gpu_mpm/cuda_mpm_model.cuh"
 
 namespace drake {
 namespace multibody {
@@ -352,7 +353,7 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
   systems::OutputPortIndex configuration_output_port_index_;
 
   // NOTE (changyu): GPU MPM model
-  system::AbstractStateIndex mpm_state_index_;
+  systems::AbstractStateIndex mpm_state_index_;
 };
 
 }  // namespace multibody
