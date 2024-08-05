@@ -419,6 +419,43 @@ void DeformableModel<T>::DoDeclareSystemResources() {
     body_id_to_index_[id] = i;
   }
 
+  // NOTE (changyu): add for GPU MPM resource allocation
+  gmpm::GpuMpmState<T> mpm_state();
+  // TODO (changyu): adhoc test here, need to be initialized by a corresponding CPU MPM state
+  const int res = 100;
+  const T l = T(0.5);
+  int length = res;
+  int width = res;
+  T dx = l / width;
+
+  auto p = [&](int i, int j) {
+    return i * width + j;
+  };
+
+  for (int i = 0; i < length; ++i) {
+    for (int j = 0; j < width; ++j) {
+      inital_pos.emplace_back(T(0.25 + i * dx), T(0.25 + j * dx), T(0.75));
+      inital_vel.emplace_back(T(0.), T(0.), T(0.f));
+    }
+  }
+
+  for (int i = 0; i < length; ++i) {
+    for (int j = 0; j < width; ++j) {
+      if (i < length - 1 && j < width - 1) {
+        indices.push_back(p(i, j));
+        indices.push_back(p(i+1, j));
+        indices.push_back(p(i, j+1));
+
+        indices.push_back(p(i+1, j+1));
+        indices.push_back(p(i, j+1));
+        indices.push_back(p(i+1, j));
+      }
+    }
+  }
+
+  mpm_state.InitializeQRCloth(inital_pos, inital_vel, indices);
+  this->DeclareAbstractState(plant, Value<gmpm::GpuMpmState<T>>(mpm_state));
+
   /* Add user defined external forces to each body. */
   body_index_to_force_densities_.resize(num_bodies());
   for (int i = 0; i < num_bodies(); ++i) {
