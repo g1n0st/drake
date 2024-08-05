@@ -22,21 +22,6 @@ inline void cuda_error_throw() {
 #endif
 }
 
-inline bool cuda_error(std::string& _message) {
-#if DEBUG
-	if (cudaPeekAtLastError() != cudaSuccess) {
-		_message.assign(cudaGetErrorString(cudaGetLastError()));
-		return true;
-	}
-	cudaDeviceSynchronize();
-	if (cudaPeekAtLastError() != cudaSuccess) {
-		_message.assign(cudaGetErrorString(cudaGetLastError()));
-		return true;
-	}
-#endif
-	return false;
-}
-
 #define CUDA_SAFE_CALL(A) (A); cuda_error_throw();
 
 namespace drake {
