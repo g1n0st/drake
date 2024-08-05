@@ -661,9 +661,9 @@ __global__ void update_grid_kernel(
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
                 if (inside) {
                     if (fixed) {
-                        g_vel[0] = T(0.);
-                        g_vel[1] = T(0.);
-                        g_vel[2] = T(0.);
+                        g_vel[0] += diff_vel[0];
+                        g_vel[1] += diff_vel[1];
+                        g_vel[2] += diff_vel[2];
                     } else {
                         T dotnv_frac = dotnv * (1. - config::SDF_FRICTION<T>);
                         g_vel[0] += diff_vel[0] * config::SDF_FRICTION<T> + normal[0] * dotnv_frac;
