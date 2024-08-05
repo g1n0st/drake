@@ -34,6 +34,8 @@ template<typename T> using Vec2 = Eigen::Vector<T, 2>;
 template<typename T> using Mat2 = Eigen::Matrix<T, 2, 2>;
 
 namespace config {
+	using GpuT = float;
+
     // cuda device
     constexpr int G_DEVICE_COUNT = 1;
 	constexpr int DEFAULT_CUDA_BLOCK_SIZE = 128;
