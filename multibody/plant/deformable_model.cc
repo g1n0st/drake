@@ -420,7 +420,7 @@ void DeformableModel<T>::DoDeclareSystemResources() {
   }
 
   // NOTE (changyu): add for GPU MPM resource allocation
-  using GpuT = float;
+  using GpuT = gmpm::config::GpuT;
   gmpm::GpuMpmState<GpuT> mpm_state;
   // TODO (changyu): adhoc test here, need to be initialized by a corresponding CPU MPM state
   std::vector<multibody::gmpm::Vec3<GpuT>> inital_pos;

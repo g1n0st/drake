@@ -19,6 +19,9 @@
 #include "drake/multibody/plant/discrete_contact_pair.h"
 #include "drake/systems/framework/context.h"
 
+// NOTE (changyu): GPU MPM solver header files
+#include "multibody/gpu_mpm/cuda_mpm_solver.cuh"
+
 namespace drake {
 namespace multibody {
 namespace internal {
@@ -366,6 +369,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   /* The integrator used to advance deformable body free motion states in
    time. */
   std::unique_ptr<fem::internal::DiscreteTimeIntegrator<T>> integrator_;
+
+  // NOTE (changyu): GPU MPM solver
+  gmpm::GpuMpmSolver<gmpm::config::GpuT> mpm_solver_;
 };
 
 }  // namespace internal

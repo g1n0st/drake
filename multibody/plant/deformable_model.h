@@ -16,7 +16,7 @@
 #include "drake/multibody/plant/physical_model.h"
 #include "drake/multibody/tree/rigid_body.h"
 
-// NOTE (changyu): GPU MPM header files
+// NOTE (changyu): GPU MPM state header files
 #include "drake/systems/framework/context.h"
 #include "multibody/gpu_mpm/cuda_mpm_model.cuh"
 
