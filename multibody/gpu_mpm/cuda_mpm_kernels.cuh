@@ -452,7 +452,6 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         mark = tmp > mark ? tmp : mark; /*if (tmp > mark) mark = tmp;*/
     }
     mark = __shfl_sync(0xFFFFFFFF, mark, 0);
-    __syncthreads();
 
     if (idx < n_particles) {
         uint32_t base[3] = {
