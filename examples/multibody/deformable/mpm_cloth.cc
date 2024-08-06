@@ -95,13 +95,10 @@ int do_main() {
   /* Set up a ground. */
   Box ground{4, 4, 4};
   const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2});
-  plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground,
-                                  "ground_collision", rigid_proximity_props);
+  plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", rigid_proximity_props);
   IllustrationProperties illustration_props;
-  illustration_props.AddProperty("phong", "diffuse",
-                                 Vector4d(0.7, 0.5, 0.4, 0.8));
-  plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground,
-                               "ground_visual", std::move(illustration_props));
+  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
+  plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   std::vector<Eigen::Vector3d> inital_pos;
   std::vector<Eigen::Vector3d> inital_vel;
@@ -148,8 +145,7 @@ int do_main() {
   geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph, nullptr, params);
 
   auto diagram = builder.Build();
-  std::unique_ptr<Context<double>> diagram_context =
-      diagram->CreateDefaultContext();
+  std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));
