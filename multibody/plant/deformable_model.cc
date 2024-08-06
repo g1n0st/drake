@@ -458,7 +458,7 @@ void DeformableModel<T>::DoDeclareSystemResources() {
   }
 
   mpm_state.InitializeQRCloth(inital_pos, inital_vel, indices);
-  this->DeclareAbstractState(Value<gmpm::GpuMpmState<GpuT>>(mpm_state));
+  gpu_mpm_state_index_ = this->DeclareAbstractState(Value<gmpm::GpuMpmState<GpuT>>(mpm_state));
 
   /* Add user defined external forces to each body. */
   body_index_to_force_densities_.resize(num_bodies());

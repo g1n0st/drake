@@ -26,6 +26,7 @@ nvcc_library(
             "cuda_mpm_kernels.cuh", 
             "cuda_mpm_model.cuh",
             "cuda_mpm_solver.cuh",
+            "cpu_mpm_model.h",
             ],
     srcs = ["blelloch_scan.cu", 
             "cuda_mpm_model.cu",

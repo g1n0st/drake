@@ -18,6 +18,7 @@
 
 // NOTE (changyu): GPU MPM state header files
 #include "drake/systems/framework/context.h"
+#include "multibody/gpu_mpm/cpu_mpm_model.h"
 #include "multibody/gpu_mpm/cuda_mpm_model.cuh"
 
 namespace drake {
@@ -352,8 +353,10 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
       fixed_constraint_specs_;
   systems::OutputPortIndex configuration_output_port_index_;
 
+  // NOTE (changyu): CPU MPM model used to config GPU counterpart
+  std::unique_ptr<gmpm::CpuMpmModel<gmpm::config::GpuT>> cpu_mpm_model_;
   // NOTE (changyu): GPU MPM model
-  systems::AbstractStateIndex mpm_state_index_;
+  systems::AbstractStateIndex gpu_mpm_state_index_;
 };
 
 }  // namespace multibody
