@@ -54,6 +54,37 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
 
   ~DeformableModel() final;
 
+  // NOTE (changyu): MPM-related methods
+  bool ExistsMpmModel() const { return (cpu_mpm_model_ != nullptr); }
+  DeformableBodyId RegisterMpmCloth(
+    const std::vector<Vector3<T>>& pos,
+    const std::vector<Vector3<T>>& vel,
+    const std::vector<int> &indices
+  ) {
+    this->ThrowIfSystemResourcesDeclared(__func__);
+    if (ExistsMpmModel()) {
+      throw std::logic_error("we only allow one mpm model currently");
+    }
+    ThrowIfNotDouble(__func__);
+    if constexpr (std::is_same_v<T, double>) {
+      using GpuT = gmpm::config::GpuT;
+      cpu_mpm_model_ = std::make_unique<gmpm::CpuMpmModel<GpuT>>();
+      
+      // cast T => GpuT
+      const auto & T2GpuT = [](const Vector3<T>& vec) -> Vector3<GpuT> {
+            return vec.template cast<GpuT>();
+        };
+      cpu_mpm_model_->pos.resize(pos.size());
+      std::transform(pos.begin(), pos.end(), cpu_mpm_model_->pos.begin(), T2GpuT);
+      cpu_mpm_model_->vel.resize(vel.size());
+      std::transform(vel.begin(), vel.end(), cpu_mpm_model_->vel.begin(), T2GpuT);
+      cpu_mpm_model_->indices = indices;
+    }
+
+    const DeformableBodyId body_id = DeformableBodyId::get_new_id();
+    return body_id;
+  }
+
   /** Returns the number of deformable bodies registered with this
    DeformableModel. */
   int num_bodies() const { return reference_positions_.size(); }
