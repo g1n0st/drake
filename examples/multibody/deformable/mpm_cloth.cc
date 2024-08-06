@@ -20,16 +20,10 @@
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
 
-DEFINE_double(simulation_time, 12.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 1e-2,
+DEFINE_double(time_step, 1.0 / 24.0,
               "Discrete time step for the system [s]. Must be positive.");
-DEFINE_double(E, 3e4, "Young's modulus of the deformable body [Pa].");
-DEFINE_double(nu, 0.4, "Poisson's ratio of the deformable body, unitless.");
-DEFINE_double(density, 1e3,
-              "Mass density of the deformable body [kg/m³]. We observe that "
-              "density above 2400 kg/m³ makes the torus too heavy to be picked "
-              "up by the suction gripper.");
 DEFINE_double(beta, 0.01,
               "Stiffness damping coefficient for the deformable body [1/s].");
 DEFINE_string(contact_approximation, "lagged",
@@ -109,27 +103,30 @@ int do_main() {
   int width = res;
   double dx = l / width;
 
-  auto p = [&](int i, int j) {
-    return i * width + j;
+  auto p = [&](int i, int j, int o) {
+    return i * width + j + o;
   };
 
-  for (int i = 0; i < length; ++i) {
-    for (int j = 0; j < width; ++j) {
-      inital_pos.emplace_back(0.25 + i * dx, 0.25 + j * dx, 0.75);
-      inital_vel.emplace_back(0., 0., 0.);
+  for (int k = 0; k < 2; k++) {
+    int o = inital_pos.size();
+    for (int i = 0; i < length; ++i) {
+      for (int j = 0; j < width; ++j) {
+        inital_pos.emplace_back(0.25 + i * dx, 0.25 + j * dx, 0.75 + k * 0.1);
+        inital_vel.emplace_back(0., 0., 0.);
+      }
     }
-  }
 
-  for (int i = 0; i < length; ++i) {
-    for (int j = 0; j < width; ++j) {
-      if (i < length - 1 && j < width - 1) {
-        indices.push_back(p(i, j));
-        indices.push_back(p(i+1, j));
-        indices.push_back(p(i, j+1));
+    for (int i = 0; i < length; ++i) {
+      for (int j = 0; j < width; ++j) {
+        if (i < length - 1 && j < width - 1) {
+          indices.push_back(p(i, j, o));
+          indices.push_back(p(i+1, j, o));
+          indices.push_back(p(i, j+1, o));
 
-        indices.push_back(p(i+1, j+1));
-        indices.push_back(p(i, j+1));
-        indices.push_back(p(i+1, j));
+          indices.push_back(p(i+1, j+1, o));
+          indices.push_back(p(i, j+1, o));
+          indices.push_back(p(i+1, j, o));
+        }
       }
     }
   }
