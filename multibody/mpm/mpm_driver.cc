@@ -75,9 +75,13 @@ void MpmDriver<T>::SampleParticles(
       calculator.Compute(geometry_instance->shape());
   const double sampling_radius =
       dx_ / std::cbrt(particles_per_cell * 4.0 / 3.0 * M_PI);
-  /* Sample the particles in the geometry's frame. */
-  const std::vector<Vector3<double>> q_GPs = PoissonDiskSampling<double>(
-      sampling_radius, bounding_box[0], bounding_box[1]);
+  /* Sample the particles in the geometry's bounding box. */
+  const std::vector<Vector3<double>> q_GP_candidates =
+      PoissonDiskSampling<double>(sampling_radius, bounding_box[0],
+                                  bounding_box[1]);
+  /* Reject points that fall outside of the shape. */
+  const std::vector<Vector3<double>> q_GPs =
+      FilterPoints(q_GP_candidates, geometry_instance->shape());
   const int num_particles = ssize(q_GPs);
   const T mass_density = config.mass_density();
   const double total_volume = geometry::CalcVolume(geometry_instance->shape());

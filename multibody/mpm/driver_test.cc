@@ -15,22 +15,22 @@ namespace {
 using Eigen::Vector3d;
 
 int do_main() {
-  MpmDriver<float> driver(0.001, 0.01, Parallelism(12));
-  math::RigidTransform<double> X_WG(Vector3d(0, 0, 0.1));
+  MpmDriver<float> driver(0.001, 0.01, Parallelism(32));
+  math::RigidTransform<double> X_WG(Vector3d(0, 0, 0.15));
   auto geometry_instance = std::make_unique<geometry::GeometryInstance>(
       X_WG, geometry::Sphere(0.03), "sphere");
   fem::DeformableBodyConfig<float> body_config;
   body_config.set_material_model(fem::MaterialModel::kCorotated);
-  body_config.set_youngs_modulus(1e4);
+  body_config.set_youngs_modulus(5e3);
   body_config.set_poissons_ratio(0.3);
   driver.SampleParticles(std::move(geometry_instance), 8, body_config);
-  const int kNumSteps = 500;
+  const int kNumSteps = 5000;
   const std::string directory = "/home/xuchenhan/Desktop/mpm_data/";
   for (int i = 0; i < kNumSteps; ++i) {
     driver.AdvanceOneTimeStep();
-    if (i % 10 == 0) {
+    if (i % 40 == 0) {
       std::cout << "Step " << i << std::endl;
-      const std::string filename = fmt::format("particles_{:04d}.bgeo", i/10);
+      const std::string filename = fmt::format("particles_{:04d}.bgeo", i/40);
       WriteParticlesToBgeo<float>(directory + filename, driver.particles());
     }
   }

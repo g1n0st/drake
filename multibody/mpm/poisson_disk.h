@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "drake/common/eigen_types.h"
+#include "drake/geometry/shape_specification.h"
 
 namespace drake {
 namespace multibody {
@@ -26,6 +27,12 @@ namespace internal {
 template <typename T>
 std::vector<Vector3<T>> PoissonDiskSampling(T r, const std::array<T, 3>& x_min,
                                             const std::array<T, 3>& x_max);
+
+// Given a list of candidate point positions in the geometry's frame, filters
+// out those that are outside the given `shape`.
+std::vector<Vector3<double>> FilterPoints(
+    const std::vector<Vector3<double>>& q_GP_candidates,
+    const geometry::Shape& shape);
 
 }  // namespace internal
 }  // namespace mpm

@@ -92,6 +92,8 @@ drake_cc_library(
     ],
     interface_deps = [
         "//common:essential",
+        "//geometry",
+        "//math:geometric_transform",
     ],
     deps = [
         "@poisson_disk_sampling_internal//:poisson_disk_sampling",
