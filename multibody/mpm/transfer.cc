@@ -349,7 +349,7 @@ void Transfer<T>::SerialGridToParticle() {
       }
       particle.x += particle.v * dt_;
       particle.C *= D_inverse_;
-      particle.F += particle.C * dt_;
+      particle.F += particle.C * dt_ * particle.F;
 
       need_new_pad = (p + 1 == particle_end) ||
                      (base_node_offsets[p] != base_node_offsets[p + 1]);
@@ -410,7 +410,7 @@ void Transfer<T>::SerialSimdGridToParticle() {
       const Matrix3<SimdScalar<T>> C = B * D_inverse_;
       Matrix3<SimdScalar<T>> F = Load(particles_->F, indices);
       x += v * dt_;
-      F += C * dt_;
+      F += C * dt_ * F;
       Store(v, &particles_->v, indices);
       Store(x, &particles_->x, indices);
       Store(C, &particles_->C, indices);
@@ -464,7 +464,7 @@ void Transfer<T>::ParallelGridToParticle(const Parallelism parallelize) {
       }
       particle.x += particle.v * dt_;
       particle.C *= D_inverse_;
-      particle.F += particle.C * dt_;
+      particle.F += particle.C * dt_ * particle.F;
       need_new_pad = (p + 1 == particle_end) ||
                      (base_node_offsets[p] != base_node_offsets[p + 1]);
     }
@@ -526,7 +526,7 @@ void Transfer<T>::ParallelSimdGridToParticle(const Parallelism parallelize) {
       const Matrix3<SimdScalar<T>> C = B * D_inverse_;
       x += v * dt_;
       Matrix3<SimdScalar<T>> F = Load(particles_->F, indices);
-      F += C * dt_;
+      F += C * dt_ * F;
       Store(v, &particles_->v, indices);
       Store(x, &particles_->x, indices);
       Store(C, &particles_->C, indices);
