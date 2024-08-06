@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <iostream>
+#include <string>
+#include <fstream>
 #include <cuda_runtime.h>
 
 #include "multibody/gpu_mpm/settings.h"
@@ -21,6 +23,8 @@ public:
     void ParticleToGrid(GpuMpmState<T> *state, const T& dt) const;
     void UpdateGrid(GpuMpmState<T> *state) const;
     void GridToParticle(GpuMpmState<T> *state, const T& dt) const;
+    void GpuSync() const;
+    void Dump(const GpuMpmState<T> &state, std::string filename) const;
 };
 
 }  // namespace gmpm

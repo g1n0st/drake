@@ -130,6 +130,41 @@ void GpuMpmSolver<T>::GridToParticle(GpuMpmState<T> *state, const T& dt) const {
         ));
 }
 
+template<typename T>
+void GpuMpmSolver<T>::GpuSync() const {
+    CUDA_SAFE_CALL(cudaDeviceSynchronize());
+}
+
+template<typename T>
+void GpuMpmSolver<T>::Dump(const GpuMpmState<T> &state, std::string filename) const {
+    std::vector<Vec3<T>> export_pos;
+    std::vector<Vec3<T>> export_original_pos;
+    std::vector<int> export_pid;
+    std::vector<int> export_indices;
+    export_pos.resize(state.n_particles());
+    export_original_pos.resize(state.n_particles());
+    export_pid.resize(state.n_particles());
+    export_indices.resize(state.n_faces() * 3);
+    CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), state.current_positions(), sizeof(Vec3<T>) * state.n_particles(), cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(export_pid.data(), state.current_pids(), sizeof(int) * state.n_particles(), cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(export_indices.data(), state.indices(), sizeof(int) * state.n_faces() * 3, cudaMemcpyDeviceToHost));
+    for (size_t i = 0; i < state.n_particles(); ++i) {
+      export_original_pos[export_pid[i]] = export_pos[i];
+    }
+
+    std::ofstream obj(filename);
+    for (size_t i = 0; i < state.n_verts(); ++i) {
+      const auto &vert = export_original_pos[i + state.n_faces()];
+      obj << "v " << vert[0] << " " << vert[1] << " " << vert[2] << "\n";
+    }
+    for (size_t i = 0; i < state.n_faces(); ++i) {
+      obj << "f " << export_indices[i*3+0]+1-state.n_faces() 
+          << " "  << export_indices[i*3+1]+1-state.n_faces() 
+          << " "  << export_indices[i*3+2]+1-state.n_faces() << "\n";
+    }
+    obj.close();
+}
+
 template class GpuMpmSolver<double>;
 template class GpuMpmSolver<float>;
 

@@ -69,30 +69,10 @@ GTEST_TEST(EstTest, SmokeTest) {
       mpm_solver.UpdateGrid(&mpm_state);
       mpm_solver.GridToParticle(&mpm_state, dt);
     }
-    CUDA_SAFE_CALL(cudaDeviceSynchronize());
+    mpm_solver.GpuSync();
     long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     printf("\033[32mstep=%d time=%lldms\033[0m\n", frame, (after_ts - before_ts));
-    
-    std::vector<multibody::gmpm::Vec3<T>> export_pos;
-    std::vector<multibody::gmpm::Vec3<T>> export_original_pos;
-    std::vector<int> export_pid;
-    export_pos.resize(mpm_state.n_particles());
-    export_original_pos.resize(mpm_state.n_particles());
-    export_pid.resize(mpm_state.n_particles());
-    CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), mpm_state.current_positions(), sizeof(Vec3) * mpm_state.n_particles(), cudaMemcpyDeviceToHost));
-    CUDA_SAFE_CALL(cudaMemcpy(export_pid.data(), mpm_state.current_pids(), sizeof(int) * mpm_state.n_particles(), cudaMemcpyDeviceToHost));
-    for (size_t i = 0; i < mpm_state.n_particles(); ++i) {
-      export_original_pos[export_pid[i]] = export_pos[i];
-    }
-
-    std::ofstream obj("test" + std::to_string(frame) + ".obj");
-    for (size_t i = 0; i < mpm_state.n_verts(); ++i) {
-      const auto &vert = export_original_pos[i + mpm_state.n_faces()];
-      obj << "v " << vert[0] << " " << vert[1] << " " << vert[2] << "\n";
-    }
-    for (size_t i = 0; i < mpm_state.n_faces(); ++i) {
-      obj << "f " << indices[i*3+0]+1 << " " << indices[i*3+1]+1 << " " << indices[i*3+2]+1 << "\n";
-    }
+    mpm_solver.Dump(mpm_state, "test" + std::to_string(frame) + ".obj");
   }
 
   mpm_state.Destroy();
