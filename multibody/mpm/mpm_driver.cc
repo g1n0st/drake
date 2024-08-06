@@ -85,6 +85,7 @@ void MpmDriver<T>::SampleParticles(
   const RigidTransform<double>& X_WG = geometry_instance->pose();
   const int num_existing_particles = ssize(particles_.m);
   for (int i = 0; i < num_particles; ++i) {
+    // TODO(xuchenhan-tri): Reject the particle if it is outside the geometry.
     const Vector3<double> q_WP = X_WG * q_GPs[i].cast<double>();
     particles_.m.push_back(mass_density * volume_per_particle);
     particles_.x.push_back(q_WP.cast<T>());

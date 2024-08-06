@@ -244,4 +244,13 @@ drake_py_experiment_binary(
     googlebench_binary = ":transfer_benchmark",
 )
 
+cc_binary(
+    name = "driver_test",
+    srcs = ["driver_test.cc"],
+    deps = [
+        ":mpm_driver",
+        ":particles_to_bgeo",
+    ]
+)
+
 # add_lint_tests()

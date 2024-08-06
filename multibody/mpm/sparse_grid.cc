@@ -154,6 +154,9 @@ void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
       if (node_data.m > 0.0) {
         node_data.v /= node_data.m;
         node_data.v += dv;
+        if (OffsetToCoordinate(node_offset)[2] <= 0 && node_data.v[2] < 0) {
+          node_data.v[2] = 0;
+        }
       }
     }
   }

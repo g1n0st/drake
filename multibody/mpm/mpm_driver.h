@@ -33,6 +33,8 @@ class MpmDriver {
 
   void AdvanceOneTimeStep();
 
+  const ParticleData<T>& particles() const { return particles_; }
+
  private:
   void UpdateParticleStress();
 
