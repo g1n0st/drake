@@ -103,36 +103,42 @@ int do_main() {
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground,
                                "ground_visual", std::move(illustration_props));
 
+  std::vector<Eigen::Vector3d> inital_pos;
+  std::vector<Eigen::Vector3d> inital_vel;
+  std::vector<int> indices;
+  const int res = 100;
+  const double l = 0.5;
+  int length = res;
+  int width = res;
+  double dx = l / width;
 
-  /* Set up a deformable torus. */
-  DeformableBodyConfig<double> deformable_config;
-  deformable_config.set_youngs_modulus(FLAGS_E);
-  deformable_config.set_poissons_ratio(FLAGS_nu);
-  deformable_config.set_mass_density(FLAGS_density);
-  deformable_config.set_stiffness_damping_coefficient(FLAGS_beta);
+  auto p = [&](int i, int j) {
+    return i * width + j;
+  };
 
-  const std::string torus_vtk = FindResourceOrThrow(
-      "drake/examples/multibody/deformable/models/torus.vtk");
-  /* Load the geometry and scale it down to 65% (to showcase the scaling
-   capability and to make the torus suitable for grasping by the gripper). */
-  const double scale = 0.65;
-  auto torus_mesh = std::make_unique<Mesh>(torus_vtk, scale);
-  /* Minor diameter of the torus inferred from the vtk file. */
-  const double kL = 0.09 * scale;
-  /* Set the initial pose of the torus such that its bottom face is touching the
-   ground. */
-  const RigidTransformd X_WB(Vector3<double>(0.0, 0.0, kL / 2.0 + 0.5));
-  auto torus_instance = std::make_unique<GeometryInstance>(
-      X_WB, std::move(torus_mesh), "deformable_torus");
+  for (int i = 0; i < length; ++i) {
+    for (int j = 0; j < width; ++j) {
+      inital_pos.emplace_back(0.25 + i * dx, 0.25 + j * dx, 0.75);
+      inital_vel.emplace_back(0., 0., 0.);
+    }
+  }
 
-  /* Minimally required proximity properties for deformable bodies: A valid
-   Coulomb friction coefficient. */
-  ProximityProperties deformable_proximity_props;
-  AddContactMaterial(FLAGS_contact_damping, {}, surface_friction, &deformable_proximity_props);
-  torus_instance->set_proximity_properties(deformable_proximity_props);
+  for (int i = 0; i < length; ++i) {
+    for (int j = 0; j < width; ++j) {
+      if (i < length - 1 && j < width - 1) {
+        indices.push_back(p(i, j));
+        indices.push_back(p(i+1, j));
+        indices.push_back(p(i, j+1));
+
+        indices.push_back(p(i+1, j+1));
+        indices.push_back(p(i, j+1));
+        indices.push_back(p(i+1, j));
+      }
+    }
+  }
 
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  deformable_model.RegisterDeformableBody(std::move(torus_instance), deformable_config, 1.0);
+  deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
 
   /* All rigid and deformable models have been added. Finalize the plant. */
   plant.Finalize();
