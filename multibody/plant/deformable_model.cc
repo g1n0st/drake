@@ -419,7 +419,8 @@ void DeformableModel<T>::DoDeclareSystemResources() {
     body_id_to_index_[id] = i;
   }
 
-  // NOTE (changyu): 
+  // NOTE (changyu): when finailize, use `CpuMpmModel` as config to initialize `GpuMpmState`
+  // and allocate GPU resources here.
   if (ExistsMpmModel()) {
     gmpm::GpuMpmState<gmpm::config::GpuT> mpm_state;
     mpm_state.InitializeQRCloth(cpu_mpm_model_->pos, cpu_mpm_model_->vel, cpu_mpm_model_->indices);
