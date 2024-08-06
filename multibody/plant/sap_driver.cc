@@ -150,7 +150,7 @@ void SapDriver<T>::CalcLinearDynamicsMatrix(const systems::Context<T>& context,
   }
 
   if constexpr (std::is_same_v<T, double>) {
-    if (manager().deformable_driver() != nullptr) {
+    if (manager().deformable_driver() != nullptr && manager().deformable_driver()->num_deformable_bodies() > 0) {
       manager().deformable_driver()->AppendLinearDynamicsMatrix(context, A);
     }
   }
@@ -173,7 +173,7 @@ void SapDriver<T>::CalcFreeMotionVelocities(const systems::Context<T>& context,
       context.get_discrete_state(manager().multibody_state_index()).value();
   const auto v0 = x0.bottomRows(this->plant().num_velocities());
   if constexpr (std::is_same_v<T, double>) {
-    if (manager().deformable_driver() != nullptr) {
+    if (manager().deformable_driver() != nullptr && manager().deformable_driver()->num_deformable_bodies() > 0) {
       const VectorX<T>& deformable_v_star =
           manager().deformable_driver()->EvalParticipatingFreeMotionVelocities(
               context);
@@ -765,7 +765,7 @@ void SapDriver<T>::AddFixedConstraints(
     contact_solvers::internal::SapContactProblem<T>* problem) const {
   DRAKE_DEMAND(problem != nullptr);
   if constexpr (std::is_same_v<T, double>) {
-    if (manager().deformable_driver() != nullptr) {
+    if (manager().deformable_driver() != nullptr && manager().deformable_driver()->num_deformable_bodies() > 0) {
       std::vector<FixedConstraintKinematics<T>> kinematics;
       manager()
           .deformable_driver()
@@ -941,7 +941,7 @@ void SapDriver<T>::CalcSapSolverResults(
   }
 
   if constexpr (std::is_same_v<T, double>) {
-    if (manager().deformable_driver() != nullptr) {
+    if (manager().deformable_driver() != nullptr && manager().deformable_driver()->num_deformable_bodies() > 0) {
       const VectorX<double> deformable_v0 =
           manager().deformable_driver()->EvalParticipatingVelocities(context);
       const int rigid_dofs = v0.size();

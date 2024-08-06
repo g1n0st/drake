@@ -112,6 +112,40 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
   ~DeformableDriver() override;
 
+  // NOTE (changyu): add for GPU MPM
+  bool ExistsMpmBody() const { return deformable_model_->ExistsMpmModel(); }
+
+  void CalcAbstractStates(const systems::Context<T>& context,
+                          systems::State<T>* update) const {
+    if (deformable_model_->ExistsMpmModel()) {
+      using GpuT = gmpm::config::GpuT;
+      gmpm::GpuMpmState<GpuT>& mutable_mpm_state = 
+        update->template get_mutable_abstract_state<gmpm::GpuMpmState<GpuT>>(
+            deformable_model_->gpu_mpm_state_index()
+        );
+      GpuT dt = static_cast<GpuT>(manager_->plant().time_step());
+      int current_frame = std::round(context.get_time() / dt);
+      GpuT substep_dt = GpuT(1e-3);
+      GpuT dt_left = dt;
+      int substep = 0;
+      long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      while (dt_left > 0) {
+        GpuT ddt = std::min(dt_left, substep_dt);
+        dt_left -= ddt;
+        mpm_solver_.RebuildMapping(&mutable_mpm_state, substep == 0);
+        mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
+        mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
+        mpm_solver_.UpdateGrid(&mutable_mpm_state);
+        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
+        substep += 1;
+      }
+      mpm_solver_.GpuSync();
+      long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      printf("\033[32mframe=%d time=%lldms\033[0m\n", current_frame, (after_ts - before_ts));
+      mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
+    }
+  }
+
   int num_deformable_bodies() const { return deformable_model_->num_bodies(); }
 
   // TODO(xuchenhan-tri): Implement CloneToDouble() and allow cloning to double.

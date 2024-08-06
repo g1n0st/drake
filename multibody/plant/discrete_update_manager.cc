@@ -1235,7 +1235,7 @@ void DiscreteUpdateManager<T>::ExtractConcreteModel(
   if constexpr (std::is_same_v<T, double>) {
     DRAKE_DEMAND(model != nullptr);
     DRAKE_DEMAND(deformable_driver_ == nullptr);
-    if (model->num_bodies() > 0) {
+    if (model->num_bodies() > 0 || model->ExistsMpmModel()) {
       deformable_driver_ =
           std::make_unique<DeformableDriver<double>>(model, this);
     }

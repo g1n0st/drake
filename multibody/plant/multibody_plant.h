@@ -5240,6 +5240,11 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   systems::EventStatus CalcDiscreteStep(
       const systems::Context<T>& context0,
       systems::DiscreteValues<T>* updates) const;
+  
+  // NOTE (changyu): for MPM
+  systems::EventStatus CalcAbstractStep(
+      const systems::Context<T>& context0,
+      systems::State<T>* updates) const;
 
   // Data will be resized on output according to the documentation for
   // JointLockingCacheData.

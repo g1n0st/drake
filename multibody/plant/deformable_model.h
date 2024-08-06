@@ -56,6 +56,7 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
 
   // NOTE (changyu): MPM-related methods
   bool ExistsMpmModel() const { return (cpu_mpm_model_ != nullptr); }
+
   DeformableBodyId RegisterMpmCloth(
     const std::vector<Vector3<T>>& pos,
     const std::vector<Vector3<T>>& vel,
@@ -83,6 +84,20 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
 
     const DeformableBodyId body_id = DeformableBodyId::get_new_id();
     return body_id;
+  }
+
+  const gmpm::CpuMpmModel<gmpm::config::GpuT>& cpu_mpm_model() const {
+    if (cpu_mpm_model_ == nullptr) {
+      throw std::logic_error("mpm_model(): No MPM Model registered");
+    }
+    return *cpu_mpm_model_;
+  }
+
+  const systems::AbstractStateIndex& gpu_mpm_state_index() const {
+    if (cpu_mpm_model_ == nullptr) {
+      throw std::logic_error("mpm_model(): No MPM Model registered");
+    }
+    return gpu_mpm_state_index_;
   }
 
   /** Returns the number of deformable bodies registered with this

@@ -2957,6 +2957,16 @@ systems::EventStatus MultibodyPlant<T>::CalcDiscreteStep(
   return systems::EventStatus::Succeeded();
 }
 
+// NOTE (changyu): for MPM
+template <typename T>
+systems::EventStatus MultibodyPlant<T>::CalcAbstractStep(
+    const systems::Context<T>& context0,
+    systems::State<T>* updates) const {
+  this->ValidateContext(context0);
+  discrete_update_manager_->CalcAbstractValues(context0, updates);
+  return systems::EventStatus::Succeeded();
+}
+
 template <typename T>
 void MultibodyPlant<T>::DeclareStateCacheAndPorts() {
   // The model must be finalized.
@@ -2965,10 +2975,18 @@ void MultibodyPlant<T>::DeclareStateCacheAndPorts() {
   if (is_discrete()) {
     this->DeclarePeriodicDiscreteUpdateEvent(
         time_step_, 0.0, &MultibodyPlant<T>::CalcDiscreteStep);
+    
+    // NOTE (changyu): for MPM
+    this->DeclarePeriodicUnrestrictedUpdateEvent(
+        time_step_, 0.0, &MultibodyPlant<T>::CalcAbstractStep);
 
     // Also permit triggering a step via a Forced update.
     this->DeclareForcedDiscreteUpdateEvent(
         &MultibodyPlant<T>::CalcDiscreteStep);
+    
+    // NOTE (changyu): for MPM
+    this->DeclareForcedUnrestrictedUpdateEvent(
+        &MultibodyPlant<T>::CalcAbstractStep);
   }
 
   DeclareCacheEntries();
