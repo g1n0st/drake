@@ -100,6 +100,7 @@ int do_main() {
   const int res = 100;
   const double l = 0.5;
   int length = res;
+  int num_clothes = 1;
   int width = res;
   double dx = l / width;
 
@@ -107,7 +108,7 @@ int do_main() {
     return i * width + j + o;
   };
 
-  for (int k = 0; k < 2; k++) {
+  for (int k = 0; k < num_clothes; k++) {
     int o = inital_pos.size();
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {

@@ -558,14 +558,15 @@ EventStatus DrakeVisualizer<T>::SendGeometryMessage(
   SendDrawNonDeformableMessage(query_object, params_,
                                EvalDynamicFrameData(context),
                                ExtractDoubleOrThrow(context.get_time()), lcm_);
-  SendDeformableGeometriesMessage(
-      query_object, params_, ExtractDoubleOrThrow(context.get_time()), lcm_);
   
   if (params_.show_mpm) {
     const auto& mpm_object = 
         mpm_input_port().template Eval<multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>>(context);
     SendMpmMessage(
         mpm_object, params_, ExtractDoubleOrThrow(context.get_time()), lcm_);
+  } else {
+    SendDeformableGeometriesMessage(
+      query_object, params_, ExtractDoubleOrThrow(context.get_time()), lcm_);
   }
 
   return EventStatus::Succeeded();
