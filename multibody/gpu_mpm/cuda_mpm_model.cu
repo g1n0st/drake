@@ -147,6 +147,29 @@ void GpuMpmState<T>::Destroy() {
     sort_buffer_size_ = 0;
 }
 
+template<typename T>
+GpuMpmState<T>::DumpT GpuMpmState<T>::DumpCpuState() const {
+    std::vector<Vec3<T>> export_pos;
+    std::vector<Vec3<T>> export_original_pos;
+    std::vector<int> export_pid;
+    std::vector<int> export_indices;
+    export_pos.resize(n_particles());
+    export_original_pos.resize(n_particles());
+    export_pid.resize(n_particles());
+    export_indices.resize(n_faces() * 3);
+    CUDA_SAFE_CALL(cudaMemcpy(export_pos.data(), current_positions(), sizeof(Vec3<T>) * n_particles(), cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(export_pid.data(), current_pids(), sizeof(int) * n_particles(), cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(export_indices.data(), indices(), sizeof(int) * n_faces() * 3, cudaMemcpyDeviceToHost));
+    for (size_t i = 0; i < n_particles(); ++i) {
+      export_original_pos[export_pid[i]] = export_pos[i];
+    }
+    export_pos = std::vector<Vec3<T>>(export_original_pos.begin() + n_faces(), export_original_pos.end());
+    for (size_t i = 0; i < n_faces() * 3; ++i) {
+      export_indices[i] -= n_faces();
+    }
+    return std::make_tuple(export_pos, export_indices);
+}
+
 template class GpuMpmState<double>;
 template class GpuMpmState<float>;
 

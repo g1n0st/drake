@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <tuple>
 #include <assert.h>
 
 #include "multibody/gpu_mpm/settings.h"
@@ -92,6 +93,10 @@ public:
     void Destroy();
 
     void SwitchCurrentState() { current_particle_buffer_id_ ^= 1; }
+
+    // NOTE (changyu): sync all visualization data to CPU side.
+    using DumpT = std::tuple<std::vector<Vec3<T>>, std::vector<int>>;
+    DumpT DumpCpuState() const;
 
 private:
 
