@@ -16,12 +16,12 @@ using Eigen::Vector3d;
 
 int do_main() {
   MpmDriver<float> driver(0.001, 0.01, Parallelism(32));
-  math::RigidTransform<double> X_WG(Vector3d(0, 0, 0.15));
+  math::RigidTransform<double> X_WG(Vector3d(0, 0, 0.25));
   auto geometry_instance = std::make_unique<geometry::GeometryInstance>(
-      X_WG, geometry::Sphere(0.03), "sphere");
+      X_WG, geometry::Sphere(0.10), "sphere");
   fem::DeformableBodyConfig<float> body_config;
   body_config.set_material_model(fem::MaterialModel::kCorotated);
-  body_config.set_youngs_modulus(5e3);
+  body_config.set_youngs_modulus(5e4);
   body_config.set_poissons_ratio(0.3);
   driver.SampleParticles(std::move(geometry_instance), 8, body_config);
   const int kNumSteps = 5000;

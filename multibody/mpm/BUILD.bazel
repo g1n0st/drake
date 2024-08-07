@@ -108,6 +108,7 @@ cc_library(
     hdrs = [
         "mpm_driver.h",
     ],
+    copts = ["-march=native", "-fopenmp"],
     deps = [
         ":particles",
         ":poisson_disk",
@@ -249,6 +250,7 @@ drake_py_experiment_binary(
 cc_binary(
     name = "driver_test",
     srcs = ["driver_test.cc"],
+    copts = ["-march=native"],
     deps = [
         ":mpm_driver",
         ":particles_to_bgeo",

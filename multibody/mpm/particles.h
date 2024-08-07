@@ -35,6 +35,12 @@ using ConstitutiveModelVariant =
                  fem::internal::LinearCorotatedModel<T>,
                  fem::internal::LinearConstitutiveModel<T>>;
 
+template <typename T>
+using DeformationGradientDataVariant =
+    std::variant<fem::internal::CorotatedModelData<T>,
+                 fem::internal::LinearCorotatedModelData<T>,
+                 fem::internal::LinearConstitutiveModelData<T>>;
+
 /* The collection of all physical attributes we care about for all particles.
  All quantities are measured and expressed in the world frame (when
  applicable).
@@ -53,6 +59,9 @@ struct ParticleData {
   std::vector<Matrix3<T>>
       tau_v0;             // Kirchhoff stress scaled by reference volume
   std::vector<T> volume;  // reference volume
+  std::vector<DeformationGradientDataVariant<T>>
+      strain_data;  // Deformation gradient dependent data that is used to
+                    // calculate the energy density and its derivatives.
 
   std::vector<ConstitutiveModelVariant<T>> constitutive_models;
   std::vector<std::pair<int, int>>

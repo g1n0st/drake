@@ -6,6 +6,7 @@
 
 #include "drake/common/eigen_types.h"
 #include "drake/common/nice_type_name.h"
+#include "drake/multibody/mpm/simd_scalar.h"
 
 namespace drake {
 namespace multibody {
@@ -69,15 +70,10 @@ class ConstitutiveModel {
     derived().CalcFirstPiolaStressImpl(data, P);
   }
 
-  Matrix3<T> CalcFirstPiolaStress(const Matrix3<T>& F) const {
-    // TODO(xuchenhan-tri): Make the previous time step deformation gradient
-    // optional and allow direct construction of non-identity deformation
-    // gradient.
-    Data data;
-    data.UpdateData(F, F);
-    Matrix3<T> P;
-    CalcFirstPiolaStress(data, &P);
-    return P;
+  Matrix3<mpm::internal::SimdScalar<T>> CalcFirstPiolaStress(
+      const Matrix3<mpm::internal::SimdScalar<T>>& F) const {
+    // TODO(xuchenhan-tri): implement this.
+    return Matrix3<mpm::internal::SimdScalar<T>>::Zero();
   }
 
   /* Calculates the derivative of first Piola stress with respect to the
@@ -108,6 +104,8 @@ class ConstitutiveModel {
     DRAKE_ASSERT(dPdF != nullptr);
     derived().CalcFirstPiolaStressDerivativeImpl(data, dPdF);
   }
+
+  Data MakeDefaultData() const { return Data(); }
 
  protected:
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(ConstitutiveModel);

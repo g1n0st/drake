@@ -1,6 +1,7 @@
 #include "mpm_driver.h"
 
 #include <variant>
+#include <iostream>
 
 #include "transfer.h"
 
@@ -88,8 +89,9 @@ void MpmDriver<T>::SampleParticles(
   const T volume_per_particle = total_volume / num_particles;
   const RigidTransform<double>& X_WG = geometry_instance->pose();
   const int num_existing_particles = ssize(particles_.m);
+  ConstitutiveModelVariant<T> constitutive_model =
+      MakeConstitutiveModel<T>(config);
   for (int i = 0; i < num_particles; ++i) {
-    // TODO(xuchenhan-tri): Reject the particle if it is outside the geometry.
     const Vector3<double> q_WP = X_WG * q_GPs[i].cast<double>();
     particles_.m.push_back(mass_density * volume_per_particle);
     particles_.x.push_back(q_WP.cast<T>());
@@ -98,8 +100,13 @@ void MpmDriver<T>::SampleParticles(
     particles_.tau_v0.push_back(Matrix3<T>::Zero());
     particles_.C.push_back(Matrix3<T>::Zero());
     particles_.volume.push_back(volume_per_particle);
+    std::visit(
+        [this](auto& model) {
+          particles_.strain_data.push_back(model.MakeDefaultData());
+        },
+        constitutive_model);
   }
-  particles_.constitutive_models.push_back(MakeConstitutiveModel<T>(config));
+  particles_.constitutive_models.push_back(constitutive_model);
   particles_.materials.push_back(
       {num_existing_particles, num_existing_particles + num_particles});
 }
@@ -121,13 +128,50 @@ template <typename T>
 void MpmDriver<T>::UpdateParticleStress() {
   for (int m = 0; m < ssize(particles_.materials); ++m) {
     const auto& constitutive_model = particles_.constitutive_models[m];
+    [[maybe_unused]] const int num_threads = parallelism_.num_threads();
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(num_threads)
+#endif
     for (int i = particles_.materials[m].first;
          i < particles_.materials[m].second; ++i) {
       std::visit(
-          [=, this](auto& model) {
+          [&, this](auto& model) {
             const Matrix3<T>& F = particles_.F[i];
-            const Matrix3<T> P = model.CalcFirstPiolaStress(F);
-            particles_.tau_v0[i] = particles_.volume[i] * P * F.transpose();
+            using StrainDataType = typename std::decay_t<decltype(model)>::Data;
+            StrainDataType& strain_data =
+                std::get<StrainDataType>(particles_.strain_data[i]);
+            strain_data.UpdateData(F, F);
+            model.CalcFirstPiolaStress(strain_data, &particles_.tau_v0[i]);
+            particles_.tau_v0[i] *= particles_.volume[i] * F.transpose();
+          },
+          constitutive_model);
+    }
+  }
+}
+
+template <typename T>
+void MpmDriver<T>::SimdUpdateParticleStress() {
+  for (int m = 0; m < ssize(particles_.materials); ++m) {
+    const auto& constitutive_model = particles_.constitutive_models[m];
+    [[maybe_unused]] const int num_threads = parallelism_.num_threads();
+    const int lanes = SimdScalar<T>::lanes();
+    std::vector<int> indices(lanes);
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(num_threads)
+#endif
+    for (int i = particles_.materials[m].first;
+         i < particles_.materials[m].second; i += lanes) {
+      const int end = std::min(i + lanes, particles_.materials[m].second);
+      indices.resize(end - i);
+      std::iota(indices.begin(), indices.end(), i);
+      const Matrix3<SimdScalar<T>> F = Load(particles_.F, indices);
+      const SimdScalar<T> volume = Load(particles_.volume, indices);
+      std::visit(
+          [&, this](auto& model) {
+            const Matrix3<SimdScalar<T>> P = model.CalcFirstPiolaStress(F);
+            const Matrix3<SimdScalar<T>> tau_v0 = volume * P * F.transpose();
+            particles_.tau_v0[0].setZero();
+            Store(tau_v0, &particles_.tau_v0, indices);
           },
           constitutive_model);
     }

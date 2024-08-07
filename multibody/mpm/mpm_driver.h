@@ -38,31 +38,7 @@ class MpmDriver {
  private:
   void UpdateParticleStress();
 
-#ifdef NOT_YET_IMPLEMENTED
-  void UpdateParticleStress() {
-    for (int m = 0; m < ssize(particles_.materials); ++m) {
-      const auto& constitutive_model = particles_.constitutive_models[m];
-      [[maybe_unused]] const int num_threads = parallelism_.num_threads();
-      const int lanes = SimdScalar<T>::lanes();
-      std::vector<int> indices.reserve(lanes);
-      StrainData<SimdScalar<T>> strain_data;
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(num_threads)
-#endif
-      for (int i = particles_.materials[m].first;
-           i < particles_.materials[m].second; i += lanes) {
-        const int end = std::min(i + lanes, particles_.materials[m].second);
-        indices.resize(end - i);
-        std::iota(indices.begin(), indices.end(), i);
-        const Matrix3<SimdScalar<T>> F = Load(particles_.F, indices);
-        const auto& constitutive_model = particles_.constitutive_models[m];
-        strain_data Matrix3<SimdScalar<T>> P;
-        constitutive_model.CalcFirstPiolaStress(F);
-        particles_.stress[i] = stress;
-      }
-    }
-  }
-#endif
+  void SimdUpdateParticleStress();
 
   T dt_{0.0};
   T dx_{0.0};

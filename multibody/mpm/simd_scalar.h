@@ -89,7 +89,7 @@ template <typename T>
 class SimdScalar {
  public:
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(SimdScalar);
-
+  // static_assert(false);
   using ValueType = T;
 
   SimdScalar() = default;
