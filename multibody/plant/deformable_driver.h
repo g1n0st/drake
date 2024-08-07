@@ -125,7 +125,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         );
       GpuT dt = static_cast<GpuT>(manager_->plant().time_step());
       int current_frame = std::round(context.get_time() / dt);
-      GpuT substep_dt = GpuT(1e-3);
+      GpuT substep_dt = GpuT(deformable_model_->cpu_mpm_model().config.substep_dt);
       GpuT dt_left = dt;
       int substep = 0;
       long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -142,7 +142,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       mpm_solver_.GpuSync();
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       printf("\033[32mframe=%d time=%lldms\033[0m\n", current_frame, (after_ts - before_ts));
-      mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
+      if (deformable_model_->cpu_mpm_model().config.write_files) {
+        mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
+      }
     }
   }
 

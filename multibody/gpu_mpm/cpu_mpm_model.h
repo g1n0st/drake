@@ -12,6 +12,13 @@ namespace drake {
 namespace multibody {
 namespace gmpm {
 
+// NOTE(changyu): `MpmConfigParams` is responsive to store the initial config parameters in `CpuMpmModel`,
+template<typename T = config::GpuT>
+struct MpmConfigParams {
+    T substep_dt {static_cast<T>(1e-3)};
+    bool write_files {false};
+};
+
 // NOTE(changyu): `CpuMpmModel` is responsive to store the initial config in `DeformableModel`,
 // (mesh topology, particle state, material/solver parameters, etc.),
 // and use them to initialize the `GpuMpmState` when all finalize.
@@ -22,6 +29,8 @@ struct CpuMpmModel {
     std::vector<Vec3<T>> pos;
     std::vector<Vec3<T>> vel;
     std::vector<int> indices;
+
+    MpmConfigParams<T> config;
 };
 
 // NOTE(changyu): a temporary data buffer used to do the communication between

@@ -46,6 +46,7 @@ using drake::multibody::AddMultibodyPlant;
 using drake::multibody::CoulombFriction;
 using drake::multibody::DeformableBodyId;
 using drake::multibody::DeformableModel;
+using drake::multibody::gmpm::MpmConfigParams;
 using drake::multibody::ModelInstanceIndex;
 using drake::multibody::MultibodyPlant;
 using drake::multibody::MultibodyPlantConfig;
@@ -132,19 +133,25 @@ int do_main() {
     }
   }
 
+  MpmConfigParams mpm_config;
+  mpm_config.substep_dt = 1e-3;
+  mpm_config.write_files = false;
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
+  deformable_model.SetMpmConfig(std::move(mpm_config));
 
   /* All rigid and deformable models have been added. Finalize the plant. */
   plant.Finalize();
 
   /* Add a visualizer that emits LCM messages for visualization. */
-  geometry::DrakeVisualizerParams params;
-  params.show_mpm = true;
-  auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph, nullptr, params);
+  geometry::DrakeVisualizerParams visualize_params;
+  visualize_params.show_mpm = true;
+  auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph, nullptr, visualize_params);
 
-  const auto& model = plant.deformable_model();
-  builder.Connect(plant.get_output_port(model.mpm_output_port_index()), visualizer.mpm_input_port());
+  // NOTE (changyu): MPM shortcut port shuould be explicit connected for visualization.
+  builder.Connect(plant.get_output_port(
+    plant.deformable_model().mpm_output_port_index()), 
+    visualizer.mpm_input_port());
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();

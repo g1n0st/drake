@@ -57,6 +57,14 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
   // NOTE (changyu): MPM-related methods
   bool ExistsMpmModel() const { return (cpu_mpm_model_ != nullptr); }
 
+  void SetMpmConfig(gmpm::MpmConfigParams<gmpm::config::GpuT> mpm_config) {
+    this->ThrowIfSystemResourcesDeclared(__func__);
+    ThrowIfNotDouble(__func__);
+    if constexpr (std::is_same_v<T, double>) {
+      cpu_mpm_model_->config = std::move(mpm_config);
+    }
+  }
+
   DeformableBodyId RegisterMpmCloth(
     const std::vector<Vector3<T>>& pos,
     const std::vector<Vector3<T>>& vel,
