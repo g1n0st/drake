@@ -81,8 +81,9 @@ void MpmDriver<T>::SampleParticles(
       PoissonDiskSampling<double>(sampling_radius, bounding_box[0],
                                   bounding_box[1]);
   /* Reject points that fall outside of the shape. */
-  const std::vector<Vector3<double>> q_GPs =
+  std::vector<Vector3<double>> q_GPs =
       FilterPoints(q_GP_candidates, geometry_instance->shape());
+  grid_.SortParticles(&q_GPs);
   const int num_particles = ssize(q_GPs);
   const T mass_density = config.mass_density();
   const double total_volume = geometry::CalcVolume(geometry_instance->shape());
@@ -92,7 +93,7 @@ void MpmDriver<T>::SampleParticles(
   ConstitutiveModelVariant<T> constitutive_model =
       MakeConstitutiveModel<T>(config);
   for (int i = 0; i < num_particles; ++i) {
-    const Vector3<double> q_WP = X_WG * q_GPs[i].cast<double>();
+    const Vector3<double> q_WP = X_WG * q_GPs[i];
     particles_.m.push_back(mass_density * volume_per_particle);
     particles_.x.push_back(q_WP.cast<T>());
     particles_.v.push_back({0, 0, 0});

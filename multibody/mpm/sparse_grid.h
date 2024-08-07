@@ -208,6 +208,12 @@ class SparseGrid {
     return colored_blocks_;
   }
 
+  /* Sort the given particle positions in place first according to their base
+   node offsets and then according to their indices in `q_WPs`. 
+  @pre q_WPs != nullptr.
+  @pre q_WPs->size() < 2^31. */
+  void SortParticles(std::vector<Vector3<double>>* q_WPs) const;
+
  private:
   static constexpr int kLog2Page = 12;  // 4KB page size.
   /* The maximum grid size along a single dimension. That is even

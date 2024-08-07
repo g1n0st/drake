@@ -316,6 +316,29 @@ void SparseGrid<T>::SortParticleIndices(const std::vector<Vector3<T>>& q_WPs) {
   sentinel_particles_.push_back(num_particles);
 }
 
+template <typename T>
+void SparseGrid<T>::SortParticles(std::vector<Vector3<double>>* q_WPs) const {
+  DRAKE_DEMAND(q_WPs != nullptr);
+  const int num_particles = q_WPs->size();
+  std::vector<uint64_t> particle_sorters(num_particles);
+  constexpr int kIndexBits = 64 - 3 * kLog2MaxGridSize;
+  constexpr int kZeroPageBits = 64 - kDataBits - 3 * kLog2MaxGridSize;
+  for (int p = 0; p < num_particles; ++p) {
+    const Vector3<int> base_node = ComputeBaseNode<double>(q_WPs->at(p) / dx_);
+    uint64_t base_node_offsets =
+        CoordinateToOffset(base_node[0], base_node[1], base_node[2]);
+    uint64_t data_indices = p;
+    particle_sorters[p] = (base_node_offsets << kZeroPageBits) + data_indices;
+  }
+  ips2ra::sort(particle_sorters.begin(), particle_sorters.end());
+  std::vector<Vector3<double>> result(num_particles);
+  for (int p = 0; p < ssize(particle_sorters); ++p) {
+    int data_indices = particle_sorters[p] & ((uint64_t(1) << kIndexBits) - 1);
+    result[p] = q_WPs->at(data_indices);
+  }
+  *q_WPs = result;
+}
+
 }  // namespace internal
 }  // namespace mpm
 }  // namespace multibody
