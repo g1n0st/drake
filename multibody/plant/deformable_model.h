@@ -87,17 +87,42 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
   }
 
   const gmpm::CpuMpmModel<gmpm::config::GpuT>& cpu_mpm_model() const {
-    if (cpu_mpm_model_ == nullptr) {
+    if (!ExistsMpmModel()) {
       throw std::logic_error("mpm_model(): No MPM Model registered");
     }
     return *cpu_mpm_model_;
   }
 
   const systems::AbstractStateIndex& gpu_mpm_state_index() const {
-    if (cpu_mpm_model_ == nullptr) {
+    if (!ExistsMpmModel()) {
       throw std::logic_error("mpm_model(): No MPM Model registered");
     }
     return gpu_mpm_state_index_;
+  }
+
+  const systems::OutputPortIndex& mpm_output_port_index() const {
+    this->ThrowIfSystemResourcesNotDeclared(__func__);
+    if (!ExistsMpmModel()) {
+      throw std::logic_error("mpm_output_port(): No MPM Model registered");
+    }
+    DRAKE_DEMAND(mpm_output_port_index_.is_valid());
+    return mpm_output_port_index_;
+  }
+
+  void DumpMpmData(const systems::Context<T>& context,
+                            AbstractValue* output) const {
+    if (ExistsMpmModel()) {
+      auto& mpm_port_data =
+        output->get_mutable_value<gmpm::MpmPortData<gmpm::config::GpuT>>();
+      const auto& mpm_state =
+        context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(
+          gpu_mpm_state_index_);
+      const auto& dump_data = mpm_state.DumpCpuState();
+      mpm_port_data.pos = std::get<0>(dump_data);
+      mpm_port_data.indices = std::get<1>(dump_data);
+    } else {
+      std::logic_error("CopyVertexPositions(): No MPM Model registered");
+    }
   }
 
   /** Returns the number of deformable bodies registered with this
@@ -403,6 +428,8 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
   std::unique_ptr<gmpm::CpuMpmModel<gmpm::config::GpuT>> cpu_mpm_model_;
   // NOTE (changyu): GPU MPM model
   systems::AbstractStateIndex gpu_mpm_state_index_;
+  // NOTE (changyu): MPM output port for visualization
+  systems::OutputPortIndex mpm_output_port_index_;
 };
 
 }  // namespace multibody

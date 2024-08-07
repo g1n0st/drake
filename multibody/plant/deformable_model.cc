@@ -473,6 +473,19 @@ void DeformableModel<T>::DoDeclareSceneGraphPorts() {
               },
               {systems::System<double>::xd_ticket()})
           .get_index();
+  
+  mpm_output_port_index_ =
+      this->DeclareAbstractOutputPort(
+              "mpm_output_port",
+              []() {
+                return AbstractValue::Make<gmpm::MpmPortData<gmpm::config::GpuT>>();
+              },
+              [this](const systems::Context<T>& context,
+                     AbstractValue* output) {
+                this->DumpMpmData(context, output);
+              },
+              {systems::System<double>::all_sources_ticket()})
+          .get_index();
 }
 
 template <typename T>

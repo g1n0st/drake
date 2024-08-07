@@ -14,13 +14,22 @@ namespace gmpm {
 
 // NOTE(changyu): `CpuMpmModel` is responsive to store the initial config in `DeformableModel`,
 // (mesh topology, particle state, material/solver parameters, etc.),
-// and use them to initialize the GpuMpmState when all finalize.
+// and use them to initialize the `GpuMpmState` when all finalize.
 // TODO (changyu): now it only be specific for MPM cloth.
 template<typename T>
 struct CpuMpmModel {
     CpuMpmModel() = default;
     std::vector<Vec3<T>> pos;
     std::vector<Vec3<T>> vel;
+    std::vector<int> indices;
+};
+
+// NOTE(changyu): a temporary data buffer used to do the communication between
+// `DeformableModel` input port and `DrakeVisualizer` output port to visualize MPM-related data.
+// TODO (changyu): now it only be specific for MPM cloth.
+template<typename T>
+struct MpmPortData {
+    std::vector<Vec3<T>> pos;
     std::vector<int> indices;
 };
 

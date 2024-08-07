@@ -144,6 +144,7 @@ drake_cc_library(
         "//lcm:drake_lcm",
         "//lcmtypes:viewer",
         "//systems/lcm:lcm_system_graphviz",
+        "//multibody/gpu_mpm:cuda_mpm",
     ],
 )
 

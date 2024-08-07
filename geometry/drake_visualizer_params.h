@@ -18,6 +18,7 @@ struct DrakeVisualizerParams {
     a->Visit(DRAKE_NVP(default_color));
     a->Visit(DRAKE_NVP(show_hydroelastic));
     a->Visit(DRAKE_NVP(use_role_channel_suffix));
+    a->Visit(DRAKE_NVP(show_mpm));
   }
 
   /** The duration (in seconds) between published LCM messages that update the
@@ -52,6 +53,9 @@ struct DrakeVisualizerParams {
    appended, allowing simultaneous transmission of multiple geometry roles via
    multiple DrakeVisualizer instances. See DrakeVisualizer for details. */
   bool use_role_channel_suffix{false};
+
+  // NOTE (changyu): to show MPM model
+  bool show_mpm{false};
 };
 
 }  // namespace geometry
