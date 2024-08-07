@@ -474,6 +474,7 @@ void DeformableModel<T>::DoDeclareSceneGraphPorts() {
               {systems::System<double>::xd_ticket()})
           .get_index();
   
+  // NOTE (changyu): output port for mpm visualization (drake visualizer)
   mpm_output_port_index_ =
       this->DeclareAbstractOutputPort(
               "mpm_output_port",
