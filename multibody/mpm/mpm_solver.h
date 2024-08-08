@@ -120,27 +120,26 @@ class MpmSolver {
 
       // Particles<T> temp_initial_particles = mpm_state.particles;
       Particles<T> temp_particles = mpm_state.particles;
-      SparseGrid<T> temp_sparse_grid = mpm_state.sparse_grid;
 
       // std::cout << "Inital Momentum" << mpm_state.particles.ComputeTotalMassMomentum().total_angular_momentum.norm() << std::endl;
 
       for (int i = 0; i < count; ++i) {
         // transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_particles));
-        transfer.P2G(temp_particles, temp_sparse_grid,
+        transfer.P2G(temp_particles, mpm_state.sparse_grid,
                     grid_data_free_motion, &(scratch->transfer_scratch));
         // std::cout << "P2G Momentum" << temp_sparse_grid.ComputeTotalMassMomentum(*grid_data_free_motion).total_angular_momentum.norm() << std::endl;
 
         grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(substep_dt, model.gravity());
         // std::cout << "Apply Force Momentum" << temp_sparse_grid.ComputeTotalMassMomentum(*grid_data_free_motion).total_angular_momentum.norm() << std::endl;
         if (params.apply_ground) {
-          UpdateCollisionNodesWithGround(temp_sparse_grid,
+          UpdateCollisionNodesWithGround(mpm_state.sparse_grid,
                                         &(scratch->collision_nodes));
 
           grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
                                                 params.sticky_ground);
         }
 
-        transfer.G2P(temp_sparse_grid, *grid_data_free_motion, temp_particles, &scratch->particles_data, &(scratch->transfer_scratch));
+        transfer.G2P(mpm_state.sparse_grid, *grid_data_free_motion, temp_particles, &scratch->particles_data, &(scratch->transfer_scratch));
         temp_particles.SetVelocities(scratch->particles_data.particle_velocites_next);
         temp_particles.SetBMatrices(scratch->particles_data.particle_B_matrices_next);
         temp_particles.UpdateTrialDeformationGradients(substep_dt, scratch->particles_data.particle_grad_v_next);

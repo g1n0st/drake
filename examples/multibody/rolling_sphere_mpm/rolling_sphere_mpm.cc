@@ -121,7 +121,7 @@ int do_main() {
     owned_deformable_model->ApplyMpmGround();
   }
   owned_deformable_model->SetIntegrator(drake::multibody::mpm::MpmIntegratorType::OldSubstep);
-  owned_deformable_model->SetSubstepCount(1);
+  owned_deformable_model->SetSubstepCount(100);
   owned_deformable_model->SetMpmGravity(
       Vector3<double>(0.0, 0.0, -(6.0/1.0)));
   //   owned_deformable_model->SetMpmGravity(
