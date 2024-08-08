@@ -3,44 +3,49 @@
 #include <array>
 
 #include "drake/multibody/fem/constitutive_model.h"
-#include "drake/multibody/fem/corotated_model_data.h"
+#include "drake/multibody/fem/stvk_hencky_von_mises_model_data.h"
 
 namespace drake {
 namespace multibody {
 namespace fem {
 namespace internal {
 
-/* Traits for CorotatedModel. */
+/* Traits for StvkHenckyVonMisesModel. */
 template <typename T>
-struct CorotatedModelTraits {
+struct StvkHenckyVonMisesModelTraits {
   using Scalar = T;
-  using Data = CorotatedModelData<T>;
+  using Data = StvkHenckyVonMisesModelData<T>;
   static constexpr int is_linear = false;
 };
 
-/* Implements the fixed corotated hyperelastic constitutive model as
- described in [Stomakhin, 2012].
+/* Implements Saint-Venant Kirchhoff model, but replaces the left Cauchy Green
+strain with the Hencky strain https://dl.acm.org/doi/abs/10.1145/2897824.2925906
+
  @tparam_nonsymbolic_scalar
 
  [Stomakhin, 2012] Stomakhin, Alexey, et al. "Energetically consistent
  invertible elasticity." Proceedings of the 11th ACM SIGGRAPH/Eurographics
  conference on Computer Animation. 2012. */
 template <typename T>
-class CorotatedModel final
-    : public ConstitutiveModel<CorotatedModel<T>, CorotatedModelTraits<T>> {
+class StvkHenckyVonMisesModel final
+    : public ConstitutiveModel<StvkHenckyVonMisesModel<T>,
+                               StvkHenckyVonMisesModelTraits<T>> {
  public:
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(CorotatedModel);
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(StvkHenckyVonMisesModel);
 
-  using Traits = CorotatedModelTraits<T>;
+  using Traits = StvkHenckyVonMisesModelTraits<T>;
   using Data = typename Traits::Data;
 
-  /* Constructs a CorotatedModel constitutive model with the
+  /* Constructs a StvkHenckyVonMisesModel constitutive model with the
    prescribed Young's modulus and Poisson's ratio.
    @param youngs_modulus  Young's modulus of the model, with units of N/m².
    @param poissons_ratio  Poisson's ratio of the model, unitless.
+   @param yield_stress    Yield stress for plasticitiy, N/m². We treat the model
+                          as elastic if yield_stress is negative.
    @pre youngs_modulus >= 0.
    @pre -1 < poissons_ratio < 0.5. */
-  CorotatedModel(const T& youngs_modulus, const T& poissons_ratio);
+  StvkHenckyVonMisesModel(const T& youngs_modulus, const T& poissons_ratio,
+                          const T& yield_stress);
 
   const T& youngs_modulus() const { return E_; }
 
@@ -57,7 +62,8 @@ class CorotatedModel final
   const T& lame_first_parameter() const { return lambda_; }
 
  private:
-  friend ConstitutiveModel<CorotatedModel<T>, CorotatedModelTraits<T>>;
+  friend ConstitutiveModel<StvkHenckyVonMisesModel<T>,
+                           StvkHenckyVonMisesModelTraits<T>>;
 
   /* Shadows ConstitutiveModel::CalcElasticEnergyDensityImpl() as required by
    the CRTP base class. */
@@ -74,12 +80,15 @@ class CorotatedModel final
 
   /* Shadows ConstitutiveModel::ProjectStrain() as required by the CRTP base
    class. */
-  void ProjectStrainImpl(Matrix3<T>*, Data*) const {}
+  void ProjectStrainImpl(Matrix3<T>* F, Data* data) const;
 
-  T E_;       // Young's modulus, N/m².
-  T nu_;      // Poisson's ratio.
-  T mu_;      // Lamé's second parameter/Shear modulus, N/m².
-  T lambda_;  // Lamé's first parameter, N/m².
+  T E_;             // Young's modulus, N/m².
+  T nu_;            // Poisson's ratio.
+  T mu_;            // Lamé's second parameter/Shear modulus, N/m².
+  T lambda_;        // Lamé's first parameter, N/m².
+  T yield_stress_;  // Yield stress for plasticitiy, N/m². We treat the model as
+                    // elastic if yield_stress_ is negative.
+  static constexpr double kSqrt3Over2 = 1.224744871391589;
 };
 
 }  // namespace internal

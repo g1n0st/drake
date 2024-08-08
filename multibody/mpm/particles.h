@@ -7,6 +7,7 @@
 #include "drake/multibody/fem/corotated_model.h"
 #include "drake/multibody/fem/linear_constitutive_model.h"
 #include "drake/multibody/fem/linear_corotated_model.h"
+#include "drake/multibody/fem/stvk_hencky_von_mises_model.h"
 #include "drake/multibody/mpm/math.h"
 
 namespace drake {
@@ -33,13 +34,15 @@ template <typename T>
 using ConstitutiveModelVariant =
     std::variant<fem::internal::CorotatedModel<T>,
                  fem::internal::LinearCorotatedModel<T>,
-                 fem::internal::LinearConstitutiveModel<T>>;
+                 fem::internal::LinearConstitutiveModel<T>,
+                 fem::internal::StvkHenckyVonMisesModel<T>>;
 
 template <typename T>
 using DeformationGradientDataVariant =
     std::variant<fem::internal::CorotatedModelData<T>,
                  fem::internal::LinearCorotatedModelData<T>,
-                 fem::internal::LinearConstitutiveModelData<T>>;
+                 fem::internal::LinearConstitutiveModelData<T>,
+                 fem::internal::StvkHenckyVonMisesModelData<T>>;
 
 /* The collection of all physical attributes we care about for all particles.
  All quantities are measured and expressed in the world frame (when

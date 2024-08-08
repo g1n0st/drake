@@ -74,6 +74,10 @@ class LinearCorotatedModel final
   void CalcFirstPiolaStressDerivativeImpl(const Data& data,
                                           Eigen::Matrix<T, 9, 9>* dPdF) const;
 
+  /* Shadows ConstitutiveModel::ProjectStrain() as required by the CRTP base
+   class. */
+  void ProjectStrainImpl(Matrix3<T>*, Data*) const {}
+
   T E_;       // Young's modulus, N/m².
   T nu_;      // Poisson's ratio.
   T mu_;      // Lamé's second parameter/Shear modulus, N/m².

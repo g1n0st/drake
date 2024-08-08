@@ -22,6 +22,7 @@ enum class MaterialModel {
    the linear corotational model. May require smaller time steps. Recommended
    when capturing large rotation velocity is important. */
   kCorotated,
+  kStvkHenckyVonMises,
   /** Linear elasticity model (rarely used).
    Less computationally expensive than other models but leads to artifacts
    when large rotational deformations occur. */
@@ -89,6 +90,13 @@ class DeformableBodyConfig {
     mass_density_ = std::move(mass_density);
   }
 
+  /* A negative yield stress indicates that the body is purely elastic.
+   Note that not all constitutive models support plasticitiy. The yield stress
+   is ignored for incompatible models. */
+  void set_yield_stress(T yield_stress) {
+    yield_stress_ = std::move(yield_stress);
+  }
+
   void set_material_model(MaterialModel material_model) {
     material_model_ = material_model;
   }
@@ -107,6 +115,8 @@ class DeformableBodyConfig {
   }
   /** Returns the mass density, with unit of kg/m³. */
   const T& mass_density() const { return mass_density_; }
+  /** Returns the yield stress of the material, with unit of Pa. */
+  const T& yield_stress() const { return yield_stress_; }
   /** Returns the constitutive model of the material. */
   MaterialModel material_model() const { return material_model_; }
 
@@ -116,6 +126,7 @@ class DeformableBodyConfig {
   T mass_damping_coefficient_{0};
   T stiffness_damping_coefficient_{0};
   T mass_density_{1.5e3};
+  T yield_stress_{-1};
   MaterialModel material_model_{MaterialModel::kLinearCorotated};
 };
 

@@ -60,6 +60,10 @@ ConstitutiveModelVariant<T> MakeConstitutiveModel(
     case fem::MaterialModel::kLinear:
       return fem::internal::LinearConstitutiveModel<T>(config.youngs_modulus(),
                                                        config.poissons_ratio());
+    case fem::MaterialModel::kStvkHenckyVonMises:
+      return fem::internal::StvkHenckyVonMisesModel<T>(config.youngs_modulus(),
+                                                       config.poissons_ratio(),
+                                                       config.yield_stress());
   }
   DRAKE_UNREACHABLE();
 }
@@ -137,11 +141,11 @@ void MpmDriver<T>::UpdateParticleStress() {
          i < particles_.materials[m].second; ++i) {
       std::visit(
           [&, this](auto& model) {
-            const Matrix3<T>& F = particles_.F[i];
+            Matrix3<T>& F = particles_.F[i];
             using StrainDataType = typename std::decay_t<decltype(model)>::Data;
             StrainDataType& strain_data =
                 std::get<StrainDataType>(particles_.strain_data[i]);
-            strain_data.UpdateData(F, F);
+            model.ProjectStrain(&F, &strain_data);
             model.CalcFirstPiolaStress(strain_data, &particles_.tau_v0[i]);
             particles_.tau_v0[i] *= particles_.volume[i] * F.transpose();
           },

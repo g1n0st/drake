@@ -105,6 +105,13 @@ class ConstitutiveModel {
     derived().CalcFirstPiolaStressDerivativeImpl(data, dPdF);
   }
 
+  /* Given the trial deformation gradient, projects it back to the yield surface
+   and updates the associated DeformationGradientData. */
+  void ProjectStrain(Matrix3<T>* F, Data* data) const {
+    DRAKE_ASSERT(data != nullptr);
+    derived().ProjectStrainImpl(F, data);
+  }
+
   Data MakeDefaultData() const { return Data(); }
 
  protected:
@@ -137,6 +144,13 @@ class ConstitutiveModel {
     throw std::logic_error(
         fmt::format("The derived class {} must provide a shadow definition of "
                     "CalcFirstPiolaStressDerivativeImpl() to be correct.",
+                    NiceTypeName::Get(derived())));
+  }
+
+  void ProjectStrainImpl(Matrix3<T>* F, Data* data) const {
+    throw std::logic_error(
+        fmt::format("The derived class {} must provide a shadow definition of "
+                    "ProjectStrainImpl() to be correct.",
                     NiceTypeName::Get(derived())));
   }
 

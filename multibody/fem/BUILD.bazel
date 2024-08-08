@@ -43,6 +43,8 @@ drake_cc_package_library(
         ":quadrature",
         ":schur_complement",
         ":simplex_gaussian_quadrature",
+        ":stvk_hencky_von_mises_model",
+        ":stvk_hencky_von_mises_model_data",
         ":velocity_newmark_scheme",
         ":volumetric_element",
         ":volumetric_model",
@@ -479,6 +481,44 @@ drake_cc_library(
     ],
     deps = [
         ":quadrature",
+    ],
+)
+
+drake_cc_library(
+    name = "stvk_hencky_von_mises_model",
+    srcs = [
+        "stvk_hencky_von_mises_model.cc",
+    ],
+    hdrs = [
+        "stvk_hencky_von_mises_model.h",
+    ],
+    copts = select({
+        ":build_avx2_fma": ["-march=broadwell"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":calc_lame_parameters",
+        ":constitutive_model",
+        ":stvk_hencky_von_mises_model_data",
+        ":matrix_utilities",
+        "//common:autodiff",
+        "//common:essential",
+    ],
+)
+
+drake_cc_library(
+    name = "stvk_hencky_von_mises_model_data",
+    srcs = [
+        "stvk_hencky_von_mises_model_data.cc",
+    ],
+    hdrs = [
+        "stvk_hencky_von_mises_model_data.h",
+    ],
+    deps = [
+        ":deformation_gradient_data",
+        ":matrix_utilities",
+        "//common:autodiff",
+        "//common:essential",
     ],
 )
 
