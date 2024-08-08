@@ -209,7 +209,7 @@ class SparseGrid {
   }
 
   /* Sort the given particle positions in place first according to their base
-   node offsets and then according to their indices in `q_WPs`. 
+   node offsets and then according to their indices in `q_WPs`.
   @pre q_WPs != nullptr.
   @pre q_WPs->size() < 2^31. */
   void SortParticles(std::vector<Vector3<double>>* q_WPs) const;
@@ -244,6 +244,10 @@ class SparseGrid {
   using Array = typename Allocator::Array_type<GridData<T>>;
   using ConstArray = typename Allocator::Array_type<const GridData<T>>;
   static constexpr int kDataBits = Mask::data_bits;
+
+  static constexpr int kNumNodesInBlockX = 1 << Mask::block_xbits;
+  static constexpr int kNumNodesInBlockY = 1 << Mask::block_ybits;
+  static constexpr int kNumNodesInBlockZ = 1 << Mask::block_zbits;
 
   /* Helper for `Allocate()` that sorts particles based on their positions. In
    that process, builds `data_indices_` and `sentinel_particles_`. */

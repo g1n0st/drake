@@ -24,16 +24,12 @@ SparseGrid<T>::SparseGrid(T dx, Parallelism parallelism)
   DRAKE_DEMAND(dx > 0);
 
   /* Compute the block offset strides. */
-  const int num_nodes_in_block_x = 1 << Mask::block_xbits;
-  const int num_nodes_in_block_y = 1 << Mask::block_ybits;
-  const int num_nodes_in_block_z = 1 << Mask::block_zbits;
-
   for (int i = -1; i <= 1; ++i) {
     for (int j = -1; j <= 1; ++j) {
       for (int k = -1; k <= 1; ++k) {
-        block_offset_strides_[i + 1][j + 1][k + 1] = Mask::Linear_Offset(
-            i * num_nodes_in_block_x, j * num_nodes_in_block_y,
-            k * num_nodes_in_block_z);
+        block_offset_strides_[i + 1][j + 1][k + 1] =
+            Mask::Linear_Offset(i * kNumNodesInBlockX, j * kNumNodesInBlockY,
+                                k * kNumNodesInBlockZ);
       }
     }
   }
@@ -142,20 +138,29 @@ void SparseGrid<T>::SetPadData(uint64_t center_node_offset,
 
 template <typename T>
 void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
-  const uint64_t page_size = 1 << kLog2Page;
   const uint64_t data_size = sizeof(GridData<T>);
   auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
   Array grid_data = allocator_->Get_Array();
   for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
     const uint64_t block_offset = block_offsets[b];
-    for (uint64_t i = 0; i < page_size; i += data_size) {
-      const uint64_t node_offset = block_offset + i;
-      GridData<T>& node_data = grid_data(node_offset);
-      if (node_data.m > 0.0) {
-        node_data.v /= node_data.m;
-        node_data.v += dv;
-        if (OffsetToCoordinate(node_offset)[2] <= 0 && node_data.v[2] < 0) {
-          node_data.v[2] = 0;
+    uint64_t node_offset = block_offset;
+    /* The coordinate of the origin of this block. */
+    const Vector3<int> block_origin = OffsetToCoordinate(block_offset);
+    for (int i = 0; i < kNumNodesInBlockX; ++i) {
+      for (int j = 0; j < kNumNodesInBlockY; ++j) {
+        for (int k = 0; k < kNumNodesInBlockZ; ++k) {
+          GridData<T>& node_data = grid_data(node_offset);
+          node_offset += data_size;
+          if (node_data.m > 0.0) {
+            node_data.v /= node_data.m;
+            node_data.v += dv;
+            /* The world space position of the current node. */
+            const Vector3<T> q_WN =
+                (block_origin + Vector3<int>(i, j, k)).cast<T>() * dx_;
+            if (q_WN[2] <= 0 && node_data.v[2] < 0) {
+              node_data.v[2] = 0;
+            }
+          }
         }
       }
     }

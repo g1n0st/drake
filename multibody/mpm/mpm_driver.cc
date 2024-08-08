@@ -124,7 +124,6 @@ void MpmDriver<T>::AdvanceOneTimeStep() {
   transfer.ParallelSimdParticleToGrid(parallelism_);
   // Grid velocity update.
   grid_.ExplicitVelocityUpdate(dt_ * gravity_);
-  // TODO(xuchenhan-tri): Add boundary conditions/contact.
   // Grid to particle transfer.
   transfer.ParallelSimdGridToParticle(parallelism_);
 }
