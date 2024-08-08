@@ -206,6 +206,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     mpm::GridData<T> grid_data_prev_step;
     mpm_transfer_->P2G(state.particles, state.sparse_grid, &grid_data_prev_step,
                        &(mpm_scratch.transfer_scratch));
+    std::cout << "grid_data_prev_step    num active nodes: "
+                << grid_data_prev_step.num_active_nodes() << std::endl;
     if (!deformable_model_->MpmUseSchur()) {
       grid_data_prev_step.GetFlattenedVelocities(result);
     } else {
@@ -340,7 +342,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   }
 
   void WriteMpmParticlesToBgeo(const systems::Context<T>& context) const {
-    double visualize_dt = 1e-2;
+    double visualize_dt = 1.0 / 24.0;
     int current_step = std::round(context.get_time() / visualize_dt);
     const mpm::MpmState<T>& state =
         context.template get_abstract_state<mpm::MpmState<T>>(

@@ -23,7 +23,7 @@
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
 
-DEFINE_double(simulation_time, 6.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 2.4, "Desired duration of the simulation [s].");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
@@ -121,7 +121,7 @@ int do_main() {
     owned_deformable_model->ApplyMpmGround();
   }
   owned_deformable_model->SetIntegrator(drake::multibody::mpm::MpmIntegratorType::OldSubstep);
-  owned_deformable_model->SetSubstepCount(100);
+  owned_deformable_model->SetSubstepCount(1);
   owned_deformable_model->SetMpmGravity(
       Vector3<double>(0.0, 0.0, -(6.0/1.0)));
   //   owned_deformable_model->SetMpmGravity(
