@@ -25,7 +25,7 @@
 
 DEFINE_double(simulation_time, 2.4, "Desired duration of the simulation [s].");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 1e-2,
+DEFINE_double(time_step, 1e-3,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(E, 1e4, "Young's modulus of the deformable body [Pa].");
 DEFINE_double(nu, 0.4, "Poisson's ratio of the deformable body, unitless.");
@@ -98,7 +98,7 @@ int do_main() {
   /* Set up a deformable torus. */
   auto owned_deformable_model =
       std::make_unique<DeformableModel<double>>(&plant);
-  double radius = 0.4;
+  double radius = 0.1;
   // set a MPM body
   std::unique_ptr<drake::multibody::mpm::internal::AnalyticLevelSet>
       mpm_geometry_level_set =
@@ -111,7 +111,7 @@ int do_main() {
   Vector3<double> translation = {0.0, 0.0, FLAGS_shift * 0.4};
   std::unique_ptr<math::RigidTransform<double>> pose =
       std::make_unique<math::RigidTransform<double>>(translation);
-  double h = 0.2;
+  double h = 0.02;
 
   owned_deformable_model->RegisterMpmBody(std::move(mpm_geometry_level_set),
                                           std::move(model), std::move(pose),
