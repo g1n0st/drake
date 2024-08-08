@@ -129,6 +129,13 @@ class GridData {
     }
   }
 
+  void SetVelocitiesAdd(const VectorX<T>& velocities) {
+    printf("SetVelocitiesAdd!!!\n");
+    for (size_t i = 0; i < num_active_nodes(); ++i) {
+      velocities_[i] += velocities.segment(3 * i, 3);
+    }
+  }
+
   void SetVelocityAt(const Vector3<T>& v, size_t node) {
     velocities_[node] = v;
   }

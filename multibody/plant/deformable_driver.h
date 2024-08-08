@@ -257,7 +257,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       int mpm_dofs = grid_data_free_motion.num_active_nodes() * 3;
       VectorX<T> grid_v_post_contact_vec = results.v_next.tail(mpm_dofs);
 
-      grid_data_post_contact->SetVelocities(grid_v_post_contact_vec);
+      grid_data_post_contact->SetVelocitiesAdd(grid_v_post_contact_vec);
     } else {
       // the velocities of the contact nodes are directly obtained from contact
       // results
