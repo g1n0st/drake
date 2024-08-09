@@ -84,6 +84,13 @@ public:
     unsigned int* sort_buffer() { return sort_buffer_; };
     size_t& sort_buffer_size() { return sort_buffer_size_; }
 
+    std::vector<Vec3<T>>& positions_host() { return h_positions_; }
+    const std::vector<Vec3<T>>& positions_host() const { return h_positions_; }
+    std::vector<Vec3<T>>& velocities_host() { return h_velocities_; }
+    const std::vector<Vec3<T>>& velocities_host() const { return h_velocities_; }
+    std::vector<T>& volumes_host() { return h_volumes_; }
+    const std::vector<T>& volumes_host() const { return h_volumes_; }
+
     // NOTE (changyu): initialize GPU MPM state, all gpu memory allocation should be done here to avoid re-allocation.
     void InitializeQRCloth(const std::vector<Vec3<T>> &pos, 
                            const std::vector<Vec3<T>> &vel,
@@ -137,9 +144,9 @@ private:
     unsigned int* sort_buffer_ = nullptr;
 
     // Particles state host ptrs
-    // TODO(changyu): Host memory should be managed by Drake context instead of here.
     std::vector<Vec3<T>> h_positions_;
     std::vector<Vec3<T>> h_velocities_;
+    std::vector<T> h_volumes_;
     std::vector<int> h_indices_;
 
     // Grid state device ptrs

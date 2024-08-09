@@ -152,6 +152,19 @@ void GpuMpmSolver<T>::Dump(const GpuMpmState<T> &state, std::string filename) co
     obj.close();
 }
 
+// NOTE (changyu): this method is used to synchroize all mpm particle states to CPU and get `MpmParticleContactPair`
+// at the beginning of the time step, which will be used for the stage 2 SAP solver.
+template<typename T>
+void GpuMpmSolver<T>::SyncParticleStateToCpu(GpuMpmState<T> *state) const {
+    this->GpuSync();
+    state->positions_host().resize(state->n_particles());
+    state->velocities_host().resize(state->n_particles());
+    state->volumes_host().resize(state->n_particles());
+    CUDA_SAFE_CALL(cudaMemcpy(state->positions_host().data(), state->current_positions(), sizeof(Vec3<T>) * state->n_particles(), cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(state->velocities_host().data(), state->current_velocities(), sizeof(Vec3<T>) * state->n_particles(), cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(state->volumes_host().data(), state->current_volumes(), sizeof(T) * state->n_particles(), cudaMemcpyDeviceToHost));
+}
+
 template class GpuMpmSolver<double>;
 template class GpuMpmSolver<float>;
 

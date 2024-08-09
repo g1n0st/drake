@@ -141,11 +141,17 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         substep += 1;
       }
       mpm_solver_.GpuSync();
+
+
+      // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       printf("\033[32mframe=%d time=%lldms\033[0m\n", current_frame, (after_ts - before_ts));
       if (deformable_model_->cpu_mpm_model().config.write_files) {
         mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
       }
+
+      // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
+      mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
     }
   }
 

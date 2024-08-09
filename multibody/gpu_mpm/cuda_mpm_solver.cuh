@@ -24,6 +24,7 @@ public:
     void UpdateGrid(GpuMpmState<T> *state) const;
     void GridToParticle(GpuMpmState<T> *state, const T& dt) const;
     void GpuSync() const;
+    void SyncParticleStateToCpu(GpuMpmState<T> *state) const;
     void Dump(const GpuMpmState<T> &state, std::string filename) const;
 };
 
