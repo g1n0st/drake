@@ -624,7 +624,7 @@ __global__ void update_grid_kernel(
             if (xyz.y >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[1] > 0) g_vel[1] = 0;
             if (xyz.z < boundary_condition && g_vel[2] < 0) g_vel[2] = 0;
             if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[2] > 0) g_vel[2] = 0;
-        
+
             // TODO, NOTE (changyu): ad-hoc hack for a sphere sdf
             {
                 T pos[3] = {
@@ -632,7 +632,9 @@ __global__ void update_grid_kernel(
                     (xyz.y + T(.5)) * config::G_DX<T>,
                     (xyz.z + T(.5)) * config::G_DX<T>
                 };
-                
+
+#define MPM_BOUNDARY_CONDITION 1
+#if MPM_BOUNDARY_CONDITION == 0               
                 const T sphere_radius = T(0.08);
                 const T sphere_pos[3] = { T(0.5), T(0.5), T(0.5) };
                 const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
@@ -658,6 +660,51 @@ __global__ void update_grid_kernel(
                         inside = true;
                     }
                 }
+
+#elif MPM_BOUNDARY_CONDITION == 1
+                const T sphere_radius = T(0.04);
+                const T sphere_pos1[3] = { T(0.25), T(0.25), T(0.75) };
+                const T sphere_pos2[3] = { T(0.75), T(0.25), T(0.75) };
+                const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
+                const bool fixed = true;
+
+                T dist = distance<3>(pos, sphere_pos1) - sphere_radius;
+                T normal[3] = { 
+                    (pos[0] - sphere_pos1[0]) / (dist + T(1e-10)),
+                    (pos[1] - sphere_pos1[1]) / (dist + T(1e-10)),
+                    (pos[2] - sphere_pos1[2]) / (dist + T(1e-10))
+                };
+
+                bool inside = false;
+                T dotnv = T(0.);
+                T diff_vel[3] = { T(0.), T(0.), T(0.) };
+                if (dist < T(0.)) {
+                    diff_vel[0] = sphere_vel[0] - g_vel[0];
+                    diff_vel[1] = sphere_vel[1] - g_vel[1];
+                    diff_vel[2] = sphere_vel[2] - g_vel[2];
+                    dotnv = dot<3>(normal, diff_vel);
+                    if (dotnv > T(0.) || fixed) {
+                        inside = true;
+                    }
+                }
+                else {
+                    dist = distance<3>(pos, sphere_pos2) - sphere_radius;
+                    normal[0] = (pos[0] - sphere_pos2[0]) / (dist + T(1e-10));
+                    normal[1] = (pos[1] - sphere_pos2[1]) / (dist + T(1e-10));
+                    normal[2] = (pos[2] - sphere_pos2[2]) / (dist + T(1e-10));
+
+                    dotnv = T(0.);
+                    if (dist < T(0.)) {
+                        diff_vel[0] = sphere_vel[0] - g_vel[0];
+                        diff_vel[1] = sphere_vel[1] - g_vel[1];
+                        diff_vel[2] = sphere_vel[2] - g_vel[2];
+                        dotnv = dot<3>(normal, diff_vel);
+                        if (dotnv > T(0.) || fixed) {
+                            inside = true;
+                        }
+                    }
+                }
+#endif
 
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
                 if (inside) {

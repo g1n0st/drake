@@ -134,7 +134,7 @@ int do_main() {
   }
 
   MpmConfigParams mpm_config;
-  mpm_config.substep_dt = 1e-3;
+  mpm_config.substep_dt = 5e-4;
   mpm_config.write_files = false;
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
