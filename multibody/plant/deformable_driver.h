@@ -116,6 +116,37 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   // NOTE (changyu): add for GPU MPM
   bool ExistsMpmBody() const { return deformable_model_->ExistsMpmModel(); }
 
+  
+  void CalcMpmContactPairs(
+      const systems::Context<T>& context,
+      std::vector<geometry::internal::MpmParticleContactPair<T>>* result)
+      const {
+    DRAKE_ASSERT(result != nullptr);
+    result->clear();
+    const auto& state = context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(deformable_model_->gpu_mpm_state_index());
+    const geometry::QueryObject<T>& query_object =
+        manager_->plant().get_geometry_query_input_port().template Eval<geometry::QueryObject<T>>(context);
+    // loop over each particle
+    for (size_t p = 0; p < state.n_particles(); ++p) {
+      // compute the distance of this particle with each geometry in file
+      // NOTE (changyu): when access attributes in GpuMpmState,
+      // always remember it is type GpuT and should be casted to type T explicitly.
+      std::vector<geometry::SignedDistanceToPoint<T>> p_to_geometries =
+          query_object.ComputeSignedDistanceToPoint(state.positions_host()[p].template cast<T>());
+      // identify those that are in contact, i.e. signed_distance < 0
+      for (const auto& p2geometry : p_to_geometries) {
+        if (p2geometry.distance < 0) {
+          // if particle is inside rigid body, i.e. in contact
+          // note: normal direction
+          result->emplace_back(geometry::internal::MpmParticleContactPair<T>(
+              p, p2geometry.id_G, p2geometry.distance,
+              -p2geometry.grad_W.normalized(),
+              state.positions_host()[p].template cast<T>()));
+        }
+      }
+    }
+  }
+
   void CalcAbstractStates(const systems::Context<T>& context,
                           systems::State<T>* update) const {
     if (deformable_model_->ExistsMpmModel()) {
@@ -245,6 +276,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     systems::CacheIndex participating_velocity_mux;
     systems::CacheIndex participating_velocities;
     systems::CacheIndex participating_free_motion_velocities;
+
+    systems::CacheIndex mpm_contact_pairs;
   };
 
   /* Struct to hold intermediate data from one of the two geometries in contact
