@@ -20,6 +20,7 @@
 #include "drake/systems/framework/context.h"
 
 // NOTE (changyu): GPU MPM solver header files
+#include "drake/geometry/query_results/mpm_particle_contact_pair.h"
 #include "multibody/gpu_mpm/cuda_mpm_solver.cuh"
 
 namespace drake {

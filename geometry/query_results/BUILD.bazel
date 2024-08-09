@@ -77,6 +77,16 @@ drake_cc_library(
     ],
 )
 
+drake_cc_library(
+    name = "mpm_particle_contact_pair",
+    hdrs = ["mpm_particle_contact_pair.h"],
+    deps = [
+        "//geometry:geometry_ids",
+        "//geometry/proximity:polygon_surface_mesh",
+        "//multibody/contact_solvers/sap:partial_permutation",
+    ],
+)
+
 drake_cc_googletest(
     name = "deformable_contact_test",
     deps = [
