@@ -91,9 +91,16 @@ int do_main() {
   Box ground{4, 4, 4};
   const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2});
   plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", rigid_proximity_props);
+
+  /* Set up a collision object. */
+  Box box{0.2, 0.2, 0.2};
+  const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.5});
+  plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
+
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
+  plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
 
   std::vector<Eigen::Vector3d> inital_pos;
   std::vector<Eigen::Vector3d> inital_vel;
