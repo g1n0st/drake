@@ -20,6 +20,7 @@
 #include "drake/systems/framework/context.h"
 
 // NOTE (changyu): GPU MPM solver header files
+#include "drake/multibody/contact_solvers/contact_solver_results.h"
 #include "drake/geometry/query_results/mpm_particle_contact_pair.h"
 #include "multibody/gpu_mpm/cuda_mpm_solver.cuh"
 
@@ -116,6 +117,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   // NOTE (changyu): add for GPU MPM
   bool ExistsMpmBody() const { return deformable_model_->ExistsMpmModel(); }
 
+  size_t num_mpm_contact_pairs(const systems::Context<T>& context) const { return EvalMpmContactPairs(context).size(); }
+
   const std::vector<geometry::internal::MpmParticleContactPair<T>>&
   EvalMpmContactPairs(const systems::Context<T>& context) const {
     return manager_->plant()
@@ -153,6 +156,46 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     }
   }
 
+  // NOTE (changyu): for our coupling strategy, 
+  // MPM part DynamicsMatrix only contains diagonal mass matrix
+  void AppendLinearDynamicsMatrixMpm(const systems::Context<T>& context,
+                                     std::vector<MatrixX<T>>* A) const {
+      DRAKE_DEMAND(A != nullptr);
+      const auto& state = context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(deformable_model_->gpu_mpm_state_index());
+      const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
+      for (size_t p = 0; p < mpm_contact_pairs.size(); ++p) {
+        MatrixX<T> hessian;
+        // initialize
+        hessian.resize(3, 3);
+        hessian.setZero();
+        T mass = static_cast<T>(state.volumes_host()[mpm_contact_pairs[p].particle_in_contact_index] * gmpm::config::DENSITY<T>);
+        hessian(0, 0) = mass;
+        hessian(1, 1) = mass;
+        hessian(2, 2) = mass;
+        A->emplace_back(std::move(hessian));
+      }
+  }
+
+  const VectorX<T>& EvalMpmPostContactDV(
+      const systems::Context<T>& context) const {
+    return manager_->plant()
+        .get_cache_entry(cache_indexes_.mpm_post_contact_dv)
+        .template Eval<VectorX<T>>(context);
+  }
+
+  void CalcMpmPostContactDV(const systems::Context<T>& context,
+                               VectorX<T>* mpm_post_contact_dv) const {
+    if (EvalMpmContactPairs(context).size() == 0) {
+      // if no contact, no further treatment
+      (*mpm_post_contact_dv).resize(0);
+      return;
+    }
+
+    contact_solvers::internal::ContactSolverResults<T> results = manager_->EvalContactSolverResults(context);
+    int mpm_dofs = EvalMpmContactPairs(context).size() * 3;
+    (*mpm_post_contact_dv) = results.v_next.tail(mpm_dofs);
+  }
+
   void CalcAbstractStates(const systems::Context<T>& context,
                           systems::State<T>* update) const {
     if (deformable_model_->ExistsMpmModel()) {
@@ -180,6 +223,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       mpm_solver_.GpuSync();
 
       const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
+
+      const auto &mpm_post_contact_dv = EvalMpmPostContactDV(context);
+      printf("contact dv norm: %lf dv size: %lu\n", mpm_post_contact_dv.norm(), mpm_post_contact_dv.size());
 
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -285,6 +331,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     systems::CacheIndex participating_free_motion_velocities;
 
     systems::CacheIndex mpm_contact_pairs;
+    systems::CacheIndex mpm_post_contact_dv;
   };
 
   /* Struct to hold intermediate data from one of the two geometries in contact

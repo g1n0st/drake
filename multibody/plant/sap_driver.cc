@@ -152,6 +152,10 @@ void SapDriver<T>::CalcLinearDynamicsMatrix(const systems::Context<T>& context,
   if constexpr (std::is_same_v<T, double>) {
     if (manager().deformable_driver() != nullptr && manager().deformable_driver()->num_deformable_bodies() > 0) {
       manager().deformable_driver()->AppendLinearDynamicsMatrix(context, A);
+    } else if (manager().deformable_driver() != nullptr &&
+               manager().deformable_driver()->ExistsMpmBody()) {
+      // NOTE (changyu): append dynamic (actually just a diagonal mass matrix) hessian for MPM part.
+      manager().deformable_driver()->AppendLinearDynamicsMatrixMpm(context, A);
     }
   }
 }
@@ -182,6 +186,18 @@ void SapDriver<T>::CalcFreeMotionVelocities(const systems::Context<T>& context,
       v_star->resize(rigid_dofs + deformable_dofs);
       v_star->head(rigid_dofs) = v0 + dt * vdot0;
       v_star->tail(deformable_dofs) = deformable_v_star;
+    } else if (manager().deformable_driver() != nullptr &&
+               manager().deformable_driver()->ExistsMpmBody()) {
+      // NOTE (changyu): since stage2 is independent of stage 2 and does not involve free motion, 
+      // we can simply set free motion velocity for MPM as zero and reformulate SAP to solve dv.
+      VectorX<T> deformable_v_star_mpm;
+      deformable_v_star_mpm.resize(3 * manager().deformable_driver()->num_mpm_contact_pairs(context));
+      deformable_v_star_mpm.setZero();
+      const int rigid_dofs = v0.size();
+      const int deformable_dofs_mpm = deformable_v_star_mpm.size();
+      v_star->resize(rigid_dofs + deformable_dofs_mpm);
+      v_star->head(rigid_dofs) = v0 + dt * vdot0;
+      v_star->tail(deformable_dofs_mpm) = deformable_v_star_mpm;
     } else {
       *v_star = v0 + dt * vdot0;
     }
@@ -793,7 +809,19 @@ void SapDriver<T>::CalcContactProblemCache(
       (manager().deformable_driver() == nullptr)
           ? 0
           : manager().deformable_driver()->num_deformable_bodies();
-  const int num_objects = num_rigid_bodies + num_deformable_bodies;
+  int num_objects = num_rigid_bodies + num_deformable_bodies;
+  if (manager().deformable_driver() != nullptr &&
+      manager().deformable_driver()->ExistsMpmBody()) {
+    if constexpr (std::is_same_v<T, double>) {
+      num_objects = num_objects + static_cast<int>(manager().deformable_driver()->num_mpm_contact_pairs(context));  
+      // NOTE (changyu): there is only one MPM body,
+      // but we treat every MPM particle at this stage as an independent object,
+      // if this is executed, then it must be that there is no fem
+      DRAKE_DEMAND(num_deformable_bodies == 0);
+    } else {
+      throw;
+    }
+  }
   cache->sap_problem = std::make_unique<SapContactProblem<T>>(
       plant().time_step(), std::move(A), std::move(v_star));
   cache->sap_problem->set_num_objects(num_objects);
@@ -948,6 +976,16 @@ void SapDriver<T>::CalcSapSolverResults(
       const int deformable_dofs = deformable_v0.size();
       v0.conservativeResize(rigid_dofs + deformable_dofs);
       v0.tail(deformable_dofs) = deformable_v0;
+    } else if (manager().deformable_driver() != nullptr &&
+               manager().deformable_driver()->ExistsMpmBody()) {
+      // NOTE (changyu): we also use zero velocity as initial guess for MPM dv.
+      VectorX<double> deformable_v0_mpm;
+      deformable_v0_mpm.resize(3 * manager().deformable_driver()->num_mpm_contact_pairs(context));
+      deformable_v0_mpm.setZero();
+      const int rigid_dofs = v0.size();
+      const int deformable_dofs_mpm = deformable_v0_mpm.size();
+      v0.conservativeResize(rigid_dofs + deformable_dofs_mpm);
+      v0.tail(deformable_dofs_mpm) = deformable_v0_mpm;
     }
   }
 

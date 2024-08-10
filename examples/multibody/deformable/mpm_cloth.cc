@@ -22,7 +22,7 @@
 
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 1.0 / 24.0,
+DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(beta, 0.01,
               "Stiffness damping coefficient for the deformable body [1/s].");
@@ -105,7 +105,7 @@ int do_main() {
   std::vector<Eigen::Vector3d> inital_pos;
   std::vector<Eigen::Vector3d> inital_vel;
   std::vector<int> indices;
-  const int res = 100;
+  const int res = 50;
   const double l = 0.5;
   int length = res;
   int num_clothes = 1;
