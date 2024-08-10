@@ -927,12 +927,17 @@ void SapDriver<T>::AddCliqueContribution(
         manager().deformable_driver();
     DRAKE_THROW_UNLESS(deformable_driver != nullptr);
     if constexpr (std::is_same_v<T, double>) {
-      const int num_deformable_dofs = values->size() - plant().num_velocities();
-      Eigen::Ref<VectorX<T>> deformable_values =
-          values->tail(num_deformable_dofs);
-      DeformableBodyIndex body_index(clique - tree_topology().num_trees());
-      deformable_driver->EvalParticipatingVelocityMultiplexer(context)
-          .Demultiplex(&deformable_values, body_index) += clique_values;
+      if (deformable_driver->num_deformable_bodies() > 0) {
+        const int num_deformable_dofs = values->size() - plant().num_velocities();
+        Eigen::Ref<VectorX<T>> deformable_values =
+            values->tail(num_deformable_dofs);
+        DeformableBodyIndex body_index(clique - tree_topology().num_trees());
+        deformable_driver->EvalParticipatingVelocityMultiplexer(context)
+            .Demultiplex(&deformable_values, body_index) += clique_values;
+      } else if (deformable_driver->ExistsMpmBody()) {
+        const int num_mpm_dofs = values->size() - plant().num_velocities();
+        values->tail(num_mpm_dofs) += clique_values;
+      }
     } else {
       /* For non-double scalars, we can't have `deformable_driver != nullptr`,
        so we won't reach here. */
