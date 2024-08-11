@@ -731,8 +731,12 @@ void DiscreteUpdateManager<T>::CalcDiscreteContactPairs(
   AppendDiscreteContactPairsForPointContact(context, result);
   AppendDiscreteContactPairsForHydroelasticContact(context, result);
   if constexpr (std::is_same_v<T, double>) {
-    if (deformable_driver_ != nullptr) {
+    if (deformable_driver_ != nullptr &&
+        deformable_driver_->num_deformable_bodies() > 0) {
       deformable_driver_->AppendDiscreteContactPairs(context, result);
+    } else if (deformable_driver_ != nullptr &&
+               deformable_driver_->ExistsMpmBody()) {
+      deformable_driver_->AppendDiscreteContactPairsMpm(context, result);
     }
   }
 }

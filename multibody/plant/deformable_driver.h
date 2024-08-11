@@ -176,6 +176,53 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       }
   }
 
+  void AppendDiscreteContactPairsMpm(
+      const systems::Context<T>& context,
+      DiscreteContactData<DiscreteContactPair<T>>* result) const {
+    
+    // TODO (changyu): AppendDiscreteContactPairsMpm WIP
+    unused(context);
+    unused(result);
+    /*
+      const auto& mpm_contact_pairs = EvalMpmContactPairs(context);
+      geometry::GeometryId dummy_id = geometry::GeometryId::get_new_id();
+      for (const auto& mpm_contact_pair : mpm_contact_pairs) {
+      const T d = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_damping);
+      const T k = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_stiffness);
+      const T fn0 = k * std::abs(mpm_contact_pair.penetration_distance);
+      const T tau = NAN;
+      result->AppendDeformableData(DiscreteContactPair<T>{
+          dummy_id, 
+          mpm_contact_pair.non_mpm_id,
+          mpm_contact_pair.particle_in_contact_position,
+          mpm_contact_pair.normal, 
+          mpm_contact_pair.penetration_distance, 
+          fn0, k, d, tau, static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_friction_mu)});
+
+      DiscreteContactPair<T> contact_pair{
+          .jacobian = std::move(jacobian_blocks),
+          .id_A = id_A,
+          .object_A = object_A,
+          .id_B = id_B,
+          .object_B = object_B,
+          .R_WC = R_WC,
+          .p_WC = p_WC,
+          .p_ApC_W = p_AC_W,
+          .p_BqC_W = p_BC_W,
+          .nhat_BA_W = -nhat_AB_W,
+          .phi0 = phi0,
+          .vn0 = v_AcBc_Cz,
+          .fn0 = fn0,
+          .stiffness = k,
+          .damping = d,
+          .dissipation_time_scale = tau,
+          .friction_coefficient = mu,
+          .surface_index = surface_index,
+          .face_index = i};
+      result->AppendDeformableData(std::move(contact_pair));
+    }*/
+  }
+
   const VectorX<T>& EvalMpmPostContactDV(
       const systems::Context<T>& context) const {
     return manager_->plant()

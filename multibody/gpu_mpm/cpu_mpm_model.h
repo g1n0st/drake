@@ -17,6 +17,9 @@ template<typename T = config::GpuT>
 struct MpmConfigParams {
     T substep_dt {static_cast<T>(1e-3)};
     bool write_files {false};
+    T contact_stiffness{static_cast<T>(1e10)};
+    T contact_damping{static_cast<T>(100.0)};
+    T contact_friction_mu{static_cast<T>(0.0)};
 };
 
 // NOTE(changyu): `CpuMpmModel` is responsive to store the initial config in `DeformableModel`,
