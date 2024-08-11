@@ -4,6 +4,10 @@
 
 #include "drake/common/find_resource.h"
 #include "drake/geometry/drake_visualizer.h"
+#include "drake/geometry/meshcat.h"
+#include "drake/geometry/meshcat_point_cloud_visualizer.h"
+#include "drake/geometry/meshcat_visualizer.h"
+#include "drake/geometry/meshcat_visualizer_params.h"
 #include "drake/geometry/proximity_properties.h"
 #include "drake/geometry/scene_graph.h"
 #include "drake/manipulation/kuka_iiwa/iiwa_constants.h"
@@ -23,7 +27,7 @@
 #include "drake/systems/primitives/matrix_gain.h"
 #include "drake/systems/primitives/multiplexer.h"
 
-DEFINE_double(simulation_time, 1.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 1.5, "Desired duration of the simulation [s].");
 DEFINE_double(realtime_rate, 0.1, "Desired real time rate.");
 DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
@@ -416,6 +420,19 @@ int do_main() {
   // connect mpm to output port
   builder.Connect(deformable_model->mpm_particle_positions_port(),
                   visualizer.mpm_data_input_port());
+  
+
+  auto meshcat = std::make_shared<drake::geometry::Meshcat>();
+  auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
+  meshcat_params.publish_period = FLAGS_time_step * 2;
+  drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
+      &builder, scene_graph, meshcat, meshcat_params);
+  auto meshcat_pc_visualizer =
+      builder.AddSystem<drake::geometry::MeshcatPointCloudVisualizer>(
+          meshcat, "cloud", meshcat_params.publish_period);
+  meshcat_pc_visualizer->set_point_size(0.005);
+  builder.Connect(deformable_model->mpm_point_cloud_port(),
+                  meshcat_pc_visualizer->cloud_input_port());
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context =
@@ -433,7 +450,17 @@ int do_main() {
 
   simulator.Initialize();
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
+
+  sleep(6);
+
+  meshcat->StartRecording();
   simulator.AdvanceTo(FLAGS_simulation_time);
+  meshcat->StopRecording();
+  meshcat->PublishRecording();
+
+  std::ofstream htmlFile("output.html");
+  htmlFile << meshcat->StaticHtml();
+  htmlFile.close();
 
   return 0;
 }

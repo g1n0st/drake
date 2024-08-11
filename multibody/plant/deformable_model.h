@@ -68,7 +68,7 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
 
   bool ExistsMpmModel() const { return (mpm_model_ != nullptr); }
 
-  bool MpmUseSchur() const { return true; }
+  bool MpmUseSchur() const { return false; }
 
   const mpm::MpmModel<T>& mpm_model() const {
     if (mpm_model_ == nullptr) {
@@ -81,7 +81,8 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
   void SetMpmStiffness(double s) { mpm_stiffness_ = s; }
   double mpm_damping() const { return mpm_damping_; }
   double mpm_stiffness() const { return mpm_stiffness_; }
-
+  void SetIntegrator(mpm::MpmIntegratorType integrator) { mpm_model_->SetIntegrator(integrator); }
+  void SetSubstepCount(int count) { mpm_model_->SetSubstepCount(count); }
   void ApplyMpmGround() { mpm_model_->ApplyMpmGround(); }
 
   // Returns the output port of the mpm particle positions for drake viz

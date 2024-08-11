@@ -85,6 +85,13 @@ class GridData {
     }
   }
 
+  void ApplyExplicitForceImpulsesToVelocities(const T& dt, const Vector3<T>& gravity) {
+    for (size_t i = 0; i < masses_.size(); ++i) 
+      if (masses_[i] > 0.0) {
+      velocities_[i] += (forces_[i] / masses_[i] + gravity) * dt;
+    }
+  }
+
   /**
    * @pre index_1d < num_active_nodes()
    */
@@ -119,6 +126,13 @@ class GridData {
   void SetVelocities(const VectorX<T>& velocities) {
     for (size_t i = 0; i < num_active_nodes(); ++i) {
       velocities_[i] = velocities.segment(3 * i, 3);
+    }
+  }
+
+  void SetVelocitiesAdd(const VectorX<T>& velocities) {
+    printf("SetVelocitiesAdd!!!\n");
+    for (size_t i = 0; i < num_active_nodes(); ++i) {
+      velocities_[i] += velocities.segment(3 * i, 3);
     }
   }
 

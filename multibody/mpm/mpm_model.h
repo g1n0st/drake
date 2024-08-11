@@ -134,6 +134,13 @@ struct MpmInitialObjectParameters {
   }
 };
 
+enum class MpmIntegratorType {
+  Explicit,
+  Implicit,
+  OldSubstep,
+  NewSubstep
+};
+
 template <typename T>
 class MpmModel {
  public:
@@ -241,7 +248,7 @@ class MpmModel {
                   transfer.ComputeGridDElasticEnergyDV2SparseBlockSymmetric(
                       deformation_state.particles(),
                       deformation_state.sparse_grid(),
-                      deformation_state.dPdFs(), dt);
+                      deformation_state.dPdFs(), integrator() == MpmIntegratorType::Implicit ? dt : 0.0);
       // add the mass part
       for (size_t i = 0; i < deformation_state.sparse_grid().num_active_nodes();
            ++i) {
@@ -303,6 +310,12 @@ class MpmModel {
 
   void SetFrictionMu(double mu) { friction_mu_ = mu; }
 
+  void SetIntegrator(MpmIntegratorType integrator) { integrator_ = integrator; }
+  const MpmIntegratorType& integrator() const { return integrator_; }
+
+  void SetSubstepCount(int substep_count) { substep_count_ = substep_count; }
+  const int& substep_count() const { return substep_count_; }
+
  private:
   // Kinetic energy = 0.5 * m * (v - v_prev)ᵀ(v - v_prev).
   // Gravitational energy = - m*dt*gᵀv. Since we only care about its gradient,
@@ -332,6 +345,9 @@ class MpmModel {
   NewtonParams newton_params_;
 
   double friction_mu_ = 0.1;
+
+  MpmIntegratorType integrator_ = MpmIntegratorType::Implicit;
+  int substep_count_ = 1;
 };
 
 }  // namespace mpm

@@ -474,6 +474,15 @@ int do_main() {
                   plant.get_desired_state_input_port(left_iiwa));
   builder.Connect(right_mux->get_output_port(),
                   plant.get_desired_state_input_port(right_iiwa));
+  
+  geometry::DrakeVisualizerParams visualize_params;
+  visualize_params.publish_period = 1.0 / 100;
+  auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(
+      &builder, scene_graph, nullptr, visualize_params);
+  // connect mpm to output port
+  builder.Connect(deformable_model->mpm_particle_positions_port(),
+                  visualizer.mpm_data_input_port());
+
   // meshcat viz
   auto meshcat = std::make_shared<drake::geometry::Meshcat>();
   auto meshcat_params = drake::geometry::MeshcatVisualizerParams();

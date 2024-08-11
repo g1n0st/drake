@@ -197,6 +197,7 @@ void SapDriver<T>::CalcFreeMotionVelocities(const systems::Context<T>& context,
       VectorX<T> deformable_v_star_mpm;
       manager().deformable_driver()->CalcParticipatingFreeMotionVelocitiesMpm(
           context, &deformable_v_star_mpm);
+      deformable_v_star_mpm.setZero();
       const int rigid_dofs = v0.size();
       const int deformable_dofs_mpm = deformable_v_star_mpm.size();
       v_star->resize(rigid_dofs + deformable_dofs_mpm);
@@ -997,6 +998,7 @@ void SapDriver<T>::CalcSapSolverResults(
       VectorX<double> deformable_v0_mpm;
       manager().deformable_driver()->CalcParticipatingVelocitiesMpm(
           context, &deformable_v0_mpm);
+      deformable_v0_mpm.setZero();
       const int rigid_dofs = v0.size();
       const int deformable_dofs_mpm = deformable_v0_mpm.size();
       v0.conservativeResize(rigid_dofs + deformable_dofs_mpm);
