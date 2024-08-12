@@ -23,6 +23,7 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
 
     h_positions_ = pos;
     h_velocities_ = vel;
+    h_volumes_.resize(n_particles_);
 
     h_indices_ = indices;
     // NOTE (changyu): at the initial state, position/velocity is organized as [n_faces | n_verts].
