@@ -670,10 +670,11 @@ __global__ void update_grid_kernel(
 
                 T dist = distance<3>(pos, sphere_pos1) - sphere_radius;
                 T normal[3] = { 
-                    (pos[0] - sphere_pos1[0]) / (dist + T(1e-10)),
-                    (pos[1] - sphere_pos1[1]) / (dist + T(1e-10)),
-                    (pos[2] - sphere_pos1[2]) / (dist + T(1e-10))
+                    (pos[0] - sphere_pos1[0]),
+                    (pos[1] - sphere_pos1[1]),
+                    (pos[2] - sphere_pos1[2])
                 };
+                normalize<3, T>(normal);
 
                 bool inside = false;
                 T dotnv = T(0.);
@@ -689,9 +690,10 @@ __global__ void update_grid_kernel(
                 }
                 else {
                     dist = distance<3>(pos, sphere_pos2) - sphere_radius;
-                    normal[0] = (pos[0] - sphere_pos2[0]) / (dist + T(1e-10));
-                    normal[1] = (pos[1] - sphere_pos2[1]) / (dist + T(1e-10));
-                    normal[2] = (pos[2] - sphere_pos2[2]) / (dist + T(1e-10));
+                    normal[0] = (pos[0] - sphere_pos2[0]);
+                    normal[1] = (pos[1] - sphere_pos2[1]);
+                    normal[2] = (pos[2] - sphere_pos2[2]);
+                    normalize<3, T>(normal);
 
                     dotnv = T(0.);
                     if (dist < T(0.)) {
