@@ -21,6 +21,7 @@
 #include "drake/systems/framework/diagram_builder.h"
 
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
+DEFINE_int32(testcase, 0, "Test Case.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
@@ -37,6 +38,7 @@ DEFINE_double(
 
 using drake::geometry::AddContactMaterial;
 using drake::geometry::Box;
+using drake::geometry::Capsule;
 using drake::geometry::GeometryInstance;
 using drake::geometry::IllustrationProperties;
 using drake::geometry::Mesh;
@@ -87,20 +89,34 @@ int do_main() {
   AddContactMaterial({}, {}, surface_friction, &rigid_proximity_props);
   rigid_proximity_props.AddProperty(geometry::internal::kHydroGroup,
                                     geometry::internal::kRezHint, 0.01);
+  IllustrationProperties illustration_props;
+  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
+
   /* Set up a ground. */
   Box ground{4, 4, 4};
   const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2});
   plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", rigid_proximity_props);
-
-  /* Set up a collision object. */
-  Box box{0.2, 0.2, 0.2};
-  const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.5});
-  plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
-
-  IllustrationProperties illustration_props;
-  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
-  plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
+
+  if (FLAGS_testcase == 0) {
+    Box box{0.2, 0.2, 0.2};
+    const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.5});
+    plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
+  }
+  else if (FLAGS_testcase == 1) {
+    for (int i = 0; i < 4; i++) {
+      for (int j = 0; j < 4; j++) {
+        Capsule collision_object{0.03, 0.12};
+        const RigidTransformd X_WG_OBJ(Eigen::Vector3d{0.3 + i * 0.12, 0.3 + j * 0.12, 0.5});
+        plant.RegisterCollisionGeometry(plant.world_body(), X_WG_OBJ, collision_object, ("collision" + std::to_string(i) + std::to_string(j)).c_str(), rigid_proximity_props);
+        plant.RegisterVisualGeometry(plant.world_body(), X_WG_OBJ, collision_object, ("collision_visual" + std::to_string(i) + std::to_string(j)).c_str(), std::move(illustration_props));
+      }
+    }
+  }
+  else {
+    throw;
+  }
 
   std::vector<Eigen::Vector3d> inital_pos;
   std::vector<Eigen::Vector3d> inital_vel;
