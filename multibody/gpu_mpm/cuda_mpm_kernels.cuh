@@ -636,7 +636,7 @@ __global__ void update_grid_kernel(
                 const T sphere_radius = T(0.08);
                 const T sphere_pos[3] = { T(0.5), T(0.5), T(0.5) };
                 const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
-                const bool fixed = true;
+                const bool fixed = false;
 
                 T dist = distance<3>(pos, sphere_pos) - sphere_radius;
                 T normal[3] = { 
