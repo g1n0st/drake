@@ -131,6 +131,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       std::vector<geometry::internal::MpmParticleContactPair<T>>* result)
       const {
     DRAKE_ASSERT(result != nullptr);
+    long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     result->clear();
     const auto& state = context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(deformable_model_->gpu_mpm_state_index());
     const geometry::QueryObject<T>& query_object =
@@ -154,6 +155,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         }
       }
     }
+    long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    printf("\033[32mcollision detection time=%lldms\033[0m\n", (after_ts - before_ts));
   }
 
   // NOTE (changyu): for our coupling strategy, 
