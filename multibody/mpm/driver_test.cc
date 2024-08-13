@@ -25,7 +25,7 @@ int do_main() {
   body_config.set_poissons_ratio(0.3);
   body_config.set_yield_stress(2.5e3);
   driver.SampleParticles(std::move(geometry_instance), 8, body_config);
-  const int kNumSteps = 500;
+  const int kNumSteps = 2000;
   const std::string directory = "/home/xuchenhan/Desktop/mpm_data/";
   for (int i = 0; i < kNumSteps; ++i) {
     driver.AdvanceOneTimeStep();

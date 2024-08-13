@@ -350,6 +350,16 @@ void Transfer<T>::SerialGridToParticle() {
       particle.x += particle.v * dt_;
       particle.C *= D_inverse_;
       particle.F += particle.C * dt_ * particle.F;
+      /* We use 0.5 * r * (C + Cᵀ) + 0.5 * (C - Cᵀ) to update the affine matrix
+       C. With r = 0, the transfer reduces to RPIC transfer described in [Jiang
+       et al. 2015]. With r = 1, the transfer reduces to APIC transfer. RPIC,
+       APIC, and any linear combination thereof is linear/angular momentum
+       conserving. RPIC dissipates more energy than APIC. We use a linear
+       combination of RPIC and APIC with r as a parameter for numerical damping.
+      */
+      const T c1 = (1 + kApicRatio) * 0.5;
+      const T c2 = (kApicRatio - 1) * 0.5;
+      particle.C = c1 * particle.C + c2 * particle.C.transpose();
 
       need_new_pad = (p + 1 == particle_end) ||
                      (base_node_offsets[p] != base_node_offsets[p + 1]);
@@ -523,10 +533,13 @@ void Transfer<T>::ParallelSimdGridToParticle(const Parallelism parallelize) {
           }
         }
       }
-      const Matrix3<SimdScalar<T>> C = B * D_inverse_;
+      Matrix3<SimdScalar<T>> C = B * D_inverse_;
       x += v * dt_;
       Matrix3<SimdScalar<T>> F = Load(particles_->F, indices);
       F += C * dt_ * F;
+      const T c1 = (1 + kApicRatio) * 0.5;
+      const T c2 = (kApicRatio - 1) * 0.5;
+      C = c1 * C + c2 * C.transpose();
       Store(v, &particles_->v, indices);
       Store(x, &particles_->x, indices);
       Store(C, &particles_->C, indices);
