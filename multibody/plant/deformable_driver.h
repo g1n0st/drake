@@ -337,10 +337,18 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
 
       const auto &mpm_post_contact_dv = EvalMpmPostContactDV(context);
-      printf("contact dv norm: %lf dv size: %lu\n", mpm_post_contact_dv.norm(), mpm_post_contact_dv.size());
+      if (mpm_contact_pairs.size() > 0) {
+        // NOTE (changyu): dv info logging
+        Eigen::Vector3d mean = mpm_post_contact_dv.rowwise().mean();
+        printf("contact dv norm: %lf dv size: %lu dv aver: %.7lf %.7lf %.7lf\n", 
+               mpm_post_contact_dv.norm(), 
+               mpm_post_contact_dv.size(),
+               mean[0], mean[1], mean[2]);
+      }
 
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      // NOTE (changyu): time step info logging
       printf("\033[32mframe=%d time=%lldms N(contacts)=%lu N(substeps)=%d\033[0m\n", current_frame, (after_ts - before_ts), mpm_contact_pairs.size(), substep);
       if (deformable_model_->cpu_mpm_model().config.write_files) {
         mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
