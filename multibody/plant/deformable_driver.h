@@ -341,7 +341,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-      printf("\033[32mframe=%d time=%lldms N(contacts)=%lu\033[0m\n", current_frame, (after_ts - before_ts), mpm_contact_pairs.size());
+      printf("\033[32mframe=%d time=%lldms N(contacts)=%lu N(substeps)=%d\033[0m\n", current_frame, (after_ts - before_ts), mpm_contact_pairs.size(), substep);
       if (deformable_model_->cpu_mpm_model().config.write_files) {
         mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
       }

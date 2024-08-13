@@ -157,7 +157,7 @@ int do_main() {
   }
 
   MpmConfigParams mpm_config;
-  mpm_config.substep_dt = 2e-4;
+  mpm_config.substep_dt = 5e-4;
   mpm_config.write_files = false;
   mpm_config.contact_stiffness = 0.0;
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
