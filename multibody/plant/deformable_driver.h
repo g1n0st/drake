@@ -160,7 +160,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       }
     }
     long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    printf("\033[32mcollision detection time=%lldms\033[0m\n", (after_ts - before_ts));
+    printf("\033[32mcollision detection time=%lldms N(contacts)=%lu\033[0m\n", (after_ts - before_ts), result->size());
   }
 
   // NOTE (changyu): for our coupling strategy, 

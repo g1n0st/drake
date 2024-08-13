@@ -121,8 +121,8 @@ int do_main() {
   std::vector<Eigen::Vector3d> inital_pos;
   std::vector<Eigen::Vector3d> inital_vel;
   std::vector<int> indices;
-  const int res = 50;
-  const double l = 0.5;
+  const int res = 30;
+  const double l = 0.3;
   int length = res;
   int num_clothes = 1;
   int width = res;
@@ -136,7 +136,7 @@ int do_main() {
     int o = inital_pos.size();
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back(0.25 + i * dx, 0.25 + j * dx, 0.3 + k * 0.1);
+        inital_pos.emplace_back(0.35 + i * dx, 0.35 + j * dx, 0.3 + k * 0.1);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }

@@ -21,8 +21,10 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
     assert(n_faces_ * 3  == indices.size());
     n_particles_ = n_verts_ + n_faces_;
 
-    h_positions_ = pos;
-    h_velocities_ = vel;
+    h_positions_.resize(n_particles_);
+    std::copy(pos.begin(), pos.end(), h_positions_.begin() + n_faces_);
+    h_velocities_.resize(n_particles_);
+    std::copy(vel.begin(), vel.end(), h_velocities_.begin() + n_faces_);
     h_volumes_.resize(n_particles_);
 
     h_indices_ = indices;
@@ -53,11 +55,11 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
                                       cudaMemcpyHostToDevice));
 
             CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_positions + n_faces_ * 3, 
-                                      h_positions_.data(), 
+                                      pos.data(), 
                                       sizeof(Vec3<T>) * n_verts_, 
                                       cudaMemcpyHostToDevice));
             CUDA_SAFE_CALL(cudaMemcpy(particle_buffer_[i].d_velocities + n_faces_ * 3, 
-                                      h_velocities_.data(), 
+                                      vel.data(), 
                                       sizeof(Vec3<T>) * n_verts_, 
                                       cudaMemcpyHostToDevice));
             CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_volumes, 0, sizeof(T) * n_particles_));
