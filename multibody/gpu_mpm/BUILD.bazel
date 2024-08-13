@@ -1,0 +1,47 @@
+# -*- mode: python -*-
+# vi: set ft=python :
+
+load(
+    "//tools/skylark:cuda.bzl",
+    "nvcc_library",
+)
+
+load(
+    "//tools/skylark:drake_cc.bzl",
+    "drake_cc_googletest",
+    "drake_cc_library",
+)
+
+package(
+    default_visibility = ["//visibility:public"],
+)
+
+nvcc_library(
+    name = "cuda_mpm",
+    hdrs = ["settings.h", 
+            "blelloch_scan.cuh", 
+            "radix_sort.cuh",
+            "sifakis_svd.cuh",
+            "math_tools.cuh",
+            "cuda_mpm_kernels.cuh", 
+            "cuda_mpm_model.cuh",
+            "cuda_mpm_solver.cuh",
+            ],
+    srcs = ["blelloch_scan.cu", 
+            "cuda_mpm_model.cu",
+            "cuda_mpm_solver.cu"],
+    deps = [
+        "//common:essential",
+    ],
+)
+
+drake_cc_googletest(
+    name = "cuda_mpm_test",
+    srcs = ["cuda_mpm_test.cc"],
+    tags = ["cuda"],
+    deps = [
+        ":cuda_mpm",
+        "@partio",
+        "@gtest//:main",
+    ],
+)
