@@ -165,6 +165,12 @@ void GpuMpmSolver<T>::SyncParticleStateToCpu(GpuMpmState<T> *state) const {
     CUDA_SAFE_CALL(cudaMemcpy(state->volumes_host().data(), state->current_volumes(), sizeof(T) * state->n_particles(), cudaMemcpyDeviceToHost));
 }
 
+template<typename T>
+void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt) const {
+    (void)state;
+    (void)dt;
+}
+
 template class GpuMpmSolver<double>;
 template class GpuMpmSolver<float>;
 

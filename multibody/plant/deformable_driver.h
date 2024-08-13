@@ -329,22 +329,46 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
         mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
         mpm_solver_.UpdateGrid(&mutable_mpm_state);
-        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         substep += 1;
       }
       mpm_solver_.GpuSync();
 
-      const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
+      // TODO (changyu): currently no substepping scheme applied and we do not discard the intermediate states
+      // so substep == 1 condition must be enforced.
+      DRAKE_DEMAND(substep == 1);
+      DRAKE_DEMAND(dt == substep_dt);
 
-      const auto &mpm_post_contact_dv = EvalMpmPostContactDV(context);
+      const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
       if (mpm_contact_pairs.size() > 0) {
+        const auto &mpm_post_contact_dv = EvalMpmPostContactDV(context);
+
         // NOTE (changyu): dv info logging
         Eigen::Vector3d mean = mpm_post_contact_dv.rowwise().mean();
         printf("contact dv norm: %lf dv size: %lu dv aver: %.7lf %.7lf %.7lf\n", 
                mpm_post_contact_dv.norm(), 
                mpm_post_contact_dv.size(),
                mean[0], mean[1], mean[2]);
+
+        DRAKE_DEMAND(int(mpm_contact_pairs.size()) * 3 == int(mpm_post_contact_dv.size()));
+        mutable_mpm_state.contact_ids_host().clear();
+        mutable_mpm_state.post_contact_dv_host().clear();
+        mutable_mpm_state.contact_ids_host().reserve(mpm_post_contact_dv.size());
+        mutable_mpm_state.post_contact_dv_host().reserve(mpm_post_contact_dv.size());
+        for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
+          mutable_mpm_state.contact_ids_host().emplace_back(
+            static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index));
+          mutable_mpm_state.post_contact_dv_host().emplace_back(
+            static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 0)),
+            static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 1)),
+            static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 2))
+          );
+        }
+        // mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, dt);
       }
+
+      mpm_solver_.GridToParticle(&mutable_mpm_state, dt);
+      // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
+      mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
 
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -353,9 +377,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       if (deformable_model_->cpu_mpm_model().config.write_files) {
         mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
       }
-
-      // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
-      mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
     }
   }
 

@@ -90,6 +90,10 @@ public:
     const std::vector<Vec3<T>>& velocities_host() const { return h_velocities_; }
     std::vector<T>& volumes_host() { return h_volumes_; }
     const std::vector<T>& volumes_host() const { return h_volumes_; }
+    std::vector<int>& contact_ids_host() { return h_contact_ids_; }
+    const std::vector<int>& contact_ids_host() const { return h_contact_ids_; }
+    std::vector<Vec3<T>>& post_contact_dv_host() { return h_post_contact_dv_; }
+    const std::vector<Vec3<T>>& post_contact_dv_host() const { return h_post_contact_dv_; }
 
     // NOTE (changyu): initialize GPU MPM state, all gpu memory allocation should be done here to avoid re-allocation.
     void InitializeQRCloth(const std::vector<Vec3<T>> &pos, 
@@ -148,6 +152,9 @@ private:
     std::vector<Vec3<T>> h_velocities_;
     std::vector<T> h_volumes_;
     std::vector<int> h_indices_;
+    // host ptrs for post contact solving
+    std::vector<int> h_contact_ids_;
+    std::vector<Vec3<T>> h_post_contact_dv_;
 
     // Grid state device ptrs
 

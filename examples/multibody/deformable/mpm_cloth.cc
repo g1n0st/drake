@@ -23,7 +23,7 @@
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 1e-2,
+DEFINE_double(time_step, 5e-4,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(beta, 0.01,
               "Stiffness damping coefficient for the deformable body [1/s].");
@@ -159,7 +159,7 @@ int do_main() {
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = 5e-4;
   mpm_config.write_files = false;
-  mpm_config.contact_stiffness = 0.0;
+  mpm_config.contact_stiffness = 1000.0;
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
   deformable_model.SetMpmConfig(std::move(mpm_config));
