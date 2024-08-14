@@ -500,12 +500,12 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     };
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
-                    val[0] = mass * weight;
-                    val[1] = vel[0] * val[0];
-                    val[2] = vel[1] * val[0];
-                    val[3] = vel[2] * val[0];
 
                     if constexpr (TRANSFER_FORCE_AND_AFFINE) {
+                        val[0] = mass * weight;
+                        val[1] = vel[0] * val[0];
+                        val[2] = vel[1] * val[0];
+                        val[3] = vel[2] * val[0];
                         // apply gravity
                         val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
 
@@ -516,6 +516,11 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                         val[1] += force[0] * dt * weight;
                         val[2] += force[1] * dt * weight;
                         val[3] += force[2] * dt * weight;
+                    } else {
+                        val[0] = 0;
+                        val[1] = vel[0] * weight;
+                        val[2] = vel[1] * weight;
+                        val[3] = vel[2] * weight;
                     }
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {

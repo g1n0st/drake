@@ -363,7 +363,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
             static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 2))
           );
         }
-        // mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, dt);
+        mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, dt);
       }
 
       mpm_solver_.GridToParticle(&mutable_mpm_state, dt);

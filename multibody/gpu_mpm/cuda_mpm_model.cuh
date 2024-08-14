@@ -52,6 +52,15 @@ public:
     T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
     T* next_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
     T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
+
+    // NOTE (changyu): next state data is only meaningful at BuildReturnMapping stage,
+    // we can reuse these buffers to splat particle contact dv to the grid.
+    T* contact_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
+    T* contact_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
+    T* contact_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
+    T* contact_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
+    uint32_t* contact_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
+    uint32_t* contact_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
     
     int* current_pids() { return particle_buffer_[current_particle_buffer_id_].d_pids; }
     const int* current_pids() const { return particle_buffer_[current_particle_buffer_id_].d_pids; }
