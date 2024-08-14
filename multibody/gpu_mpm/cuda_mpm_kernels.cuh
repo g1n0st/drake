@@ -412,7 +412,7 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     }
 }
 
-template<typename T, int BLOCK_DIM>
+template<typename T, int BLOCK_DIM, bool TRANSFER_FORCE_AND_AFFINE>
 __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
@@ -473,15 +473,16 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         }
 
         const T mass = volumes[idx] * config::DENSITY<T>;
-        const T* C = &affine_matrices[idx * 9];
         const T* vel = &velocities[idx * 3];
-        const T* stress = &taus[idx * 9];
-        const T* force = &forces[idx * 3];
 
         T B[9];
-        #pragma unroll
-        for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
+        if constexpr (TRANSFER_FORCE_AND_AFFINE) {
+            const T* C = &affine_matrices[idx * 9];
+            const T* stress = &taus[idx * 9];
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
+            }
         }
 
         T val[4];
@@ -504,15 +505,18 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     val[2] = vel[1] * val[0];
                     val[3] = vel[2] * val[0];
 
-                    // apply gravity
-                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
+                    if constexpr (TRANSFER_FORCE_AND_AFFINE) {
+                        // apply gravity
+                        val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
 
-                    val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
-                    val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
-                    val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
-                    val[1] += force[0] * dt * weight;
-                    val[2] += force[1] * dt * weight;
-                    val[3] += force[2] * dt * weight;
+                        val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
+                        val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
+                        val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
+                        const T* force = &forces[idx * 3];
+                        val[1] += force[0] * dt * weight;
+                        val[2] += force[1] * dt * weight;
+                        val[3] += force[2] * dt * weight;
+                    }
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[4]; 
