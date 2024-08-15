@@ -22,6 +22,7 @@
 
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
+DEFINE_int32(res, 50, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 5e-4,
               "Discrete time step for the system [s]. Must be positive.");
@@ -99,7 +100,7 @@ int do_main() {
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   if (FLAGS_testcase == 0) {
-    Box box{0.4, 0.4, 0.2};
+    Box box{2.0, 2.0, 0.2};
     const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.11});
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
@@ -115,14 +116,13 @@ int do_main() {
     }
   }
   else {
-    throw;
   }
 
   std::vector<Eigen::Vector3d> inital_pos;
   std::vector<Eigen::Vector3d> inital_vel;
   std::vector<int> indices;
-  const int res = 30;
-  const double l = 0.3;
+  const int res = FLAGS_res;
+  const double l = 0.005 * res;
   int length = res;
   int num_clothes = 1;
   int width = res;
@@ -136,7 +136,7 @@ int do_main() {
     int o = inital_pos.size();
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back(0.35 + i * dx, 0.35 + j * dx, 0.3 + k * 0.1);
+        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, 0.3 + k * 0.1);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }
