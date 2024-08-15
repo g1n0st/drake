@@ -71,6 +71,9 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
     CUDA_SAFE_CALL(cudaMalloc(&d_forces_, sizeof(Vec3<T>) * n_particles_));
     CUDA_SAFE_CALL(cudaMalloc(&d_taus_, sizeof(Mat3<T>) * n_particles_));
     CUDA_SAFE_CALL(cudaMalloc(&d_index_mappings_, sizeof(int) * n_particles_));
+    std::vector<int> initial_index_mappings(n_particles_);
+    std::iota(initial_index_mappings.begin(), initial_index_mappings.end(), 0);
+    CUDA_SAFE_CALL(cudaMemcpy(d_index_mappings_, initial_index_mappings.data(), sizeof(int) * n_particles_, cudaMemcpyHostToDevice));
 
     // element-based data
     CUDA_SAFE_CALL(cudaMalloc(&d_deformation_gradients_, sizeof(Mat3<T>) * n_faces_));
