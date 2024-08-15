@@ -308,6 +308,36 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     (*mpm_post_contact_dv) = results.v_next.tail(mpm_dofs);
   }
 
+  void UpdateContactDv(const systems::Context<T>& context, 
+                       gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state) const {
+    const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
+    mpm_state->contact_ids_host().clear();
+    mpm_state->post_contact_dv_host().clear();
+    if (mpm_contact_pairs.size() > 0) {
+      const auto &mpm_post_contact_dv = EvalMpmPostContactDV(context);
+
+      // NOTE (changyu): dv info logging
+      Eigen::Vector3d mean = mpm_post_contact_dv.rowwise().mean();
+      printf("contact dv norm: %lf dv size: %lu dv aver: %.7lf %.7lf %.7lf\n", 
+              mpm_post_contact_dv.norm(), 
+              mpm_post_contact_dv.size(),
+              mean[0], mean[1], mean[2]);
+
+      DRAKE_DEMAND(int(mpm_contact_pairs.size()) * 3 == int(mpm_post_contact_dv.size()));
+      mpm_state->contact_ids_host().reserve(mpm_post_contact_dv.size());
+      mpm_state->post_contact_dv_host().reserve(mpm_post_contact_dv.size());
+      for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
+        mpm_state->contact_ids_host().emplace_back(
+          static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index));
+        mpm_state->post_contact_dv_host().emplace_back(
+          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 0)),
+          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 1)),
+          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 2))
+        );
+      }
+    }
+  }
+
   void CalcAbstractStates(const systems::Context<T>& context,
                           systems::State<T>* update) const {
     if (deformable_model_->ExistsMpmModel()) {
@@ -338,34 +368,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       DRAKE_DEMAND(substep == 1);
       DRAKE_DEMAND(dt == substep_dt);
 
-      const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
-      if (mpm_contact_pairs.size() > 0) {
-        const auto &mpm_post_contact_dv = EvalMpmPostContactDV(context);
-
-        // NOTE (changyu): dv info logging
-        Eigen::Vector3d mean = mpm_post_contact_dv.rowwise().mean();
-        printf("contact dv norm: %lf dv size: %lu dv aver: %.7lf %.7lf %.7lf\n", 
-               mpm_post_contact_dv.norm(), 
-               mpm_post_contact_dv.size(),
-               mean[0], mean[1], mean[2]);
-
-        DRAKE_DEMAND(int(mpm_contact_pairs.size()) * 3 == int(mpm_post_contact_dv.size()));
-        mutable_mpm_state.contact_ids_host().clear();
-        mutable_mpm_state.post_contact_dv_host().clear();
-        mutable_mpm_state.contact_ids_host().reserve(mpm_post_contact_dv.size());
-        mutable_mpm_state.post_contact_dv_host().reserve(mpm_post_contact_dv.size());
-        for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-          mutable_mpm_state.contact_ids_host().emplace_back(
-            static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index));
-          mutable_mpm_state.post_contact_dv_host().emplace_back(
-            static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 0)),
-            static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 1)),
-            static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 2))
-          );
-        }
-        mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, dt);
-      }
-
+      UpdateContactDv(context, &mutable_mpm_state);
+      mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, dt);
       mpm_solver_.GridToParticle(&mutable_mpm_state, dt);
       // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
       mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
@@ -373,7 +377,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       // NOTE (changyu): time step info logging
-      printf("\033[32mframe=%d time=%lldms N(contacts)=%lu N(substeps)=%d\033[0m\n", current_frame, (after_ts - before_ts), mpm_contact_pairs.size(), substep);
+      printf("\033[32mframe=%d time=%lldms N(substeps)=%d\033[0m\n", current_frame, (after_ts - before_ts), substep);
       if (deformable_model_->cpu_mpm_model().config.write_files) {
         mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
       }
