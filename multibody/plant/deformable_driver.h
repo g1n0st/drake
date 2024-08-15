@@ -347,6 +347,11 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
             deformable_model_->gpu_mpm_state_index()
         );
       GpuT dt = static_cast<GpuT>(manager_->plant().time_step());
+
+      // Contact Stage
+      UpdateContactDv(context, &mutable_mpm_state);
+
+      // Dynamic Stage
       int current_frame = std::round(context.get_time() / dt);
       GpuT substep_dt = GpuT(deformable_model_->cpu_mpm_model().config.substep_dt);
       GpuT dt_left = dt;
@@ -358,7 +363,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         mpm_solver_.RebuildMapping(&mutable_mpm_state, substep == 0);
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
         mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
+        mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, ddt);
         mpm_solver_.UpdateGrid(&mutable_mpm_state);
+        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         substep += 1;
       }
       mpm_solver_.GpuSync();
@@ -368,9 +375,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       DRAKE_DEMAND(substep == 1);
       DRAKE_DEMAND(dt == substep_dt);
 
-      UpdateContactDv(context, &mutable_mpm_state);
-      mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, dt);
-      mpm_solver_.GridToParticle(&mutable_mpm_state, dt);
       // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
       mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
 

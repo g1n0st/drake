@@ -518,9 +518,9 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                         val[3] += force[2] * dt * weight;
                     } else {
                         val[0] = 0;
-                        val[1] = vel[0] * weight;
-                        val[2] = vel[1] * weight;
-                        val[3] = vel[2] * weight;
+                        val[1] = vel[0] * mass * weight;
+                        val[2] = vel[1] * mass * weight;
+                        val[3] = vel[2] * mass * weight;
                     }
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
