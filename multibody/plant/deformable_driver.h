@@ -262,7 +262,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
                 context, manager_->plant().get_body(index_B));
         const Vector3<T>& p_WB = X_WB.translation();
         const Vector3<T> p_BC_W = mpm_contact_pair.particle_in_contact_position - p_WB;
-        
+        printf("%ld %lf\n", contact_index, -vn(2));
         DiscreteContactPair<T> contact_pair{
           .jacobian = std::move(jacobian_blocks),
           .id_A = dummy_mpm_id,
@@ -271,7 +271,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           .object_B = object_B,
           .R_WC = R_WC,
           .p_WC = mpm_contact_pair.particle_in_contact_position,
-          .p_ApC_W = {NAN, NAN, NAN},
+          .p_ApC_W = {0, 0, 0},
           .p_BqC_W = p_BC_W,
           .nhat_BA_W = mpm_contact_pair.normal,
           .phi0 = mpm_contact_pair.penetration_distance,
@@ -280,10 +280,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
                  std::abs(mpm_contact_pair.penetration_distance),
           .stiffness = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_stiffness),
           .damping = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_damping),
-          .dissipation_time_scale = manager_->plant().time_step() /*default value*/,
-          .friction_coefficient = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_friction_mu),
-          .surface_index = contact_index,
-          .face_index = 0};
+          .dissipation_time_scale = NAN,
+          .friction_coefficient = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_friction_mu)
+        };
       result->AppendDeformableData(std::move(contact_pair));
     }
   }
