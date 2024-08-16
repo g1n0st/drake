@@ -262,7 +262,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
                 context, manager_->plant().get_body(index_B));
         const Vector3<T>& p_WB = X_WB.translation();
         const Vector3<T> p_BC_W = mpm_contact_pair.particle_in_contact_position - p_WB;
-        printf("%ld %lf\n", contact_index, -vn(2));
+
         DiscreteContactPair<T> contact_pair{
           .jacobian = std::move(jacobian_blocks),
           .id_A = dummy_mpm_id,
