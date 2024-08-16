@@ -190,9 +190,7 @@ void SapDriver<T>::CalcFreeMotionVelocities(const systems::Context<T>& context,
                manager().deformable_driver()->ExistsMpmBody()) {
       // NOTE (changyu): since stage2 is independent of stage 2 and does not involve free motion, 
       // we can simply set free motion velocity for MPM as zero and reformulate SAP to solve dv.
-      VectorX<T> deformable_v_star_mpm;
-      deformable_v_star_mpm.resize(3 * manager().deformable_driver()->num_mpm_contact_pairs(context));
-      deformable_v_star_mpm.setZero();
+      VectorX<T> deformable_v_star_mpm = manager().deformable_driver()->CalcParticipatingFreeMotionVelocitiesMpm(context);
       const int rigid_dofs = v0.size();
       const int deformable_dofs_mpm = deformable_v_star_mpm.size();
       v_star->resize(rigid_dofs + deformable_dofs_mpm);

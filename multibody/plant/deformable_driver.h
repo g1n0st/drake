@@ -183,6 +183,16 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       }
   }
 
+  VectorX<T> CalcParticipatingFreeMotionVelocitiesMpm(const systems::Context<T>& context) const {
+    const auto& state = context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(deformable_model_->gpu_mpm_state_index());
+    const auto& mpm_contact_pairs = EvalMpmContactPairs(context);
+    VectorX<T> vn(mpm_contact_pairs.size() * 3);
+    for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
+      vn.segment(i * 3, 3) = state.velocities_host()[mpm_contact_pairs[i].particle_in_contact_index].template cast<T>();
+    }
+    return vn;
+  }
+
   void AppendDiscreteContactPairsMpm(
       const systems::Context<T>& context,
       DiscreteContactData<DiscreteContactPair<T>>* result) const {
@@ -321,17 +331,25 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
               mpm_post_contact_dv.norm(), 
               mpm_post_contact_dv.size(),
               mean[0], mean[1], mean[2]);
+      for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
+        const auto & v0 = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index].template cast<T>();
+        printf("dv(%lu) = (%.lf %.lf %lf)\n", i, 
+        mpm_post_contact_dv(i * 3 + 0) - v0[0], 
+        mpm_post_contact_dv(i * 3 + 1) - v0[1], 
+        mpm_post_contact_dv(i * 3 + 2) - v0[2]);
+      }
 
       DRAKE_DEMAND(int(mpm_contact_pairs.size()) * 3 == int(mpm_post_contact_dv.size()));
       mpm_state->contact_ids_host().reserve(mpm_post_contact_dv.size());
       mpm_state->post_contact_dv_host().reserve(mpm_post_contact_dv.size());
       for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
+        const auto & v0 = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index].template cast<T>();
         mpm_state->contact_ids_host().emplace_back(
           static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index));
         mpm_state->post_contact_dv_host().emplace_back(
-          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 0)),
-          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 1)),
-          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 2))
+          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 0)) - v0[0],
+          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 1)) - v0[1],
+          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 2)) - v0[2]
         );
       }
     }

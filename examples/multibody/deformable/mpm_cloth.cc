@@ -39,6 +39,7 @@ DEFINE_double(
 
 using drake::geometry::AddContactMaterial;
 using drake::geometry::Box;
+using drake::geometry::Sphere;
 using drake::geometry::Capsule;
 using drake::geometry::GeometryInstance;
 using drake::geometry::IllustrationProperties;
@@ -115,6 +116,12 @@ int do_main() {
       }
     }
   }
+  else if (FLAGS_testcase == 2) {
+    Sphere ball{0.05};
+    const RigidTransformd X_WG_BALL(Eigen::Vector3d{0.5, 0.5, 0.11});
+    plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BALL, ball, "ball_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(plant.world_body(), X_WG_BALL, ball, "ball_visual", std::move(illustration_props));
+  }
   else {
   }
 
@@ -159,7 +166,7 @@ int do_main() {
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = 5e-4;
   mpm_config.write_files = false;
-  mpm_config.contact_stiffness = 10000.0;
+  mpm_config.contact_stiffness = 100000.0;
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
   deformable_model.SetMpmConfig(std::move(mpm_config));
