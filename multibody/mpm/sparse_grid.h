@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "SPGrid_Allocator.h"
@@ -17,12 +18,18 @@
 #include "drake/common/eigen_types.h"
 #include "drake/common/parallelism.h"
 #include "drake/multibody/mpm/math.h"
+#include "drake/geometry/query_object.h"
+#include "drake/multibody/math/spatial_algebra.h"
+#include "drake/multibody/tree/multibody_tree_indexes.h"
+#include "drake/math/rigid_transform.h"
 
 namespace drake {
 namespace multibody {
 namespace mpm {
 namespace internal {
 
+// TODO(xuchenhan-tri): The size of GridData has changed. Update the
+// documentation.
 /* GridData stores data at a single a grid node of SparseGrid.
 
  The Vector3<T> entry contains the velocity of the node (sometimes used
@@ -38,13 +45,26 @@ template <typename T>
 struct GridData {
   void set_zero() {
     v.setZero();
+    nhat_W.setZero();
+    rigid_v.setZero();
+    m = 0.0;
+    mu = 0.0;
+    index = -1;
+  }
+
+  void reset_mass_and_velocity() {
+    v.setZero();
     m = 0.0;
   }
 
   bool operator==(const GridData<T>& other) const = default;
 
   Vector3<T> v{Vector3<T>::Zero()};
+  Vector3<T> nhat_W{Vector3<T>::Zero()};
+  Vector3<T> rigid_v{Vector3<T>::Zero()};
   T m{0.0};
+  T mu{0.0};
+  int index{-1};
 };
 
 /* A Pad is a 3x3x3 subgrid around a particle.
@@ -126,6 +146,7 @@ class SparseGrid {
    "offset" of their base nodes. In the process, it builds `sentinel_particles`
    and `particle_indices` (see corresponding accessors below). */
   void Allocate(const std::vector<Vector3<T>>& q_WPs);
+  void AllocateForCollision(const std::vector<Vector3<T>>& q_WPs);
 
   /* All but last entry store indices of particles marking the boundary of a new
    block. The last entry stores the number of particles. This always has size
@@ -165,8 +186,18 @@ class SparseGrid {
   void SetPadData(uint64_t center_node_offset,
                   const Pad<GridData<T>>& pad_data);
 
+  /* Transfers rigid body data to the grid nodes that intersect with rigid
+   geometries. */
+  void RasterizeRigidData(
+      const geometry::QueryObject<double>& query_object,
+      const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
+      const std::vector<math::RigidTransform<double>>& poses,
+      const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
+          geometry_id_to_body_index);
+
   /* For each active grid node, divide by the grid node mass to convert the
    momentum to velocity and then increment the velocity by dv.
+   Also apply boundary conditions along the way.
    @pre the grid data stores momentum of the node, not velocity. */
   void ExplicitVelocityUpdate(const Vector3<T>& dv);
 
@@ -263,6 +294,8 @@ class SparseGrid {
   /* Blocks containing all active grid nodes. These are the blocks that are
    actually allocated. */
   std::unique_ptr<PageMap> padded_blocks_;
+  /* Blocks for all grid nodes for which we test for boundary conditions. */
+  std::unique_ptr<PageMap> doubly_padded_blocks_;
 
   // TODO(xuchenhan-tri): Allow moving the maximumly allowed grid around the
   // center of the objects so that the grid can be accommodated to the objects

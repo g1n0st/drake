@@ -336,6 +336,10 @@ DeformableModel<T>::BuildLinearVolumetricModel(
       BuildLinearVolumetricModelHelper<fem::internal::LinearCorotatedModel>(
           id, mesh, config);
       break;
+    case MaterialModel::kStvkHenckyVonMises:
+      throw std::runtime_error(
+          "The StvkHenckyVonMises material model is not supported yet for "
+          "FEM.");
   }
 }
 

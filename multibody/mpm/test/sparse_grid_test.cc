@@ -3,6 +3,11 @@
 #include <gtest/gtest.h>
 
 #include "drake/common/test_utilities/eigen_matrix_compare.h"
+#include "drake/geometry/proximity_properties.h"
+#include "drake/multibody/plant/multibody_plant.h"
+#include "drake/multibody/plant/multibody_plant_config_functions.h"
+#include "drake/systems/framework/diagram.h"
+#include "drake/systems/framework/diagram_builder.h"
 
 namespace drake {
 namespace multibody {
@@ -10,8 +15,21 @@ namespace mpm {
 namespace internal {
 namespace {
 
+using drake::geometry::AddContactMaterial;
+using drake::multibody::MultibodyPlant;
+using drake::multibody::MultibodyPlantConfig;
 using Eigen::Vector3d;
+using Eigen::Vector3f;
 using Eigen::Vector3i;
+using geometry::FrameId;
+using geometry::GeometryInstance;
+using geometry::ProximityProperties;
+using geometry::QueryObject;
+using geometry::SceneGraph;
+using geometry::SourceId;
+using geometry::Sphere;
+using math::RigidTransformd;
+using systems::Context;
 
 GTEST_TEST(SparseGridTest, Allocate) {
   const double dx = 0.01;
@@ -43,6 +61,14 @@ GTEST_TEST(SparseGridTest, Allocate) {
   }
 
   EXPECT_EQ(grid.num_blocks(), 1);
+}
+
+GTEST_TEST(SparseGridTest, AllocateForCollision) {
+  const float dx = 0.01;
+  SparseGrid<float> grid(dx);
+  const Vector3f q_WP = Vector3f(1.001, 0.001, 0.001);
+  std::vector<Vector3f> q_WPs = {q_WP};
+  grid.AllocateForCollision(q_WPs);
 }
 
 GTEST_TEST(SparseGridTest, BaseNodeOffsets) {
@@ -284,17 +310,17 @@ GTEST_TEST(SparseGridTest, ComputeTotalMassAndMomentum) {
 }
 
 /* We place 8 particles in the grid to activate one block for each color.
- For doubles, each block is of size 4x4x8 grid nodes. We place particles at
- (5*i*dx, 5*j*dx, 10*k*dx) for i, j, k = 0 or 1 to activate the 8 blocks
+ For floats, each block is of size 4x4x4 grid nodes. We place particles at
+ (5*i*dx, 5*j*dx, 5*k*dx) for i, j, k = 0 or 1 to activate the 8 blocks
  starting at the block containing the origin. */
 GTEST_TEST(SparseGridTest, ColoredBlocks) {
-  const double dx = 0.01;
-  SparseGrid<double> grid(dx);
-  std::vector<Vector3d> q_WPs;
+  const float dx = 0.01;
+  SparseGrid<float> grid(dx);
+  std::vector<Vector3f> q_WPs;
   for (int i = 0; i < 2; ++i) {
     for (int j = 0; j < 2; ++j) {
       for (int k = 0; k < 2; ++k) {
-        q_WPs.emplace_back(Vector3d(5 * i * dx, 5 * j * dx, 10 * k * dx));
+        q_WPs.emplace_back(Vector3f(5 * i * dx, 5 * j * dx, 5 * k * dx));
       }
     }
   }
@@ -308,6 +334,145 @@ GTEST_TEST(SparseGridTest, ColoredBlocks) {
       {{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}}};
 
   EXPECT_EQ(grid.colored_blocks(), expected_blocks);
+}
+
+GTEST_TEST(SparseGrid, RasterizeRigidData) {
+  systems::DiagramBuilder<double> builder;
+  MultibodyPlantConfig plant_config;
+  plant_config.time_step = 0.01;
+  auto [plant, scene_graph] = AddMultibodyPlant(plant_config, &builder);
+
+  /* Add a free sphere a sphere with radius 0.6. */
+  ProximityProperties rigid_proximity_props;
+  /* Set the friction coefficient close to that of rubber against rubber. */
+  const CoulombFriction<double> surface_friction(1.0, 1.0);
+  AddContactMaterial({}, {}, surface_friction, &rigid_proximity_props);
+  const double radius = 0.6;
+  const RigidBody<double>& body = plant.AddRigidBody(
+      "sphere_body",
+      SpatialInertia<double>::SolidSphereWithDensity(1000.0, radius));
+  plant.RegisterCollisionGeometry(body, RigidTransformd::Identity(),
+                                  Sphere(radius), "sphere_collision",
+                                  rigid_proximity_props);
+  plant.Finalize();
+  auto diagram = builder.Build();
+  std::unique_ptr<Context<double>> diagram_context =
+      diagram->CreateDefaultContext();
+  Context<double>& plant_context =
+      plant.GetMyMutableContextFromRoot(diagram_context.get());
+  /* Place the sphere at (1, 1, 1)*/
+  plant.SetFreeBodyPose(&plant_context, body,
+                        RigidTransformd(Vector3d(1, 1, 1)));
+  /* Assign it some arbitrary spatial velocity (preferring numbers that produces
+   simple analytic results). */
+  const Vector3d v_WB = Vector3d(-1, 0, 0);
+  const Vector3d w_WB = Vector3d(0, 0, 2);
+  plant.SetFreeBodySpatialVelocity(&plant_context, body,
+                                   SpatialVelocity<double>(w_WB, v_WB));
+  Context<double>& scene_graph_context =
+      scene_graph.GetMyMutableContextFromRoot(diagram_context.get());
+  const QueryObject<double>& query_object =
+      scene_graph.get_query_output_port().template Eval<QueryObject<double>>(
+          scene_graph_context);
+  const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
+      geometry_id_to_body_index = plant.geometry_id_to_body_index();
+  const auto& V_WB_all =
+      plant.get_body_spatial_velocities_output_port()
+          .Eval<std::vector<SpatialVelocity<double>>>(plant_context);
+  const auto& X_WB_all =
+      plant.get_body_poses_output_port()
+          .Eval<std::vector<math::RigidTransform<double>>>(plant_context);
+
+  /* Set up a grid with grid nodes in [0, 2] x [0, 2] x [0, 2] all active. */
+  const double dx = 0.5;
+  SparseGrid<double> grid(dx);
+  std::vector<Vector3d> q_WPs;
+  for (int i = 0; i < 5; ++i) {
+    for (int j = 0; j < 5; ++j) {
+      for (int k = 0; k < 5; ++k) {
+        q_WPs.emplace_back(Vector3d(i * dx, j * dx, k * dx));
+      }
+    }
+  }
+
+  grid.AllocateForCollision(q_WPs);
+
+  /* Set a constant velocity field (1, 0, 1). */
+  auto set_constant_velocity_field = [](const Vector3i&) {
+    GridData<double> result;
+    result.m = 1.0;
+    result.v = Vector3d(1.0, 0.0, 1.0);
+    return result;
+  };
+  grid.SetGridData(set_constant_velocity_field);
+
+  /* Splat rigid data to grid. */
+  grid.RasterizeRigidData(query_object, V_WB_all, X_WB_all,
+                          geometry_id_to_body_index);
+  grid.ExplicitVelocityUpdate(Vector3d::Zero());
+
+  /* Verify the grid data is set as expected. */
+  const std::vector<std::pair<Vector3i, GridData<double>>> grid_data =
+      grid.GetGridData();
+
+  for (const auto& [node, data] : grid_data) {
+    /* The grid mass is unaffected by the rigid data. */
+    EXPECT_EQ(data.m, 1.0);
+    const Vector3d p_WN = node.cast<double>() * dx;
+    /* There are seven nodes that fall inside the sphere: node (1, 1, 1) and its
+     six immediate neighbors. The normal is ill-defined at (1, 1, 1) but is
+     well-defined at the other six nodes. We check the rigid data is as expected
+     at these locations.*/
+    if (p_WN == Vector3d(1.0, 1.0, 1.0))
+      continue;
+    else if (p_WN == Vector3d(0.5, 1.0, 1.0)) {
+      EXPECT_EQ(data.nhat_W, Vector3d(-1.0, 0.0, 0.0));
+      const Vector3d p_BQ = Vector3d(-0.5, 0.0, 0.0);
+      EXPECT_EQ(data.rigid_v, v_WB + w_WB.cross(p_BQ));
+      EXPECT_EQ(data.rigid_v, Vector3d(-1.0, -1.0, 0.0));
+      /* vn = 2.0, ||vt|| = sqrt(2), in the friction cone. */
+      EXPECT_EQ(data.v, Vector3d(-1.0, -1.0, 0.0));
+    } else if (p_WN == Vector3d(1.5, 1.0, 1.0)) {
+      EXPECT_EQ(data.nhat_W, Vector3d(1.0, 0.0, 0.0));
+      const Vector3d p_BQ = Vector3d(0.5, 0.0, 0.0);
+      EXPECT_EQ(data.rigid_v, v_WB + w_WB.cross(p_BQ));
+      EXPECT_EQ(data.rigid_v, Vector3d(-1.0, 1.0, 0.0));
+      /* vn = -2.0, separating. */
+      EXPECT_EQ(data.v, Vector3d(1.0, 0.0, 1.0));
+    } else if (p_WN == Vector3d(1.0, 1.5, 1.0)) {
+      EXPECT_EQ(data.nhat_W, Vector3d(0.0, 1.0, 0.0));
+      const Vector3d p_BQ = Vector3d(0.0, 0.5, 0.0);
+      EXPECT_EQ(data.rigid_v, v_WB + w_WB.cross(p_BQ));
+      EXPECT_EQ(data.rigid_v, Vector3d(-2.0, 0.0, 0.0));
+      /* vn = 0.0, ||vt|| = sqrt(5), out of the friction cone. */
+      EXPECT_EQ(data.v, Vector3d(1.0, 0.0, 1.0));
+    } else if (p_WN == Vector3d(1.0, 0.5, 1.0)) {
+      EXPECT_EQ(data.nhat_W, Vector3d(0.0, -1.0, 0.0));
+      const Vector3d p_BQ = Vector3d(0.0, -0.5, 0.0);
+      EXPECT_EQ(data.rigid_v, v_WB + w_WB.cross(p_BQ));
+      EXPECT_EQ(data.rigid_v, Vector3d(0.0, 0.0, 0.0));
+      /* vn = 0.0, ||vt|| = sqrt(2), out of the friction cone. */
+      EXPECT_EQ(data.v, Vector3d(1.0, 0.0, 1.0));
+    } else if (p_WN == Vector3d(1.0, 1.0, 1.5)) {
+      EXPECT_EQ(data.nhat_W, Vector3d(0.0, 0.0, 1.0));
+      const Vector3d p_BQ = Vector3d(0.0, 0.0, 0.5);
+      EXPECT_EQ(data.rigid_v, v_WB + w_WB.cross(p_BQ));
+      EXPECT_EQ(data.rigid_v, Vector3d(-1.0, 0.0, 0.0));
+      /* vn = 1.0, separating. */
+      EXPECT_EQ(data.v, Vector3d(1.0, 0.0, 1.0));
+    } else if (p_WN == Vector3d(1.0, 1.0, 0.5)) {
+      EXPECT_EQ(data.nhat_W, Vector3d(0.0, 0.0, -1.0));
+      const Vector3d p_BQ = Vector3d(0.0, 0.0, -0.5);
+      EXPECT_EQ(data.rigid_v, v_WB + w_WB.cross(p_BQ));
+      EXPECT_EQ(data.rigid_v, Vector3d(-1.0, 0.0, 0.0));
+      /* vn = 1.0, ||vt|| = 2, outside of the friction cone. */
+      EXPECT_EQ(data.v, Vector3d(0.0, 0.0, 0.0));
+    } else {
+      EXPECT_EQ(data.nhat_W, Vector3d::Zero());
+      EXPECT_EQ(data.rigid_v, Vector3d::Zero());
+      EXPECT_EQ(data.v, Vector3d(1.0, 0.0, 1.0));
+    }
+  }
 }
 
 }  // namespace

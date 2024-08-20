@@ -3,10 +3,14 @@
 #include <utility>
 
 #include "ips2ra/ips2ra.hpp"
+#include "drake/multibody/plant/contact_properties.h"
 
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
+
+using drake::geometry::ProximityProperties;
+using drake::geometry::SignedDistanceToPoint;
 
 namespace drake {
 namespace multibody {
@@ -20,6 +24,7 @@ SparseGrid<T>::SparseGrid(T dx, Parallelism parallelism)
                                              kMaxGridSize)),
       blocks_(std::make_unique<PageMap>(*allocator_)),
       padded_blocks_(std::make_unique<PageMap>(*allocator_)),
+      doubly_padded_blocks_(std::make_unique<PageMap>(*allocator_)),
       parallelism_(parallelism) {
   DRAKE_DEMAND(dx > 0);
 
@@ -77,10 +82,41 @@ void SparseGrid<T>::Allocate(const std::vector<Vector3<T>>& q_WPs) {
   padded_blocks_->Update_Block_Offsets();
   std::tie(block_offsets, num_blocks) = padded_blocks_->Get_Blocks();
   const uint64_t page_size = 1 << kLog2Page;
-  const uint64_t data_size = sizeof(GridData<T>);
+  const uint64_t data_size = 1 << kDataBits;
   /* Note that Array is a wrapper around pointer to data memory and can be
    cheaply copied. */
   Array data = allocator_->Get_Array();
+  /* Zero out the data in each block. */
+  for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+    const uint64_t offset = block_offsets[b];
+    for (uint64_t i = 0; i < page_size; i += data_size) {
+      data(offset + i).reset_mass_and_velocity();
+    }
+  }
+}
+
+template <typename T>
+void SparseGrid<T>::AllocateForCollision(const std::vector<Vector3<T>>& q_WPs) {
+  Allocate(q_WPs);
+  auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
+  /* Touch all neighboring blocks of each block in `padded_blocks_`. */
+  for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+    const uint64_t current_offset = block_offsets[b];
+    for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+        for (int k = 0; k < 3; ++k) {
+          const uint64_t neighbor_block_offset =
+              Mask::Packed_Add(current_offset, block_offset_strides_[i][j][k]);
+          doubly_padded_blocks_->Set_Page(neighbor_block_offset);
+        }
+      }
+    }
+  }
+  doubly_padded_blocks_->Update_Block_Offsets();
+  std::tie(block_offsets, num_blocks) = doubly_padded_blocks_->Get_Blocks();
+  Array data = allocator_->Get_Array();
+  const uint64_t page_size = 1 << kLog2Page;
+  const uint64_t data_size = 1 << kDataBits;
   /* Zero out the data in each block. */
   for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
     const uint64_t offset = block_offsets[b];
@@ -137,9 +173,14 @@ void SparseGrid<T>::SetPadData(uint64_t center_node_offset,
 }
 
 template <typename T>
-void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
-  const uint64_t data_size = sizeof(GridData<T>);
-  auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
+void SparseGrid<T>::RasterizeRigidData(
+    const geometry::QueryObject<double>& query_object,
+    const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
+    const std::vector<math::RigidTransform<double>>& poses,
+    const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
+        geometry_id_to_body_index) {
+  const uint64_t data_size = 1 << kDataBits;
+  auto [block_offsets, num_blocks] = doubly_padded_blocks_->Get_Blocks();
   Array grid_data = allocator_->Get_Array();
   for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
     const uint64_t block_offset = block_offsets[b];
@@ -151,14 +192,93 @@ void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
         for (int k = 0; k < kNumNodesInBlockZ; ++k) {
           GridData<T>& node_data = grid_data(node_offset);
           node_offset += data_size;
-          if (node_data.m > 0.0) {
-            node_data.v /= node_data.m;
+          /* World frame position of the node. */
+          const Vector3<T> p_WN =
+              (block_origin + Vector3<int>(i, j, k)).cast<T>() * dx_;
+          const std::vector<SignedDistanceToPoint<double>>& signed_distances =
+              query_object.ComputeSignedDistanceToPoint(
+                  p_WN.template cast<double>());
+          double min_distance = 0.0;
+          int geometry_index = -1;
+          for (int g = 0; g < ssize(signed_distances); ++g) {
+            const SignedDistanceToPoint<double>& signed_distance =
+                signed_distances[g];
+            if (signed_distance.distance < min_distance) {
+              min_distance = signed_distance.distance;
+              geometry_index = g;
+            }
+          }
+          if (min_distance < 0.0) {
+            const SignedDistanceToPoint<double>& min_val =
+                signed_distances[geometry_index];
+            const geometry::GeometryId geometry_id = min_val.id_G;
+            const CoulombFriction<double>& coulomb_friction =
+                multibody::internal::GetCoulombFriction(
+                    geometry_id, query_object.inspector());
+            node_data.mu = coulomb_friction.dynamic_friction();
+
+            const int body_index = geometry_id_to_body_index.at(geometry_id);
+            node_data.index = body_index;
+            node_data.nhat_W = min_val.grad_W.normalized().cast<T>();
+            /* World frame position of the origin of the rigid body. */
+            const Vector3<double>& p_WR = poses[body_index].translation();
+            const Vector3<double> p_RN = p_WN.template cast<double>() - p_WR;
+            /* World frame velocity of a point affixed to the rigid body that
+             coincide with the the grid node. */
+            const Vector3<double> v_WN =
+                spatial_velocities[body_index].Shift(p_RN).translational();
+            node_data.rigid_v = v_WN.cast<T>();
+          }
+        }
+      }
+    }
+  }
+}
+
+template <typename T>
+void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
+  const uint64_t data_size = 1 << kDataBits;
+  auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
+  Array grid_data = allocator_->Get_Array();
+  for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+    const uint64_t block_offset = block_offsets[b];
+    uint64_t node_offset = block_offset;
+    /* The coordinate of the origin of this block. */
+    // const Vector3<int> block_origin = OffsetToCoordinate(block_offset);
+    for (int i = 0; i < kNumNodesInBlockX; ++i) {
+      for (int j = 0; j < kNumNodesInBlockY; ++j) {
+        for (int k = 0; k < kNumNodesInBlockZ; ++k) {
+          GridData<T>& node_data = grid_data(node_offset);
+          const T& m = node_data.m;
+          node_offset += data_size;
+          if (m > 0.0) {
+            node_data.v /= m;
             node_data.v += dv;
-            /* The world space position of the current node. */
-            const Vector3<T> q_WN =
-                (block_origin + Vector3<int>(i, j, k)).cast<T>() * dx_;
-            if (q_WN[2] <= 0 && node_data.v[2] < 0) {
-              node_data.v[2] = 0;
+            if (node_data.index >= 0) {
+              // TODO(xuchenhan-tri): Consider the friction coefficient of
+              // particles. Currently, we are using the friction coefficient of
+              // the rigid body as the combined friction coefficient.
+              const Vector3<T>& nhat_W = node_data.nhat_W;
+              const Vector3<T> v_rel = node_data.v - node_data.rigid_v;
+              const T& mu = node_data.mu;
+              const T vn = v_rel.dot(nhat_W);
+              Vector3<T> vt = v_rel - vn * nhat_W;
+              if (vn < 0) {
+                // const Vector3<T> old_v = node_data.v;
+                node_data.v -= vn * nhat_W;
+                if (-vn * mu < vt.norm()) {
+                  vt += vn * mu * vt.normalized();
+                  node_data.v = node_data.rigid_v + vt;
+                } else {
+                  node_data.v = node_data.rigid_v;
+                }
+                // /* Change in momemtum; we negate the sign to get the impulse
+                //  applied to the rigid body. */
+                // const Vector3<T> dp = m * (old_v - node_data.v);
+                // const Vector3<T> q_WN =
+                //     (block_origin + Vector3<int>(i, j, k)).cast<T>() * dx_;
+                // contact_impulses_[node_data.index](std::make_pair(dp, q_WN));
+              }
             }
           }
         }
@@ -184,7 +304,7 @@ void SparseGrid<T>::SetGridData(
     const std::function<GridData<T>(const Vector3<int>&)>& callback) {
   auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
   const uint64_t page_size = 1 << kLog2Page;
-  const uint64_t data_size = sizeof(GridData<T>);
+  const uint64_t data_size = 1 << kDataBits;
   Array data = allocator_->Get_Array();
   for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
     const uint64_t offset = block_offsets[b];
@@ -199,7 +319,7 @@ template <typename T>
 std::vector<std::pair<Vector3<int>, GridData<T>>> SparseGrid<T>::GetGridData()
     const {
   const uint64_t page_size = 1 << kLog2Page;
-  const uint64_t data_size = sizeof(GridData<T>);
+  const uint64_t data_size = 1 << kDataBits;
   std::vector<std::pair<Vector3<int>, GridData<T>>> result;
   auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
   ConstArray grid_data = allocator_->Get_Const_Array();
@@ -240,22 +360,22 @@ void SparseGrid<T>::SortParticleIndices(const std::vector<Vector3<T>>& q_WPs) {
   base_node_offsets_.resize(num_particles);
   particle_sorters_.resize(num_particles);
 
-  /* We sort particles first based on their base node offsets, and if those are
-   the same, we sort by their data indices. To do that, we notice that the base
-   node offset of the particle looks like
+  /* We sort particles first based on their base node offsets, and if those
+   are the same, we sort by their data indices. To do that, we notice that the
+   base node offset of the particle looks like
 
        page bits | block bits | data bits
 
    with all the data bits being equal to zero. Also, the left most bits of the
    page bits are zero because at most 2^(3*kLog2MaxGridSize) number of grid
-   nodes and that takes up 3*kLog2MaxGridSize bits. The page bits and block bits
-   have 64 - data bits in total, so the left most 64 - data bits - 3 *
-   kLog2MaxGridSize bits are zero. So we left shift the base node offset by that
-   amount and now we get the lowest 64 - 3 * kLog2MaxGridSize bits (which we
-   name `kIndexBits`) to be zero. With kLog2MaxGridSize == 10, we have 44 bits
-   to work with, more than enough to store the particle indices. We then sort
-   the resulting 64 bit unsigned integers which is enough to achieve the sorting
-   objective. */
+   nodes and that takes up 3*kLog2MaxGridSize bits. The page bits and block
+   bits have 64 - data bits in total, so the left most 64 - data bits - 3 *
+   kLog2MaxGridSize bits are zero. So we left shift the base node offset by
+   that amount and now we get the lowest 64 - 3 * kLog2MaxGridSize bits (which
+   we name `kIndexBits`) to be zero. With kLog2MaxGridSize == 10, we have 44
+   bits to work with, more than enough to store the particle indices. We then
+   sort the resulting 64 bit unsigned integers which is enough to achieve the
+   sorting objective. */
   constexpr int kIndexBits = 64 - 3 * kLog2MaxGridSize;
   constexpr int kZeroPageBits = 64 - kDataBits - 3 * kLog2MaxGridSize;
   [[maybe_unused]] const int num_threads = parallelism_.num_threads();
@@ -285,9 +405,9 @@ void SparseGrid<T>::SortParticleIndices(const std::vector<Vector3<T>>& q_WPs) {
   ips2ra::sort(particle_sorters_.begin(), particle_sorters_.end());
 #endif
 
-  /* Peel off the data indices and the base node offsets from particle_sorters_.
-   Meanwhile, reorder the data indices and the base node offsets based on the
-   sorting results. */
+  /* Peel off the data indices and the base node offsets from
+   particle_sorters_. Meanwhile, reorder the data indices and the base node
+   offsets based on the sorting results. */
 #if defined(_OPENMP)
 #pragma omp parallel for num_threads(num_threads)
 #endif

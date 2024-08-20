@@ -1646,6 +1646,13 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
     return weld_constraints_specs_;
   }
 
+  /// (Internal use only) Returns a reference to the mapping from geometry id
+  /// for all registered geometries to their owning body's index.
+  const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
+  geometry_id_to_body_index() const {
+    return geometry_id_to_body_index_;
+  }
+
   /// Returns the active status of the constraint given by `id` in `context`.
   /// @throws std::exception if the %MultibodyPlant has not been finalized.
   /// @throws std::exception if `id` does not belong to any multibody constraint
