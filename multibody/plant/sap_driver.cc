@@ -933,8 +933,10 @@ void SapDriver<T>::AddCliqueContribution(
         deformable_driver->EvalParticipatingVelocityMultiplexer(context)
             .Demultiplex(&deformable_values, body_index) += clique_values;
       } else if (deformable_driver->ExistsMpmBody()) {
+        const int mpm_index = clique - tree_topology().num_trees();
         const int num_mpm_dofs = values->size() - plant().num_velocities();
-        values->tail(num_mpm_dofs) += clique_values;
+        DRAKE_DEMAND(0 <= mpm_index && mpm_index < num_mpm_dofs / 3);
+        values->tail(num_mpm_dofs).template segment<3>(mpm_index * 3) += clique_values;
       }
     } else {
       /* For non-double scalars, we can't have `deformable_driver != nullptr`,
