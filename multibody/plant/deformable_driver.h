@@ -290,7 +290,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
                  std::abs(mpm_contact_pair.penetration_distance),
           .stiffness = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_stiffness),
           .damping = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_damping),
-          .dissipation_time_scale = NAN,
+          .dissipation_time_scale = manager_->plant().time_step(),
           .friction_coefficient = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_friction_mu)
         };
       result->AppendDeformableData(std::move(contact_pair));
