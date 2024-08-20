@@ -101,7 +101,7 @@ int do_main() {
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   if (FLAGS_testcase == 0) {
-    Box box{2.0, 2.0, 0.2};
+    Box box{4.0, 4.0, 0.2};
     const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.11});
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
@@ -166,7 +166,7 @@ int do_main() {
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = 5e-4;
   mpm_config.write_files = false;
-  mpm_config.contact_stiffness = 100000.0;
+  mpm_config.contact_stiffness = 1000.0;
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
   deformable_model.SetMpmConfig(std::move(mpm_config));
