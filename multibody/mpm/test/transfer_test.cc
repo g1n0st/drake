@@ -145,7 +145,8 @@ GTEST_TEST(TransferTest, ParticleToGrid) {
   const double dt = 0.0123;
   Transfer<double> transfer(dt, &grid, &particles);
   transfer.SerialParticleToGrid();
-  grid.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero());
+  std::vector<multibody::ExternallyAppliedSpatialForce<double>> unused;
+  grid.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero(), &unused);
 
   std::vector<std::pair<Vector3<int>, GridData<double>>> expected_data;
   for (int i = -1; i <= 1; ++i) {
@@ -216,7 +217,8 @@ GTEST_TEST(TransferTest, MomentumConservation) {
   const double dt = 0.0123;
   Transfer<double> transfer(dt, &grid, &particles);
   transfer.SerialParticleToGrid();
-  grid.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero());
+  std::vector<multibody::ExternallyAppliedSpatialForce<double>> unused;
+  grid.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero(), &unused);
   CheckMomentumConservation(grid.ComputeTotalMassAndMomentum(),
                             ComputeTotalMassAndMomentum(particles, grid.dx()),
                             expected);
@@ -283,10 +285,11 @@ GTEST_TEST(TransferTest, Parity) {
   CheckGridData(grid.GetGridData(), grid_parallel.GetGridData());
   CheckGridData(grid.GetGridData(), grid_parallel_simd.GetGridData());
 
-  grid.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero());
-  grid_simd.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero());
-  grid_parallel.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero());
-  grid_parallel_simd.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero());
+  std::vector<multibody::ExternallyAppliedSpatialForce<double>> unused;
+  grid.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero(), &unused);
+  grid_simd.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero(), &unused);
+  grid_parallel.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero(), &unused);
+  grid_parallel_simd.ExplicitVelocityUpdate(/* dv = */ Vector3d::Zero(), &unused);
 
   transfer.SerialGridToParticle();
   transfer_simd.SerialSimdGridToParticle();

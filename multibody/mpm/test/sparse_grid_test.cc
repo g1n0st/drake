@@ -263,7 +263,8 @@ GTEST_TEST(SparseGridTest, ExplicitVelocityUpdate) {
 
   /* Convert momentum to velocity and explicitly update the velocity field. */
   const Vector3d dv(1, 2, 3);
-  grid.ExplicitVelocityUpdate(dv);
+  std::vector<multibody::ExternallyAppliedSpatialForce<double>> unused;
+  grid.ExplicitVelocityUpdate(dv, &unused);
 
   const std::vector<std::pair<Vector3i, GridData<double>>> grid_data2 =
       grid.GetGridData();
@@ -336,7 +337,10 @@ GTEST_TEST(SparseGridTest, ColoredBlocks) {
   EXPECT_EQ(grid.colored_blocks(), expected_blocks);
 }
 
-GTEST_TEST(SparseGrid, RasterizeRigidData) {
+/* Tests SparseGrid::RasterizeRigidData and the logic in
+ SparseGrid::ExplicitVelocityUpdate that handles boundary conditions on the
+ grid nodes and the contact impulses applied to rigid bodies. */
+GTEST_TEST(SparseGrid, BoundaryConditions) {
   systems::DiagramBuilder<double> builder;
   MultibodyPlantConfig plant_config;
   plant_config.time_step = 0.01;
@@ -405,11 +409,23 @@ GTEST_TEST(SparseGrid, RasterizeRigidData) {
     return result;
   };
   grid.SetGridData(set_constant_velocity_field);
+  MassAndMomentum<double> initial_momentum = grid.ComputeTotalMassAndMomentum();
 
   /* Splat rigid data to grid. */
+  std::vector<multibody::ExternallyAppliedSpatialForce<double>> rigid_forces;
   grid.RasterizeRigidData(query_object, V_WB_all, X_WB_all,
-                          geometry_id_to_body_index);
-  grid.ExplicitVelocityUpdate(Vector3d::Zero());
+                          geometry_id_to_body_index, &rigid_forces);
+  /* Two rigid bodies: the first is the world body and the second is the rigid
+   sphere. */
+  ASSERT_EQ(rigid_forces.size(), 2);
+  for (int i = 0; i < 2; ++i) {
+    EXPECT_EQ(rigid_forces[i].body_index, BodyIndex(i));
+    /* We borrowed the field `p_BoBq_B to store p_WBo. */
+    EXPECT_EQ(rigid_forces[i].p_BoBq_B, X_WB_all[i].translation());
+    EXPECT_EQ(rigid_forces[i].F_Bq_W.rotational(), Vector3d::Zero());
+    EXPECT_EQ(rigid_forces[i].F_Bq_W.translational(), Vector3d::Zero());
+  }
+  grid.ExplicitVelocityUpdate(Vector3d::Zero(), &rigid_forces);
 
   /* Verify the grid data is set as expected. */
   const std::vector<std::pair<Vector3i, GridData<double>>> grid_data =
@@ -473,6 +489,32 @@ GTEST_TEST(SparseGrid, RasterizeRigidData) {
       EXPECT_EQ(data.v, Vector3d(1.0, 0.0, 1.0));
     }
   }
+
+  /* At this point, rigid_forces stores the spatial momentum of the rigid bodies
+   (about the origins of each body) acquired from contact with the grid. We
+   accumulate them in h_WO, the total spatial momentum transferred to the rigid
+   bodies (about the world origin). */
+  SpatialMomentum<double> h_WO = SpatialMomentum<double>::Zero();
+  for (const auto& rigid_force : rigid_forces) {
+    SpatialMomentum<double> h_WB;
+    h_WB.translational() = rigid_force.F_Bq_W.translational();
+    h_WB.rotational() = rigid_force.F_Bq_W.rotational();
+    const Vector3d p_WB = rigid_force.p_BoBq_B;
+    h_WO += h_WB.Shift(-p_WB);
+  }
+
+  /* Verify that the momentum is conserved. */
+  const MassAndMomentum<double> post_contact_grid_momentum =
+      grid.ComputeTotalMassAndMomentum();
+  EXPECT_EQ(post_contact_grid_momentum.mass, initial_momentum.mass);
+  EXPECT_TRUE(CompareMatrices(
+      post_contact_grid_momentum.linear_momentum + h_WO.translational(),
+      initial_momentum.linear_momentum,
+      4.0 * std::numeric_limits<double>::epsilon()));
+  EXPECT_TRUE(CompareMatrices(
+      post_contact_grid_momentum.angular_momentum + h_WO.rotational(),
+      initial_momentum.angular_momentum,
+      4.0 * std::numeric_limits<double>::epsilon()));
 }
 
 }  // namespace

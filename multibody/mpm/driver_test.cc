@@ -15,7 +15,10 @@ namespace {
 using Eigen::Vector3d;
 
 int do_main() {
-  MpmDriver<float> driver(0.001, 0.01, Parallelism(12));
+  const float dt = 0.01;
+  const float dx = 0.01;
+  const int num_substeps = 10;
+  MpmDriver<float> driver(dt, num_substeps, dx, Parallelism(12));
   math::RigidTransform<double> X_WG(Vector3d(0, 0, 0.25));
   auto geometry_instance = std::make_unique<geometry::GeometryInstance>(
       X_WG, geometry::Sphere(0.10), "sphere");

@@ -17,11 +17,12 @@
 
 #include "drake/common/eigen_types.h"
 #include "drake/common/parallelism.h"
-#include "drake/multibody/mpm/math.h"
 #include "drake/geometry/query_object.h"
-#include "drake/multibody/math/spatial_algebra.h"
-#include "drake/multibody/tree/multibody_tree_indexes.h"
 #include "drake/math/rigid_transform.h"
+#include "drake/multibody/math/spatial_algebra.h"
+#include "drake/multibody/mpm/math.h"
+#include "drake/multibody/plant/externally_applied_spatial_force.h"
+#include "drake/multibody/tree/multibody_tree_indexes.h"
 
 namespace drake {
 namespace multibody {
@@ -193,13 +194,18 @@ class SparseGrid {
       const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
       const std::vector<math::RigidTransform<double>>& poses,
       const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
-          geometry_id_to_body_index);
+          geometry_id_to_body_index,
+      std::vector<multibody::ExternallyAppliedSpatialForce<double>>*
+          rigid_forces);
 
   /* For each active grid node, divide by the grid node mass to convert the
    momentum to velocity and then increment the velocity by dv.
    Also apply boundary conditions along the way.
    @pre the grid data stores momentum of the node, not velocity. */
-  void ExplicitVelocityUpdate(const Vector3<T>& dv);
+  void ExplicitVelocityUpdate(
+      const Vector3<T>& dv,
+      std::vector<multibody::ExternallyAppliedSpatialForce<double>>*
+          rigid_forces);
 
   /* Returns the offset (1D index) of a grid node given its 3D grid coordinates
    in world space. */

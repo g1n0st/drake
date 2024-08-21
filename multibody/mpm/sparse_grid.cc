@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "ips2ra/ips2ra.hpp"
+
 #include "drake/multibody/plant/contact_properties.h"
 
 #if defined(_OPENMP)
@@ -11,6 +12,7 @@
 
 using drake::geometry::ProximityProperties;
 using drake::geometry::SignedDistanceToPoint;
+using Eigen::Vector3d;
 
 namespace drake {
 namespace multibody {
@@ -178,7 +180,20 @@ void SparseGrid<T>::RasterizeRigidData(
     const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
     const std::vector<math::RigidTransform<double>>& poses,
     const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
-        geometry_id_to_body_index) {
+        geometry_id_to_body_index,
+    std::vector<multibody::ExternallyAppliedSpatialForce<double>>*
+        rigid_forces) {
+  DRAKE_DEMAND(rigid_forces != nullptr);
+  DRAKE_DEMAND(spatial_velocities.size() == poses.size());
+  rigid_forces->resize(spatial_velocities.size());
+  for (int i = 0; i < ssize(*rigid_forces); ++i) {
+    auto& force = (*rigid_forces)[i];
+    force.body_index = BodyIndex(i);
+    /* We use `p_BoBq_B` to temporarily store p_WB. We will replace it with the
+     actual value of p_BoBq_B later on. */
+    force.p_BoBq_B = poses[i].translation();
+    force.F_Bq_W = SpatialForce<double>(Vector3d::Zero(), Vector3d::Zero());
+  }
   const uint64_t data_size = 1 << kDataBits;
   auto [block_offsets, num_blocks] = doubly_padded_blocks_->Get_Blocks();
   Array grid_data = allocator_->Get_Array();
@@ -236,7 +251,10 @@ void SparseGrid<T>::RasterizeRigidData(
 }
 
 template <typename T>
-void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
+void SparseGrid<T>::ExplicitVelocityUpdate(
+    const Vector3<T>& dv,
+    std::vector<multibody::ExternallyAppliedSpatialForce<double>>*
+        rigid_forces) {
   const uint64_t data_size = 1 << kDataBits;
   auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
   Array grid_data = allocator_->Get_Array();
@@ -244,7 +262,7 @@ void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
     const uint64_t block_offset = block_offsets[b];
     uint64_t node_offset = block_offset;
     /* The coordinate of the origin of this block. */
-    // const Vector3<int> block_origin = OffsetToCoordinate(block_offset);
+    const Vector3<int> block_origin = OffsetToCoordinate(block_offset);
     for (int i = 0; i < kNumNodesInBlockX; ++i) {
       for (int j = 0; j < kNumNodesInBlockY; ++j) {
         for (int k = 0; k < kNumNodesInBlockZ; ++k) {
@@ -264,7 +282,7 @@ void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
               const T vn = v_rel.dot(nhat_W);
               Vector3<T> vt = v_rel - vn * nhat_W;
               if (vn < 0) {
-                // const Vector3<T> old_v = node_data.v;
+                const Vector3<T> old_v = node_data.v;
                 node_data.v -= vn * nhat_W;
                 if (-vn * mu < vt.norm()) {
                   vt += vn * mu * vt.normalized();
@@ -272,12 +290,22 @@ void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
                 } else {
                   node_data.v = node_data.rigid_v;
                 }
-                // /* Change in momemtum; we negate the sign to get the impulse
-                //  applied to the rigid body. */
-                // const Vector3<T> dp = m * (old_v - node_data.v);
-                // const Vector3<T> q_WN =
-                //     (block_origin + Vector3<int>(i, j, k)).cast<T>() * dx_;
-                // contact_impulses_[node_data.index](std::make_pair(dp, q_WN));
+                /* We negate the sign of the grid node's momentum change to get
+                 the impulse applied to the rigid body at the grid node. */
+                const Vector3d l_WN_W =
+                    (m * (old_v - node_data.v)).template cast<double>();
+                const Vector3d p_WN =
+                    (block_origin + Vector3<int>(i, j, k)).cast<double>() * dx_;
+                const Vector3d& p_WB =
+                    rigid_forces->at(node_data.index).p_BoBq_B;
+                const Vector3d p_BN_W = p_WN - p_WB;
+                /* The angular impulse applied to the rigid body at the grid
+                 node. */
+                const Vector3d h_WNBo_W = p_BN_W.cross(l_WN_W);
+                /* Use `F_Bq_W` to store the spatial impulse applied to the body
+                 at its origin, expressed in the world frame. */
+                rigid_forces->at(node_data.index).F_Bq_W +=
+                    SpatialForce<double>(h_WNBo_W, l_WN_W);
               }
             }
           }

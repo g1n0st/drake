@@ -17,8 +17,17 @@ class MpmDriver {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(MpmDriver);
 
-  MpmDriver(T dt, T dx, Parallelism parallelism = false)
-      : dt_(dt), dx_(dx), grid_(dx, parallelism), parallelism_(parallelism) {}
+  MpmDriver(T dt, T dx, int num_subteps, Parallelism parallelism = false)
+      : dt_(dt),
+        num_subteps_(num_subteps),
+        substep_dt_(dt / num_subteps),
+        dx_(dx),
+        grid_(dx, parallelism),
+        parallelism_(parallelism) {
+    DRAKE_THROW_UNLESS(num_subteps > 0);
+    DRAKE_THROW_UNLESS(dt > 0);
+    DRAKE_THROW_UNLESS(dx > 0);
+  }
 
   /* Sample particles inside the given geometry.
    @param[in] geometry_instance The geometry instance to sample particles
@@ -31,21 +40,34 @@ class MpmDriver {
       std::unique_ptr<geometry::GeometryInstance> geometry_instance,
       int particles_per_cell, const fem::DeformableBodyConfig<T>& config);
 
-  void AdvanceOneTimeStep();
+  void AdvanceOneTimeStep(
+      const geometry::QueryObject<double>& query_object,
+      const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
+      const std::vector<math::RigidTransform<double>>& poses,
+      const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
+          geometry_id_to_body_index);
 
   const ParticleData<T>& particles() const { return particles_; }
 
- private:
-  void UpdateParticleStress();
+  const std::vector<multibody::ExternallyAppliedSpatialForce<double>>&
+  rigid_forces() const {
+    return rigid_forces_;
+  }
 
+ private:
+  // TODO(xuchenhan-tri): Move these to the particles class.
+  void UpdateParticleStress();
   void SimdUpdateParticleStress();
 
   T dt_{0.0};
+  int num_subteps_{0};
+  T substep_dt_{0.0};
   T dx_{0.0};
   Vector3<T> gravity_{0, 0, -9.81};
   SparseGrid<T> grid_;
   ParticleData<T> particles_;
   Parallelism parallelism_;
+  std::vector<multibody::ExternallyAppliedSpatialForce<double>> rigid_forces_;
 };
 
 }  // namespace internal

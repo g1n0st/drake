@@ -1,7 +1,7 @@
 #include "mpm_driver.h"
 
-#include <variant>
 #include <iostream>
+#include <variant>
 
 #include "transfer.h"
 
@@ -117,15 +117,32 @@ void MpmDriver<T>::SampleParticles(
 }
 
 template <typename T>
-void MpmDriver<T>::AdvanceOneTimeStep() {
-  UpdateParticleStress();
-  // Particle to grid transfer.
-  Transfer<T> transfer(dt_, &grid_, &particles_);
-  transfer.ParallelSimdParticleToGrid(parallelism_);
-  // Grid velocity update.
-  grid_.ExplicitVelocityUpdate(dt_ * gravity_);
-  // Grid to particle transfer.
-  transfer.ParallelSimdGridToParticle(parallelism_);
+void MpmDriver<T>::AdvanceOneTimeStep(
+    const geometry::QueryObject<double>& query_object,
+    const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
+    const std::vector<math::RigidTransform<double>>& poses,
+    const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
+        geometry_id_to_body_index) {
+  rigid_forces_.resize(poses.size());
+  grid_.AllocateForCollision(particles_.x);
+  grid_.RasterizeRigidData(query_object, spatial_velocities, poses,
+                          geometry_id_to_body_index, &rigid_forces_);
+  for (int i = 0; i < num_subteps_; ++i) {
+    UpdateParticleStress();
+    // Particle to grid transfer.
+    Transfer<T> transfer(substep_dt_, &grid_, &particles_);
+    transfer.ParallelSimdParticleToGrid(parallelism_);
+    // Grid velocity update.
+    grid_.ExplicitVelocityUpdate(substep_dt_ * gravity_, &rigid_forces_);
+    // Grid to particle transfer.
+    transfer.ParallelSimdGridToParticle(parallelism_);
+  }
+  /* Restore p_BoBq_B value and divide by dt to turn impulse into forces. */
+  for (int i = 0; i < ssize(rigid_forces_); ++i) {
+    rigid_forces_[i].p_BoBq_B = Vector3<double>::Zero();
+    rigid_forces_[i].F_Bq_W.rotational() /= dt_;
+    rigid_forces_[i].F_Bq_W.translational() /= dt_;
+  }
 }
 
 template <typename T>
