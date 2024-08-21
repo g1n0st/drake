@@ -26,14 +26,13 @@ DEFINE_int32(res, 50, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 5e-4,
               "Discrete time step for the system [s]. Must be positive.");
-DEFINE_double(beta, 0.01,
-              "Stiffness damping coefficient for the deformable body [1/s].");
 DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
               "are: 'sap', 'lagged', and 'similar'.");
-DEFINE_double(
-    contact_damping, 10.0,
+DEFINE_double(stiffness, 10000.0, "Contact Stiffness.");
+DEFINE_double(friction, 0.0, "Contact Friction.");
+DEFINE_double(damping, 0.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
 
@@ -166,7 +165,9 @@ int do_main() {
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = 5e-4;
   mpm_config.write_files = false;
-  mpm_config.contact_stiffness = 10000.0;
+  mpm_config.contact_stiffness = FLAGS_stiffness;
+  mpm_config.contact_damping = FLAGS_damping;
+  mpm_config.contact_friction_mu = FLAGS_friction;
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
   deformable_model.SetMpmConfig(std::move(mpm_config));
