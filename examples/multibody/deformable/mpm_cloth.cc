@@ -121,6 +121,14 @@ int do_main() {
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BALL, ball, "ball_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(plant.world_body(), X_WG_BALL, ball, "ball_visual", std::move(illustration_props));
   }
+  else if (FLAGS_testcase == 3) {
+    Box box{2.0, 2.0, 0.1};
+    const RigidTransformd X_WG_BOX(math::RotationMatrixd::MakeXRotation(M_PI_2 / 10.0),
+                                   Eigen::Vector3d{0.5, 0.5, 0.2}
+                                   );
+    plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
+  }
   else {
   }
 
