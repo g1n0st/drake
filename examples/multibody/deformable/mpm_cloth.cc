@@ -117,13 +117,13 @@ int do_main() {
   }
   else if (FLAGS_testcase == 2) {
     Sphere ball{0.05};
-    const RigidTransformd X_WG_BALL(Eigen::Vector3d{0.5, 0.5, 0.11});
+    const RigidTransformd X_WG_BALL(Eigen::Vector3d{0.5, 0.5, 0.21});
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BALL, ball, "ball_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(plant.world_body(), X_WG_BALL, ball, "ball_visual", std::move(illustration_props));
   }
   else if (FLAGS_testcase == 3) {
     Box box{2.0, 2.0, 0.1};
-    const RigidTransformd X_WG_BOX(math::RotationMatrixd::MakeXRotation(M_PI_2 / 10.0),
+    const RigidTransformd X_WG_BOX(math::RotationMatrixd::MakeXRotation(M_PI * 10.0 / 180.0),
                                    Eigen::Vector3d{0.5, 0.5, 0.2}
                                    );
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
@@ -150,7 +150,7 @@ int do_main() {
     int o = inital_pos.size();
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, 0.3 + k * 0.1);
+        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }
