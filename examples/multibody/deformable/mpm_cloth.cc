@@ -24,8 +24,10 @@ DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
 DEFINE_int32(res, 50, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 5e-4,
+DEFINE_double(time_step, 1e-3,
               "Discrete time step for the system [s]. Must be positive.");
+DEFINE_double(substep, 1e-3,
+              "Discrete time step for the substepping scheme [s]. Must be positive.");
 DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
@@ -171,7 +173,7 @@ int do_main() {
   }
 
   MpmConfigParams mpm_config;
-  mpm_config.substep_dt = 5e-4;
+  mpm_config.substep_dt = FLAGS_substep;
   mpm_config.write_files = false;
   mpm_config.contact_stiffness = FLAGS_stiffness;
   mpm_config.contact_damping = FLAGS_damping;
