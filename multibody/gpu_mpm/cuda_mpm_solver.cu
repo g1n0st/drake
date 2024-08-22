@@ -175,7 +175,7 @@ void GpuMpmSolver<T>::SyncParticleStateToCpu(GpuMpmState<T> *state) const {
 }
 
 template<typename T>
-void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt) const {
+void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt, const T& scale) const {
     size_t n_contacts = state->contact_ids_host().size();
     if (n_contacts) {
         std::vector<Vec3<T>> contact_pos;
@@ -185,7 +185,7 @@ void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt) co
             // current host state is the particle state at last time step (n).
             contact_pos.emplace_back(state->positions_host()[state->contact_ids_host()[i]]);
             contact_vol.emplace_back(state->volumes_host()[state->contact_ids_host()[i]]);
-            contact_dv.emplace_back(state->post_contact_dv_host()[i]);
+            contact_dv.emplace_back(state->post_contact_dv_host()[i] * scale);
         }
 
         CUDA_SAFE_CALL(cudaMemcpy(state->contact_positions(), contact_pos.data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
