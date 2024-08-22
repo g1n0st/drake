@@ -741,7 +741,7 @@ __global__ void update_grid_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM>
+template<typename T, int BLOCK_DIM, bool ADVECT>
 __global__ void grid_to_particle_kernel(const size_t n_particles,
     T* positions, 
     T* velocities,
@@ -837,9 +837,11 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
         affine_matrices[idx * 9 + 8] = new_C[8];
 
         // Advection
-        positions[idx * 3 + 0] += new_v[0] * dt;
-        positions[idx * 3 + 1] += new_v[1] * dt;
-        positions[idx * 3 + 2] += new_v[2] * dt;
+        if constexpr (ADVECT) {
+            positions[idx * 3 + 0] += new_v[0] * dt;
+            positions[idx * 3 + 1] += new_v[1] * dt;
+            positions[idx * 3 + 2] += new_v[2] * dt;
+        }
 
         // printf("v=\n");
         // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);
