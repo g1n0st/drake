@@ -371,23 +371,31 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       GpuT dt_left = dt;
       int substep = 0;
       long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      mutable_mpm_state.BackUpState();
       while (dt_left > 0) {
         GpuT ddt = std::min(dt_left, substep_dt);
         dt_left -= ddt;
-        mpm_solver_.RebuildMapping(&mutable_mpm_state, substep == 0);
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
         mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
-        mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, ddt);
-        mpm_solver_.UpdateGrid(&mutable_mpm_state);
-        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
+        if (dt_left > 0) {
+          // NOTE (changyu): in the last substep, we don't need to update grid and do g2p transfer
+          // make sure now grid state is momentum not velocity.
+          mpm_solver_.UpdateGrid(&mutable_mpm_state);
+          mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/false);
+        }
         substep += 1;
       }
+      mutable_mpm_state.RestoreStateFromBackup();
+      
+      // Final Stage
+      mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, dt);
+      mpm_solver_.UpdateGrid(&mutable_mpm_state);
+      mpm_solver_.GridToParticle(&mutable_mpm_state, dt, /*advect=*/true);
+      // NOTE (changyu): there must be a `RebuildMapping` after `GridToParticle` with advection and before `CalcFemStateAndForce`.
+      mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
+      // NOTE (changyu): this `CalcFemStateAndForce` call is to make sure fem state is up-to-date.
+      mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, dt);
       mpm_solver_.GpuSync();
-
-      // TODO (changyu): currently no substepping scheme applied and we do not discard the intermediate states
-      // so substep == 1 condition must be enforced.
-      DRAKE_DEMAND(substep == 1);
-      DRAKE_DEMAND(dt == substep_dt);
 
       // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
       mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
