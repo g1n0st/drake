@@ -63,6 +63,47 @@ GTEST_TEST(SparseGridTest, Allocate) {
   EXPECT_EQ(grid.num_blocks(), 1);
 }
 
+GTEST_TEST(SparseGrid, Clone) {
+  /* Set up a grid with grid nodes in [0, 2] x [0, 2] x [0, 2] all active. */
+  const double dx = 0.5;
+  SparseGrid<double> grid(dx);
+  std::vector<Vector3d> q_WPs;
+  for (int i = 0; i < 5; ++i) {
+    for (int j = 0; j < 5; ++j) {
+      for (int k = 0; k < 5; ++k) {
+        q_WPs.emplace_back(Vector3d(i * dx, j * dx, k * dx));
+      }
+    }
+  }
+
+  grid.Allocate(q_WPs);
+
+  /* Set an arbitrary velocity field (1, 0, 1). */
+  auto set_velocity_field = [](const Vector3i& coordinate) {
+    GridData<double> result;
+    result.m = coordinate[0] + coordinate[1] + coordinate[2];
+    result.v = Vector3d(coordinate[0], coordinate[1], coordinate[2]);
+    return result;
+  };
+  grid.SetGridData(set_velocity_field);
+
+  /* Clone the grid. */
+  auto cloned_grid = grid.Clone();
+
+  /* Verify that the cloned grid has the same grid data. */
+  const std::vector<std::pair<Vector3i, GridData<double>>> grid_data =
+      grid.GetGridData();
+  const std::vector<std::pair<Vector3i, GridData<double>>> cloned_grid_data =
+      cloned_grid->GetGridData();
+  ASSERT_EQ(grid_data.size(), cloned_grid_data.size());
+  for (size_t i = 0; i < grid_data.size(); ++i) {
+    const auto& [node, data] = grid_data[i];
+    const auto& [cloned_node, cloned_data] = cloned_grid_data[i];
+    EXPECT_EQ(node, cloned_node);
+    EXPECT_EQ(data, cloned_data);
+  }
+}
+
 GTEST_TEST(SparseGridTest, AllocateForCollision) {
   const float dx = 0.01;
   SparseGrid<float> grid(dx);

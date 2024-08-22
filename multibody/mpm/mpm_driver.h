@@ -4,6 +4,7 @@
 #include "sparse_grid.h"
 
 #include "drake/common/parallelism.h"
+#include "drake/common/copyable_unique_ptr.h"
 #include "drake/geometry/geometry_instance.h"
 #include "drake/multibody/fem/deformable_body_config.h"
 
@@ -15,14 +16,14 @@ namespace internal {
 template <typename T>
 class MpmDriver {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(MpmDriver);
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(MpmDriver);
 
   MpmDriver(T dt, T dx, int num_subteps, Parallelism parallelism = false)
       : dt_(dt),
         num_subteps_(num_subteps),
         substep_dt_(dt / num_subteps),
         dx_(dx),
-        grid_(dx, parallelism),
+        grid_(std::make_unique<SparseGrid<T>>(dx, parallelism)),
         parallelism_(parallelism) {
     DRAKE_THROW_UNLESS(num_subteps > 0);
     DRAKE_THROW_UNLESS(dt > 0);
@@ -64,7 +65,7 @@ class MpmDriver {
   T substep_dt_{0.0};
   T dx_{0.0};
   Vector3<T> gravity_{0, 0, -9.81};
-  SparseGrid<T> grid_;
+  copyable_unique_ptr<SparseGrid<T>> grid_;
   ParticleData<T> particles_;
   Parallelism parallelism_;
   std::vector<multibody::ExternallyAppliedSpatialForce<double>> rigid_forces_;

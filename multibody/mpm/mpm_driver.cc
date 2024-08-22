@@ -87,7 +87,7 @@ void MpmDriver<T>::SampleParticles(
   /* Reject points that fall outside of the shape. */
   std::vector<Vector3<double>> q_GPs =
       FilterPoints(q_GP_candidates, geometry_instance->shape());
-  grid_.SortParticles(&q_GPs);
+  grid_->SortParticles(&q_GPs);
   const int num_particles = ssize(q_GPs);
   const T mass_density = config.mass_density();
   const double total_volume = geometry::CalcVolume(geometry_instance->shape());
@@ -124,16 +124,16 @@ void MpmDriver<T>::AdvanceOneTimeStep(
     const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
         geometry_id_to_body_index) {
   rigid_forces_.resize(poses.size());
-  grid_.AllocateForCollision(particles_.x);
-  grid_.RasterizeRigidData(query_object, spatial_velocities, poses,
-                          geometry_id_to_body_index, &rigid_forces_);
+  grid_->AllocateForCollision(particles_.x);
+  grid_->RasterizeRigidData(query_object, spatial_velocities, poses,
+                            geometry_id_to_body_index, &rigid_forces_);
   for (int i = 0; i < num_subteps_; ++i) {
     UpdateParticleStress();
     // Particle to grid transfer.
-    Transfer<T> transfer(substep_dt_, &grid_, &particles_);
+    Transfer<T> transfer(substep_dt_, grid_.get_mutable(), &particles_);
     transfer.ParallelSimdParticleToGrid(parallelism_);
     // Grid velocity update.
-    grid_.ExplicitVelocityUpdate(substep_dt_ * gravity_, &rigid_forces_);
+    grid_->ExplicitVelocityUpdate(substep_dt_ * gravity_, &rigid_forces_);
     // Grid to particle transfer.
     transfer.ParallelSimdGridToParticle(parallelism_);
   }

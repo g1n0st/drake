@@ -106,6 +106,25 @@ drake_cc_library(
 )
 
 cc_library(
+    name = "mpm_system",
+    srcs = [
+        "mpm_system.cc",
+    ],
+    hdrs = [
+        "mpm_system.h",
+    ],
+    copts = ["-march=native", "-fopenmp"],
+    deps = [
+        ":mpm_driver",
+        ":particles_to_bgeo",
+        "//common:essential",
+        "//common:parallelism",
+        "//multibody/plant",
+        "//systems/framework",
+    ],
+)
+
+cc_library(
     name = "mpm_driver",
     srcs = [
         "mpm_driver.cc",
@@ -255,10 +274,15 @@ drake_py_experiment_binary(
 cc_binary(
     name = "driver_test",
     srcs = ["driver_test.cc"],
-    copts = ["-march=native"],
+    # copts = ["-march=native"],
     deps = [
-        ":mpm_driver",
+        ":mpm_system",
         ":particles_to_bgeo",
+        "//geometry:drake_visualizer",
+        "//geometry:scene_graph",
+        "//multibody/plant",
+        "//systems/analysis:simulator",
+        "//systems/framework:diagram",
     ]
 )
 

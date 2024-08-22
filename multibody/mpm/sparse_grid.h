@@ -140,6 +140,72 @@ class SparseGrid {
   /* Constructs a SparseGrid with grid spacing `dx` in meters. */
   explicit SparseGrid(T dx, Parallelism parallelism = false);
 
+  std::unique_ptr<SparseGrid<T>> Clone() const {
+    auto result = std::make_unique<SparseGrid<T>>(dx_, parallelism_);
+    /* We can copy over everything except for the SPGrid data. */
+    result->sentinel_particles_ = sentinel_particles_;
+    result->colored_blocks_ = colored_blocks_;
+    result->data_indices_ = data_indices_;
+    result->base_node_offsets_ = base_node_offsets_;
+    result->particle_sorters_ = particle_sorters_;
+
+    /* Now we copy over the page maps. */
+    result->blocks_->Clear();
+    auto [block_offsets, num_blocks] = blocks_->Get_Blocks();
+    for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+      result->blocks_->Set_Page(block_offsets[b]);
+    }
+    result->blocks_->Update_Block_Offsets();
+
+    result->padded_blocks_->Clear();
+    std::tie(block_offsets, num_blocks) = padded_blocks_->Get_Blocks();
+    for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+      result->padded_blocks_->Set_Page(block_offsets[b]);
+    }
+    result->padded_blocks_->Update_Block_Offsets();
+
+    result->doubly_padded_blocks_->Clear();
+    std::tie(block_offsets, num_blocks) = doubly_padded_blocks_->Get_Blocks();
+    for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+      result->doubly_padded_blocks_->Set_Page(block_offsets[b]);
+    }
+    result->doubly_padded_blocks_->Update_Block_Offsets();
+
+    /* Now we copy over the grid data. The blocks touched by `blocks_` is a
+     subset of blocks touched by `padded_blocks_`. */
+    auto [result_block_offsets, result_num_blocks] =
+        result->padded_blocks_->Get_Blocks();
+    std::tie(block_offsets, num_blocks) = padded_blocks_->Get_Blocks();
+    Array from_data = allocator_->Get_Array();
+    Array to_data = result->allocator_->Get_Array();
+    DRAKE_DEMAND(result_num_blocks == num_blocks);
+    const uint64_t page_size = 1 << kLog2Page;
+    const uint64_t data_size = 1 << kDataBits;
+    for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+      const uint64_t offset = block_offsets[b];
+      DRAKE_DEMAND(offset == result_block_offsets[b]);
+      for (uint64_t i = 0; i < page_size; i += data_size) {
+        to_data(offset + i) = from_data(offset + i);
+      }
+    }
+
+    /* Finally we copy over the data touched by `doubly_padded_blocks_` that may
+     include additional data. */
+    std::tie(block_offsets, num_blocks) = doubly_padded_blocks_->Get_Blocks();
+    std::tie(result_block_offsets, result_num_blocks) =
+        result->doubly_padded_blocks_->Get_Blocks();
+    DRAKE_DEMAND(result_num_blocks == num_blocks);
+    for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+      const uint64_t offset = block_offsets[b];
+      DRAKE_DEMAND(offset == result_block_offsets[b]);
+      for (uint64_t i = 0; i < page_size; i += data_size) {
+        to_data(offset + i) = from_data(offset + i);
+      }
+    }
+
+    return result;
+  }
+
   /* Allocates memory for the grid pages affected by particles and initialize
    all grid data to zero.
 
