@@ -34,7 +34,7 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
     }
 
     // device particle buffer allocation for reorder data
-    for (uint32_t i = 0; i < 2; ++i) {
+    for (uint32_t i = 0; i < 3; ++i) {
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_positions, sizeof(Vec3<T>) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_velocities, sizeof(Vec3<T>) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_volumes, sizeof(T) * n_particles_));
@@ -77,6 +77,7 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
 
     // element-based data
     CUDA_SAFE_CALL(cudaMalloc(&d_deformation_gradients_, sizeof(Mat3<T>) * n_faces_));
+    CUDA_SAFE_CALL(cudaMalloc(&d_backup_deformation_gradients_, sizeof(Mat3<T>) * n_faces_));
     CUDA_SAFE_CALL(cudaMalloc(&d_Dm_inverses_, sizeof(Mat2<T>) * n_faces_));
     CUDA_SAFE_CALL(cudaMalloc(&d_indices_, sizeof(int) * n_faces_ * 3));
     CUDA_SAFE_CALL(cudaMemcpy(d_indices_, h_indices_.data(), sizeof(int) * n_faces_ * 3, cudaMemcpyHostToDevice));
@@ -104,7 +105,7 @@ void GpuMpmState<T>::InitializeQRCloth(const std::vector<Vec3<T>> &pos,
 
 template<typename T>
 void GpuMpmState<T>::Destroy() {
-    for (uint32_t i = 0; i < 2; ++i) {
+    for (uint32_t i = 0; i < 3; ++i) {
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_positions));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_velocities));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_volumes));
@@ -128,12 +129,14 @@ void GpuMpmState<T>::Destroy() {
     CUDA_SAFE_CALL(cudaFree(d_taus_));
     CUDA_SAFE_CALL(cudaFree(d_index_mappings_));
     CUDA_SAFE_CALL(cudaFree(d_deformation_gradients_));
+    CUDA_SAFE_CALL(cudaFree(d_backup_deformation_gradients_));
     CUDA_SAFE_CALL(cudaFree(d_Dm_inverses_));
     CUDA_SAFE_CALL(cudaFree(d_indices_));
     d_forces_ = nullptr;
     d_taus_ = nullptr;
     d_index_mappings_ = nullptr;
     d_deformation_gradients_ = nullptr;
+    d_backup_deformation_gradients_ = nullptr;
     d_Dm_inverses_ = nullptr;
     d_indices_ = nullptr;
 

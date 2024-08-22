@@ -35,23 +35,28 @@ public:
     T* current_affine_matrices() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
     const T* current_affine_matrices() const { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
 
-    T* forces() { return d_forces_; }
-    const T* forces() const { return d_forces_; }
-    T* taus() { return d_taus_; }
-    const T* taus() const { return d_taus_; }
-    T* deformation_gradients() { return d_deformation_gradients_; }
-    const T* deformation_gradients() const { return d_deformation_gradients_; }
-    T* Dm_inverses() { return d_Dm_inverses_; }
-    const T* Dm_inverses() const { return d_Dm_inverses_; }
-    int* indices() { return d_indices_; }
-    const int* indices() const { return d_indices_; }
-    int* index_mappings() { return d_index_mappings_; }
-    const int* index_mappings() const { return d_index_mappings_; }
+    int* current_pids() { return particle_buffer_[current_particle_buffer_id_].d_pids; }
+    const int* current_pids() const { return particle_buffer_[current_particle_buffer_id_].d_pids; }
+    uint32_t* current_sort_keys() { return particle_buffer_[current_particle_buffer_id_].d_sort_keys; }
+    const uint32_t* current_sort_keys() const { return particle_buffer_[current_particle_buffer_id_].d_sort_keys; }
+    uint32_t* current_sort_ids() { return particle_buffer_[current_particle_buffer_id_].d_sort_ids; }
+    const uint32_t* current_sort_ids() const { return particle_buffer_[current_particle_buffer_id_].d_sort_ids; }
 
     T* next_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
     T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
     T* next_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
     T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
+    int* next_pids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_pids; }
+    uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
+    uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
+
+    T* backup_positions() { return particle_buffer_[backup_buffer_id].d_positions; }
+    T* backup_velocities() { return particle_buffer_[backup_buffer_id].d_velocities; }
+    T* backup_volumes() { return particle_buffer_[backup_buffer_id].d_volumes; }
+    T* backup_affine_matrices() { return particle_buffer_[backup_buffer_id].d_affine_matrices; }
+    int* backup_pids() { return particle_buffer_[backup_buffer_id].d_pids; }
+    uint32_t* backup_sort_keys() { return particle_buffer_[backup_buffer_id].d_sort_keys; }
+    uint32_t* backup_sort_ids() { return particle_buffer_[backup_buffer_id].d_sort_ids; }
 
     // NOTE (changyu): next state data is only meaningful at BuildReturnMapping stage,
     // we can reuse these buffers to splat particle contact dv to the grid.
@@ -61,17 +66,20 @@ public:
     T* contact_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
     uint32_t* contact_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
     uint32_t* contact_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
-    
-    int* current_pids() { return particle_buffer_[current_particle_buffer_id_].d_pids; }
-    const int* current_pids() const { return particle_buffer_[current_particle_buffer_id_].d_pids; }
-    uint32_t* current_sort_keys() { return particle_buffer_[current_particle_buffer_id_].d_sort_keys; }
-    const uint32_t* current_sort_keys() const { return particle_buffer_[current_particle_buffer_id_].d_sort_keys; }
-    uint32_t* current_sort_ids() { return particle_buffer_[current_particle_buffer_id_].d_sort_ids; }
-    const uint32_t* current_sort_ids() const { return particle_buffer_[current_particle_buffer_id_].d_sort_ids; }
 
-    int* next_pids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_pids; }
-    uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
-    uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
+    T* forces() { return d_forces_; }
+    const T* forces() const { return d_forces_; }
+    T* taus() { return d_taus_; }
+    const T* taus() const { return d_taus_; }
+    T* deformation_gradients() { return d_deformation_gradients_; }
+    const T* deformation_gradients() const { return d_deformation_gradients_; }
+    T* backup_deformation_gradients() { return d_backup_deformation_gradients_; }
+    T* Dm_inverses() { return d_Dm_inverses_; }
+    const T* Dm_inverses() const { return d_Dm_inverses_; }
+    int* indices() { return d_indices_; }
+    const int* indices() const { return d_indices_; }
+    int* index_mappings() { return d_index_mappings_; }
+    const int* index_mappings() const { return d_index_mappings_; }
 
     T* grid_masses() { return grid_buffer_.d_g_masses; }
     const T* grid_masses() const { return grid_buffer_.d_g_masses; }
@@ -135,8 +143,11 @@ private:
 
     // element-based data
     int* d_indices_ = nullptr; // size: n_faces NO sort
-    T* d_deformation_gradients_ = nullptr; // size: n_faces NO sort
     T* d_Dm_inverses_ = nullptr; // size: n_faces NO sort
+
+    T* d_deformation_gradients_ = nullptr; // size: n_faces NO sort
+    // NOTE (changyu): backup state used for substepping.
+    T* d_backup_deformation_gradients_ = nullptr; // size: n_faces NO sort
     
     struct ParticleBuffer {
         T* d_positions = nullptr;   // size: n_faces + n_verts
@@ -151,9 +162,16 @@ private:
     };
     
     uint32_t current_particle_buffer_id_ = 0;
-    std::array<ParticleBuffer, 2> particle_buffer_;
+    // NOTE (changyu): 
+    //    particle_buffer_[0/1] is used for switch between current state and next state,
+    //    particle buffer [2] is used for the backup state.
+    //    Note that while one of buffer[0/1] will not be used after sorting in a timestep,
+    //    we cannot reuse it as the backup state,
+    //    since it's already reserved for the collision state.
+    std::array<ParticleBuffer, 3> particle_buffer_;
 
     size_t sort_buffer_size_ = 0;
+    static constexpr size_t backup_buffer_id = 2;
     unsigned int* sort_buffer_ = nullptr;
 
     // Particles state host ptrs
