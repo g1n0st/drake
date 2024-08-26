@@ -176,9 +176,15 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         hessian.resize(3, 3);
         hessian.setZero();
         T mass = static_cast<T>(state.volumes_host()[mpm_contact_pairs[p].particle_in_contact_index] * gmpm::config::DENSITY<T>);
-        hessian(0, 0) = mass * 2.0;
-        hessian(1, 1) = mass * 2.0;
-        hessian(2, 2) = mass * 2.0;
+        // NOTE (changyu):
+        // 2. is the mass scaling factor from Xuan Li's paper Sec.4.4
+        //  It is a common observation that, under constant gravity acceleration and using a first-order scheme, objects
+        // fall faster with larger time step sizes. This mismatch contributes to the penetrations of MPM particles into FEM bodies.
+        // . The principle behind this mechanism is to slightly increase the contact force, 
+        // repelling MPM solids further away from FEM solids.
+        hessian(0, 0) = mass * T(2.0);
+        hessian(1, 1) = mass * T(2.0);
+        hessian(2, 2) = mass * T(2.0);
         A->emplace_back(std::move(hessian));
       }
   }
