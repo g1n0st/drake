@@ -50,8 +50,13 @@ public:
     uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
     uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
 
+    T* backup_positions() { return particle_buffer_[backup_buffer_id].d_positions; }
     T* backup_velocities() { return particle_buffer_[backup_buffer_id].d_velocities; }
+    T* backup_volumes() { return particle_buffer_[backup_buffer_id].d_volumes; }
     T* backup_affine_matrices() { return particle_buffer_[backup_buffer_id].d_affine_matrices; }
+    int* backup_pids() { return particle_buffer_[backup_buffer_id].d_pids; }
+    uint32_t* backup_sort_keys() { return particle_buffer_[backup_buffer_id].d_sort_keys; }
+    uint32_t* backup_sort_ids() { return particle_buffer_[backup_buffer_id].d_sort_ids; }
 
     // NOTE (changyu): next state data is only meaningful at BuildReturnMapping stage,
     // we can reuse these buffers to splat particle contact dv to the grid.

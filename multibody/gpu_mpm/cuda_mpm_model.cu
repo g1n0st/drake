@@ -160,20 +160,25 @@ template<typename T>
 void GpuMpmState<T>::BackUpState() {
     // NOTE (changyu): backup fem state,
     CUDA_SAFE_CALL(cudaMemcpy(backup_deformation_gradients(), deformation_gradients(), sizeof(Mat3<T>) * n_faces_, cudaMemcpyDeviceToDevice));
-    // NOTE (changyu): we only need to backup velocities and affine_matrices for particle state,
-    // since other states will not be changed in current substepping scheme.
-    // we will not advect position during substepping so that position will not be changed,
-    // also pids/sort_keys/sort_values since they are associated with positions,
-    // also volumes remains unchange. 
+    CUDA_SAFE_CALL(cudaMemcpy(backup_positions(), current_positions(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(backup_velocities(), current_velocities(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(backup_volumes(), current_volumes(), sizeof(T) * n_particles_, cudaMemcpyDeviceToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(backup_affine_matrices(), current_affine_matrices(), sizeof(Mat3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(backup_pids(), current_pids(), sizeof(int) * n_particles_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(backup_sort_keys(), current_sort_keys(), sizeof(uint32_t) * n_particles_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(backup_sort_ids(), current_sort_ids(), sizeof(uint32_t) * n_particles_, cudaMemcpyDeviceToDevice));
 }
 
 template<typename T>
 void GpuMpmState<T>::RestoreStateFromBackup() {
     CUDA_SAFE_CALL(cudaMemcpy(deformation_gradients(), backup_deformation_gradients(), sizeof(Mat3<T>) * n_faces_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(current_positions(), backup_positions(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(current_velocities(), backup_velocities(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(current_volumes(), backup_volumes(), sizeof(T) * n_particles_, cudaMemcpyDeviceToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(current_affine_matrices(), backup_affine_matrices(), sizeof(Mat3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(current_pids(), backup_pids(), sizeof(int) * n_particles_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(current_sort_keys(), backup_sort_keys(), sizeof(uint32_t) * n_particles_, cudaMemcpyDeviceToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(current_sort_ids(), backup_sort_ids(), sizeof(uint32_t) * n_particles_, cudaMemcpyDeviceToDevice));
 }
 
 template<typename T>
