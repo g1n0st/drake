@@ -178,6 +178,13 @@ template<typename T>
 void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt, const T& scale) const {
     size_t n_contacts = state->contact_ids_host().size();
     if (n_contacts) {
+        // TODO,FIXME (changyu): when sort=True in rebuild mapping stage,
+        // the order of particles should be further treated here.
+        this->GpuSync();
+        CUDA_SAFE_CALL(cudaMemcpy(state->positions_host().data(), 
+                                  state->current_positions(), 
+                                  sizeof(Vec3<T>) * state->n_particles(), 
+                                  cudaMemcpyDeviceToHost));
         std::vector<Vec3<T>> contact_pos;
         std::vector<Vec3<T>> contact_dv;
         std::vector<T> contact_vol;

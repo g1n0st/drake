@@ -176,9 +176,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         hessian.resize(3, 3);
         hessian.setZero();
         T mass = static_cast<T>(state.volumes_host()[mpm_contact_pairs[p].particle_in_contact_index] * gmpm::config::DENSITY<T>);
-        hessian(0, 0) = mass;
-        hessian(1, 1) = mass;
-        hessian(2, 2) = mass;
+        hessian(0, 0) = mass * 2.0;
+        hessian(1, 1) = mass * 2.0;
+        hessian(2, 2) = mass * 2.0;
         A->emplace_back(std::move(hessian));
       }
   }
@@ -371,30 +371,17 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       GpuT dt_left = dt;
       int substep = 0;
       long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-      mutable_mpm_state.BackUpState();
       while (dt_left > 0) {
         GpuT ddt = std::min(dt_left, substep_dt);
         dt_left -= ddt;
+        mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
         mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
-        if (dt_left > 0) {
-          // NOTE (changyu): in the last substep, we don't need to update grid and do g2p transfer
-          // make sure now grid state is momentum not velocity.
-          mpm_solver_.UpdateGrid(&mutable_mpm_state);
-          mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/false);
-        }
+        mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, ddt, /*scale=*/ddt / dt);
+        mpm_solver_.UpdateGrid(&mutable_mpm_state);
+        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/true);
         substep += 1;
       }
-      mutable_mpm_state.RestoreStateFromBackup();
-      
-      // Final Stage
-      mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, dt);
-      mpm_solver_.UpdateGrid(&mutable_mpm_state);
-      mpm_solver_.GridToParticle(&mutable_mpm_state, dt, /*advect=*/true);
-      // NOTE (changyu): there must be a `RebuildMapping` after `GridToParticle` with advection and before `CalcFemStateAndForce`.
-      mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
-      // NOTE (changyu): this `CalcFemStateAndForce` call is to make sure fem state is up-to-date.
-      mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, dt);
       mpm_solver_.GpuSync();
 
       // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
