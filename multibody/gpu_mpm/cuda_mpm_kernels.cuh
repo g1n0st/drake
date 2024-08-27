@@ -781,7 +781,7 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
         }
 
         T new_v[3];
-        T new_C[9];
+        T new_C[9], new_CT[9];
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
             new_v[i] = 0;
@@ -832,15 +832,17 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
         velocities[idx * 3 + 0] = new_v[0];
         velocities[idx * 3 + 1] = new_v[1];
         velocities[idx * 3 + 2] = new_v[2];
-        affine_matrices[idx * 9 + 0] = new_C[0];
-        affine_matrices[idx * 9 + 1] = new_C[1];
-        affine_matrices[idx * 9 + 2] = new_C[2];
-        affine_matrices[idx * 9 + 3] = new_C[3];
-        affine_matrices[idx * 9 + 4] = new_C[4];
-        affine_matrices[idx * 9 + 5] = new_C[5];
-        affine_matrices[idx * 9 + 6] = new_C[6];
-        affine_matrices[idx * 9 + 7] = new_C[7];
-        affine_matrices[idx * 9 + 8] = new_C[8];
+
+        transpose<3, 3, T>(new_C, new_CT);
+        affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
+        affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
+        affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
+        affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
+        affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
+        affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
+        affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
+        affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
+        affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
 
         // Advection
         if constexpr (ADVECT) {
