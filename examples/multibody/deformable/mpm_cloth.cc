@@ -135,25 +135,26 @@ int do_main() {
   else {
   }
 
-  std::vector<Eigen::Vector3d> inital_pos;
-  std::vector<Eigen::Vector3d> inital_vel;
-  std::vector<int> indices;
+  DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
+
   const int res = FLAGS_res;
   const double l = 0.005 * res;
   int length = res;
-  int num_clothes = 1;
+  int num_clothes = 2;
   int width = res;
   double dx = l / width;
 
-  auto p = [&](int i, int j, int o) {
-    return i * width + j + o;
+  auto p = [&](int i, int j) {
+    return i * width + j;
   };
 
   for (int k = 0; k < num_clothes; k++) {
-    int o = inital_pos.size();
+    std::vector<Eigen::Vector3d> inital_pos;
+    std::vector<Eigen::Vector3d> inital_vel;
+    std::vector<int> indices;
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
+        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx + k * 0.01, (0.5 - 0.5 * l) + j * dx + k * 0.01, FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }
@@ -161,16 +162,18 @@ int do_main() {
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
         if (i < length - 1 && j < width - 1) {
-          indices.push_back(p(i, j, o));
-          indices.push_back(p(i+1, j, o));
-          indices.push_back(p(i, j+1, o));
+          indices.push_back(p(i, j));
+          indices.push_back(p(i+1, j));
+          indices.push_back(p(i, j+1));
 
-          indices.push_back(p(i+1, j+1, o));
-          indices.push_back(p(i, j+1, o));
-          indices.push_back(p(i+1, j, o));
+          indices.push_back(p(i+1, j+1));
+          indices.push_back(p(i, j+1));
+          indices.push_back(p(i+1, j));
         }
       }
     }
+
+    deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
   }
 
   MpmConfigParams mpm_config;
@@ -180,8 +183,6 @@ int do_main() {
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.use_predicted_contact = false;
-  DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   /* All rigid and deformable models have been added. Finalize the plant. */

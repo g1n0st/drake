@@ -65,33 +65,32 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
     }
   }
 
-  DeformableBodyId RegisterMpmCloth(
+  void RegisterMpmCloth(
     const std::vector<Vector3<T>>& pos,
     const std::vector<Vector3<T>>& vel,
     const std::vector<int> &indices
   ) {
     this->ThrowIfSystemResourcesDeclared(__func__);
-    if (ExistsMpmModel()) {
-      throw std::logic_error("we only allow one mpm model currently");
-    }
     ThrowIfNotDouble(__func__);
     if constexpr (std::is_same_v<T, double>) {
       using GpuT = gmpm::config::GpuT;
-      cpu_mpm_model_ = std::make_unique<gmpm::CpuMpmModel<GpuT>>();
+      if (!ExistsMpmModel()) {
+        cpu_mpm_model_ = std::make_unique<gmpm::CpuMpmModel<GpuT>>();
+      }
       
       // cast T => GpuT
       const auto & T2GpuT = [](const Vector3<T>& vec) -> Vector3<GpuT> {
-            return vec.template cast<GpuT>();
-        };
-      cpu_mpm_model_->pos.resize(pos.size());
-      std::transform(pos.begin(), pos.end(), cpu_mpm_model_->pos.begin(), T2GpuT);
-      cpu_mpm_model_->vel.resize(vel.size());
-      std::transform(vel.begin(), vel.end(), cpu_mpm_model_->vel.begin(), T2GpuT);
-      cpu_mpm_model_->indices = indices;
+        return vec.template cast<GpuT>();
+      };
+      const auto &verts_offset = cpu_mpm_model_->cloth_pos.size();
+      cpu_mpm_model_->cloth_pos.resize(verts_offset + pos.size());
+      std::transform(pos.begin(), pos.end(), cpu_mpm_model_->cloth_pos.begin() + verts_offset, T2GpuT);
+      cpu_mpm_model_->cloth_vel.resize(verts_offset + vel.size());
+      std::transform(vel.begin(), vel.end(), cpu_mpm_model_->cloth_vel.begin() + verts_offset, T2GpuT);
+      for (const auto &v : indices) {
+        cpu_mpm_model_->cloth_indices.push_back(v + verts_offset);
+      }
     }
-
-    const DeformableBodyId body_id = DeformableBodyId::get_new_id();
-    return body_id;
   }
 
   const gmpm::CpuMpmModel<gmpm::config::GpuT>& cpu_mpm_model() const {

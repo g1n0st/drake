@@ -112,10 +112,13 @@ public:
     std::vector<Vec3<T>>& post_contact_dv_host() { return h_post_contact_dv_; }
     const std::vector<Vec3<T>>& post_contact_dv_host() const { return h_post_contact_dv_; }
 
-    // NOTE (changyu): initialize GPU MPM state, all gpu memory allocation should be done here to avoid re-allocation.
-    void InitializeQRCloth(const std::vector<Vec3<T>> &pos, 
+    void AddQRCloth(const std::vector<Vec3<T>> &pos, 
                            const std::vector<Vec3<T>> &vel,
                            const std::vector<int> &indices);
+
+    // NOTE (changyu): finalize system configuration and initialize GPU MPM state, 
+    // all gpu memory allocation should be done here to avoid re-allocation.    
+    void Finalize();
 
     // NOTE (changyu): free GPU MPM state, all gpu memory free should be done here.
     void Destroy();
@@ -131,9 +134,9 @@ public:
 private:
 
     // Particles state device ptrs
-    size_t n_verts_;
-    size_t n_faces_;
-    size_t n_particles_;
+    size_t n_verts_ = 0;
+    size_t n_faces_ = 0;
+    size_t n_particles_ = 0;
 
     // scratch data
     T* d_forces_ = nullptr;       // size: n_faces + n_verts, NO sort

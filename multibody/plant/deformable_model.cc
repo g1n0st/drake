@@ -423,7 +423,8 @@ void DeformableModel<T>::DoDeclareSystemResources() {
   // and allocate GPU resources here.
   if (ExistsMpmModel()) {
     gmpm::GpuMpmState<gmpm::config::GpuT> mpm_state;
-    mpm_state.InitializeQRCloth(cpu_mpm_model_->pos, cpu_mpm_model_->vel, cpu_mpm_model_->indices);
+    mpm_state.AddQRCloth(cpu_mpm_model_->cloth_pos, cpu_mpm_model_->cloth_vel, cpu_mpm_model_->cloth_indices);
+    mpm_state.Finalize();
     gpu_mpm_state_index_ = this->DeclareAbstractState(Value<gmpm::GpuMpmState<gmpm::config::GpuT>>(mpm_state));
   }
 
