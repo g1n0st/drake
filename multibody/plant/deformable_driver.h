@@ -163,198 +163,13 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     printf("\033[32mcollision detection time=%lldms N(contacts)=%lu\033[0m\n", (after_ts - before_ts), result->size());
   }
 
-  // NOTE (changyu): for our coupling strategy, 
-  // MPM part DynamicsMatrix only contains diagonal mass matrix
-  void AppendLinearDynamicsMatrixMpm(const systems::Context<T>& context,
-                                     std::vector<MatrixX<T>>* A) const {
-      DRAKE_DEMAND(A != nullptr);
-      const auto& state = context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(deformable_model_->gpu_mpm_state_index());
-      const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
-      for (size_t p = 0; p < mpm_contact_pairs.size(); ++p) {
-        MatrixX<T> hessian;
-        // initialize
-        hessian.resize(3, 3);
-        hessian.setZero();
-        T mass = static_cast<T>(state.volumes_host()[mpm_contact_pairs[p].particle_in_contact_index] * gmpm::config::DENSITY<T>);
-        // NOTE (changyu):
-        // 2. is the mass scaling factor from Xuan Li's paper Sec.4.4
-        //  It is a common observation that, under constant gravity acceleration and using a first-order scheme, objects
-        // fall faster with larger time step sizes. This mismatch contributes to the penetrations of MPM particles into FEM bodies.
-        // . The principle behind this mechanism is to slightly increase the contact force, 
-        // repelling MPM solids further away from FEM solids.
-        hessian(0, 0) = mass * T(2.0);
-        hessian(1, 1) = mass * T(2.0);
-        hessian(2, 2) = mass * T(2.0);
-        A->emplace_back(std::move(hessian));
-      }
-  }
-
-  VectorX<T> CalcParticipatingFreeMotionVelocitiesMpm(const systems::Context<T>& context) const {
-    const auto& state = context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(deformable_model_->gpu_mpm_state_index());
-    const auto& mpm_contact_pairs = EvalMpmContactPairs(context);
-    VectorX<T> vn(mpm_contact_pairs.size() * 3);
-    for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-      vn.segment(i * 3, 3) = state.velocities_host()[mpm_contact_pairs[i].particle_in_contact_index].template cast<T>();
-    }
-    return vn;
-  }
-
-  void AppendDiscreteContactPairsMpm(
-      const systems::Context<T>& context,
-      DiscreteContactData<DiscreteContactPair<T>>* result) const {
-      const auto& state = context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(deformable_model_->gpu_mpm_state_index());
-      const auto& mpm_contact_pairs = EvalMpmContactPairs(context);
-      const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
-      DRAKE_DEMAND(num_deformable_bodies() == 0);  // note: no FEM right now!
-
-      for (size_t contact_index = 0; contact_index < mpm_contact_pairs.size(); ++contact_index) {
-        const auto &mpm_contact_pair = mpm_contact_pairs[contact_index];
-        Vector3<T> vn = Vector3<T>::Zero();
-
-        // for each contact pair, want J = R_CW * Jacobian_block = R_CW *
-        // [-Jmpm | Jrigid]
-        /* Compute the rotation matrix R_CW */
-        constexpr int kZAxis = 2;
-        math::RotationMatrix<T> R_WC =
-            math::RotationMatrix<T>::MakeFromOneUnitVector(mpm_contact_pair.normal,
-                                                          kZAxis);
-        const math::RotationMatrix<T> R_CW = R_WC.transpose();
-
-        /* We have at most two blocks per contact. */
-        std::vector<typename DiscreteContactPair<T>::JacobianTreeBlock> jacobian_blocks;
-        jacobian_blocks.reserve(2);
-
-        /* MPM part of Jacobian, note this is -J_mpm */
-        // NOTE (changyu): treat MPM part as individual particles
-        geometry::GeometryId dummy_mpm_id = geometry::GeometryId::get_new_id();
-        MatrixX<T> J_mpm = -R_CW.matrix() * Matrix3<T>::Identity();
-        const TreeIndex clique_index_mpm(tree_topology.num_trees() +
-                                         num_deformable_bodies() + contact_index);
-
-        jacobian_blocks.emplace_back(
-            clique_index_mpm,
-            contact_solvers::internal::MatrixBlock<T>(std::move(J_mpm)));
-        
-        vn += R_CW.matrix() * state.velocities_host()[mpm_contact_pair.particle_in_contact_index].template cast<T>();
-        
-        /* Non-MPM (rigid) part of Jacobian */
-        const BodyIndex index_B =
-            manager_->geometry_id_to_body_index().at(mpm_contact_pair.non_mpm_id);
-        const TreeIndex tree_index_rigid =
-            tree_topology.body_to_tree_index(index_B);
-        
-        if (tree_index_rigid.is_valid()) {
-          Matrix3X<T> Jv_v_WBc_W(3, manager_->plant().num_velocities());
-          const Body<T>& rigid_body = manager_->plant().get_body(index_B);
-          const Frame<T>& frame_W = manager_->plant().world_frame();
-          manager_->internal_tree().CalcJacobianTranslationalVelocity(
-              context, JacobianWrtVariable::kV, rigid_body.body_frame(), frame_W,
-              mpm_contact_pair.particle_in_contact_position, frame_W, frame_W,
-              &Jv_v_WBc_W);
-          Matrix3X<T> J_rigid =
-              R_CW.matrix() *
-              Jv_v_WBc_W.middleCols(
-                  tree_topology.tree_velocities_start_in_v(tree_index_rigid),
-                  tree_topology.num_tree_velocities(tree_index_rigid));
-          jacobian_blocks.emplace_back(
-              tree_index_rigid,
-              contact_solvers::internal::MatrixBlock<T>(std::move(J_rigid)));
-
-          const Eigen::VectorBlock<const VectorX<T>> v =
-              manager_->plant().GetVelocities(context);
-          vn -= J_rigid *
-                v.segment(
-                    tree_topology.tree_velocities_start_in_v(tree_index_rigid),
-                    tree_topology.num_tree_velocities(tree_index_rigid));
-        }
-
-        // configuration part
-        const int object_A = manager_->plant().num_bodies() + contact_index;
-        const int object_B = index_B;  // rigid body
-
-        // Contact point position relative to rigid body B, same as in FEM-rigid
-        const math::RigidTransform<T>& X_WB =
-            manager_->plant().EvalBodyPoseInWorld(
-                context, manager_->plant().get_body(index_B));
-        const Vector3<T>& p_WB = X_WB.translation();
-        const Vector3<T> p_BC_W = mpm_contact_pair.particle_in_contact_position - p_WB;
-
-        DiscreteContactPair<T> contact_pair{
-          .jacobian = std::move(jacobian_blocks),
-          .id_A = dummy_mpm_id,
-          .object_A = object_A,
-          .id_B = mpm_contact_pair.non_mpm_id,
-          .object_B = object_B,
-          .R_WC = R_WC,
-          .p_WC = mpm_contact_pair.particle_in_contact_position,
-          .p_ApC_W = {0, 0, 0},
-          .p_BqC_W = p_BC_W,
-          .nhat_BA_W = mpm_contact_pair.normal,
-          .phi0 = mpm_contact_pair.penetration_distance,
-          .vn0 = -vn(2),
-          .fn0 = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_stiffness) * 
-                 std::abs(mpm_contact_pair.penetration_distance),
-          .stiffness = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_stiffness),
-          .damping = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_damping),
-          .dissipation_time_scale = manager_->plant().time_step(),
-          .friction_coefficient = static_cast<T>(deformable_model_->cpu_mpm_model().config.contact_friction_mu)
-        };
-      result->AppendDeformableData(std::move(contact_pair));
-    }
-  }
-
-  const VectorX<T>& EvalMpmPostContactDV(
-      const systems::Context<T>& context) const {
-    return manager_->plant()
-        .get_cache_entry(cache_indexes_.mpm_post_contact_dv)
-        .template Eval<VectorX<T>>(context);
-  }
-
-  void CalcMpmPostContactDV(const systems::Context<T>& context,
-                               VectorX<T>* mpm_post_contact_dv) const {
-    if (EvalMpmContactPairs(context).size() == 0) {
-      // if no contact, no further treatment
-      (*mpm_post_contact_dv).resize(0);
-      return;
-    }
-
-    contact_solvers::internal::ContactSolverResults<T> results = manager_->EvalContactSolverResults(context);
-    int mpm_dofs = EvalMpmContactPairs(context).size() * 3;
-    (*mpm_post_contact_dv) = results.v_next.tail(mpm_dofs);
-  }
-
   void UpdateContactDv(const systems::Context<T>& context, 
                        gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state) const {
     const auto &mpm_contact_pairs = EvalMpmContactPairs(context);
     mpm_state->contact_ids_host().clear();
     mpm_state->post_contact_dv_host().clear();
     if (mpm_contact_pairs.size() > 0) {
-      const auto &mpm_post_contact_dv = EvalMpmPostContactDV(context);
-
-      // NOTE (changyu): dv info logging
-      Eigen::Vector3d mean = mpm_post_contact_dv.rowwise().mean();
-      printf("contact dv norm: %lf dv size: %lu dv aver: %.7lf %.7lf %.7lf\n", 
-              mpm_post_contact_dv.norm(), 
-              mpm_post_contact_dv.size(),
-              mean[0], mean[1], mean[2]);
-
-      DRAKE_DEMAND(int(mpm_contact_pairs.size()) * 3 == int(mpm_post_contact_dv.size()));
-      mpm_state->contact_ids_host().reserve(mpm_post_contact_dv.size());
-      mpm_state->post_contact_dv_host().reserve(mpm_post_contact_dv.size());
-      for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-        const auto & v0 = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index].template cast<T>();
-        mpm_state->contact_ids_host().emplace_back(
-          static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index));
-        mpm_state->post_contact_dv_host().emplace_back(
-          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 0)) - v0[0],
-          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 1)) - v0[1],
-          static_cast<gmpm::config::GpuT>(mpm_post_contact_dv(i * 3 + 2)) - v0[2]
-        );
-        printf("dv(%lu) = (%.lf %.lf %lf)\n", i, 
-          mpm_state->post_contact_dv_host().back()[0],
-          mpm_state->post_contact_dv_host().back()[1],
-          mpm_state->post_contact_dv_host().back()[2]);
-      }
+      // ...
     }
   }
 
@@ -389,27 +204,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         substep += 1;
       }
       mpm_solver_.GpuSync();
-
-      if (deformable_model_->cpu_mpm_model().config.use_predicted_contact) {
-        // NOTE (changyu): free-motion CPU state for the contact stage at next time step.
-        mutable_mpm_state.BackUpState();
-        dt_left = dt;
-        while (dt_left > 0) {
-          GpuT ddt = std::min(dt_left, substep_dt);
-          dt_left -= ddt;
-          mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
-          mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
-          mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
-          mpm_solver_.UpdateGrid(&mutable_mpm_state);
-          mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/true);
-        }
-        mpm_solver_.GpuSync();
-        // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
-        mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
-        mutable_mpm_state.RestoreStateFromBackup();
-      } else {
-        mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
-      }
+      mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
 
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -513,7 +308,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     systems::CacheIndex participating_free_motion_velocities;
 
     systems::CacheIndex mpm_contact_pairs;
-    systems::CacheIndex mpm_post_contact_dv;
   };
 
   /* Struct to hold intermediate data from one of the two geometries in contact
