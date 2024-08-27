@@ -390,22 +390,26 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       }
       mpm_solver_.GpuSync();
 
-      // NOTE (changyu): free-motion CPU state for the contact stage at next time step.
-      mutable_mpm_state.BackUpState();
-      dt_left = dt;
-      while (dt_left > 0) {
-        GpuT ddt = std::min(dt_left, substep_dt);
-        dt_left -= ddt;
-        mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
-        mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
-        mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
-        mpm_solver_.UpdateGrid(&mutable_mpm_state);
-        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/true);
+      if (deformable_model_->cpu_mpm_model().config.use_predicted_contact) {
+        // NOTE (changyu): free-motion CPU state for the contact stage at next time step.
+        mutable_mpm_state.BackUpState();
+        dt_left = dt;
+        while (dt_left > 0) {
+          GpuT ddt = std::min(dt_left, substep_dt);
+          dt_left -= ddt;
+          mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
+          mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
+          mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
+          mpm_solver_.UpdateGrid(&mutable_mpm_state);
+          mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/true);
+        }
+        mpm_solver_.GpuSync();
+        // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
+        mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
+        mutable_mpm_state.RestoreStateFromBackup();
+      } else {
+        mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
       }
-      mpm_solver_.GpuSync();
-      // NOTE (changyu): sync final mpm particle state, which will be used to perform stage2 at the beginning of next time step.
-      mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
-      mutable_mpm_state.RestoreStateFromBackup();
 
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();

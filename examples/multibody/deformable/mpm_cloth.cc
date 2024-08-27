@@ -179,6 +179,7 @@ int do_main() {
   mpm_config.contact_stiffness = FLAGS_stiffness;
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
+  mpm_config.use_predicted_contact = false;
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
   deformable_model.SetMpmConfig(std::move(mpm_config));
