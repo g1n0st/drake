@@ -15,6 +15,7 @@
 #include "drake/systems/framework/diagram_builder.h"
 
 using drake::geometry::AddContactMaterial;
+using drake::geometry::AddCompliantHydroelasticProperties;
 using drake::geometry::Box;
 using drake::geometry::IllustrationProperties;
 using drake::geometry::ProximityProperties;
@@ -37,6 +38,7 @@ int do_main() {
   systems::DiagramBuilder<double> builder;
   MultibodyPlantConfig plant_config;
   plant_config.time_step = 0.01;
+  plant_config.discrete_contact_approximation = "lagged";
   auto [plant, scene_graph] = AddMultibodyPlant(plant_config, &builder);
 
   /* Add a free sphere a sphere with radius 0.6. */
@@ -44,22 +46,33 @@ int do_main() {
   /* Set the friction coefficient close to that of rubber against rubber. */
   const CoulombFriction<double> surface_friction(1.0, 1.0);
   AddContactMaterial({}, {}, surface_friction, &rigid_proximity_props);
-  const double radius = 0.05;
-  const RigidBody<double>& body = plant.AddRigidBody(
-      "sphere_body",
-      SpatialInertia<double>::SolidSphereWithDensity(1000.0, radius));
-  plant.RegisterCollisionGeometry(body, RigidTransformd::Identity(),
-                                  Sphere(radius), "sphere_collision",
-                                  rigid_proximity_props);
+  AddCompliantHydroelasticProperties(1.0, 1e8, &rigid_proximity_props);
+  const double side_length = 0.10;
+  Box box(side_length, side_length, side_length);
+  /* density = 1000 kg/m^3. */
+  const RigidBody<double>& box1 = plant.AddRigidBody(
+      "box1", SpatialInertia<double>::SolidBoxWithMass(
+                  1, side_length, side_length, side_length));
+  plant.RegisterCollisionGeometry(box1, RigidTransformd::Identity(), box,
+                                  "box1_collision", rigid_proximity_props);
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse",
                                  Vector4d(0.7, 0.5, 0.4, 0.8));
-  plant.RegisterVisualGeometry(body, RigidTransformd::Identity(),
-                               Sphere(radius), "sphere_visual",
-                               illustration_props);
+  plant.RegisterVisualGeometry(box1, RigidTransformd::Identity(), box,
+                               "box1_visual", illustration_props);
+
+  /* density = 1000 kg/m^3. */
+  const RigidBody<double>& box2 =
+      plant.AddRigidBody("box2", SpatialInertia<double>::SolidBoxWithMass(
+                                     1, side_length, side_length, side_length));
+  plant.RegisterCollisionGeometry(box2, RigidTransformd::Identity(), box,
+                                  "box2_collision", rigid_proximity_props);
+  plant.RegisterVisualGeometry(box2, RigidTransformd::Identity(), box,
+                               "box2_visual", illustration_props);
+
   /* Set up a ground. */
   Box ground{4, 4, 4};
-  const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2.2});
+  const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2.0});
   plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground,
                                   "ground_collision", rigid_proximity_props);
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground,
@@ -70,17 +83,27 @@ int do_main() {
   const float dx = 0.01;
   const int num_substeps = 10;
   auto* mpm = builder.AddSystem<MpmSystem<float>>(plant, dx, num_substeps,
-                                                  Parallelism(4));
+                                                  Parallelism(8));
 
-  math::RigidTransform<double> X_WB(Vector3d(0, 0.05, 0.25));
-  auto geometry_instance = std::make_unique<geometry::GeometryInstance>(
-      X_WB, geometry::Sphere(0.05), "sphere");
+  math::RigidTransform<double> X_WB1(Vector3d(0, 0, 1.5 * side_length));
+  auto mpm_box1 =
+      std::make_unique<geometry::GeometryInstance>(X_WB1, box, "mpm_box1");
   fem::DeformableBodyConfig<float> body_config;
   body_config.set_material_model(fem::MaterialModel::kStvkHenckyVonMises);
   body_config.set_youngs_modulus(1e4);
   body_config.set_poissons_ratio(0.3);
   body_config.set_yield_stress(2.5e3);
-  mpm->SampleParticles(std::move(geometry_instance), 8, body_config);
+  body_config.set_mass_density(1000);
+  mpm->SampleParticles(std::move(mpm_box1), 8, body_config);
+
+  // math::RigidTransform<double> X_WB2(Vector3d(0, 0, 3.5 * side_length));
+  // auto mpm_box2 =
+  //     std::make_unique<geometry::GeometryInstance>(X_WB2, box, "mpm_box2");
+  // body_config.set_youngs_modulus(1e4);
+  // body_config.set_yield_stress(2.5e7);
+  // body_config.set_mass_density(1000);
+  // mpm->SampleParticles(std::move(mpm_box2), 8, body_config);
+
   mpm->Finalize();
 
   builder.Connect(scene_graph.get_query_output_port(),
@@ -99,11 +122,17 @@ int do_main() {
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context =
       diagram->CreateDefaultContext();
+  auto& plant_context =
+      plant.GetMyMutableContextFromRoot(diagram_context.get());
+  plant.SetFreeBodyPose(&plant_context, box1,
+                        RigidTransformd(Vector3d(0, 0, 0.5 * side_length)));
+  plant.SetFreeBodyPose(&plant_context, box2,
+                        RigidTransformd(Vector3d(0, 0, 2.5 * side_length)));
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));
   simulator.Initialize();
-  simulator.AdvanceTo(1.0);
+  simulator.AdvanceTo(10.0);
 
   std::cout << "Finished simulation." << std::endl;
   return 0;

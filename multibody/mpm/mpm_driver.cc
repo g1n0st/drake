@@ -21,6 +21,7 @@ using geometry::GeometryInstance;
 using geometry::Shape;
 using geometry::ShapeReifier;
 using geometry::Sphere;
+using geometry::Box;
 using math::RigidTransform;
 
 class BoundingBoxCalculator : public ShapeReifier {
@@ -43,6 +44,15 @@ class BoundingBoxCalculator : public ShapeReifier {
     for (int d = 0; d < 3; ++d) {
       result[0][d] = -sphere.radius();
       result[1][d] = sphere.radius();
+    }
+  }
+
+  void ImplementGeometry(const Box& box, void* data) override {
+    DRAKE_ASSERT(data != nullptr);
+    BoundingBox& result = *static_cast<BoundingBox*>(data);
+    for (int d = 0; d < 3; ++d) {
+      result[0][d] = -box.size()(d) / 2.0;
+      result[1][d] = box.size()(d) / 2.0;
     }
   }
 };
