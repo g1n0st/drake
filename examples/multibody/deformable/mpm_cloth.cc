@@ -140,7 +140,7 @@ int do_main() {
   const int res = FLAGS_res;
   const double l = 0.005 * res;
   int length = res;
-  int num_clothes = 2;
+  int num_clothes = 1;
   int width = res;
   double dx = l / width;
 
