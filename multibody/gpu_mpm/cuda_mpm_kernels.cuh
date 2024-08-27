@@ -517,16 +517,10 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                         val[2] += force[1] * dt * weight;
                         val[3] += force[2] * dt * weight;
                     } else {
-                        // NOTE (changyu):
-                        // 2. is the mass scaling factor from Xuan Li's paper Sec.4.4
-                        //  It is a common observation that, under constant gravity acceleration and using a first-order scheme, objects
-                        // fall faster with larger time step sizes. This mismatch contributes to the penetrations of MPM particles into FEM bodies.
-                        // . The principle behind this mechanism is to slightly increase the contact force, 
-                        // repelling MPM solids further away from FEM solids.
                         val[0] = 0;
-                        val[1] = vel[0] * mass * T(2.) * weight;
-                        val[2] = vel[1] * mass * T(2.) * weight;
-                        val[3] = vel[2] * mass * T(2.) * weight;
+                        val[1] = vel[0] * mass * T(1.) * weight;
+                        val[2] = vel[1] * mass * T(1.) * weight;
+                        val[3] = vel[2] * mass * T(1.) * weight;
                     }
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
