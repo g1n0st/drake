@@ -20,6 +20,7 @@
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
 
+DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
 DEFINE_int32(res, 50, "Cloth Resolution.");
@@ -174,7 +175,7 @@ int do_main() {
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
-  mpm_config.write_files = false;
+  mpm_config.write_files = FLAGS_write_files;
   mpm_config.contact_stiffness = FLAGS_stiffness;
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
