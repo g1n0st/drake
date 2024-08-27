@@ -35,24 +35,6 @@ public:
     T* current_affine_matrices() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
     const T* current_affine_matrices() const { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
 
-    T* forces() { return d_forces_; }
-    const T* forces() const { return d_forces_; }
-    T* taus() { return d_taus_; }
-    const T* taus() const { return d_taus_; }
-    T* deformation_gradients() { return d_deformation_gradients_; }
-    const T* deformation_gradients() const { return d_deformation_gradients_; }
-    T* Dm_inverses() { return d_Dm_inverses_; }
-    const T* Dm_inverses() const { return d_Dm_inverses_; }
-    int* indices() { return d_indices_; }
-    const int* indices() const { return d_indices_; }
-    int* index_mappings() { return d_index_mappings_; }
-    const int* index_mappings() const { return d_index_mappings_; }
-
-    T* next_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
-    T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
-    T* next_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
-    T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
-    
     int* current_pids() { return particle_buffer_[current_particle_buffer_id_].d_pids; }
     const int* current_pids() const { return particle_buffer_[current_particle_buffer_id_].d_pids; }
     uint32_t* current_sort_keys() { return particle_buffer_[current_particle_buffer_id_].d_sort_keys; }
@@ -60,9 +42,44 @@ public:
     uint32_t* current_sort_ids() { return particle_buffer_[current_particle_buffer_id_].d_sort_ids; }
     const uint32_t* current_sort_ids() const { return particle_buffer_[current_particle_buffer_id_].d_sort_ids; }
 
+    T* next_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
+    T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
+    T* next_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
+    T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
     int* next_pids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_pids; }
     uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
     uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
+
+    T* backup_positions() { return particle_buffer_[backup_buffer_id].d_positions; }
+    T* backup_velocities() { return particle_buffer_[backup_buffer_id].d_velocities; }
+    T* backup_volumes() { return particle_buffer_[backup_buffer_id].d_volumes; }
+    T* backup_affine_matrices() { return particle_buffer_[backup_buffer_id].d_affine_matrices; }
+    int* backup_pids() { return particle_buffer_[backup_buffer_id].d_pids; }
+    uint32_t* backup_sort_keys() { return particle_buffer_[backup_buffer_id].d_sort_keys; }
+    uint32_t* backup_sort_ids() { return particle_buffer_[backup_buffer_id].d_sort_ids; }
+
+    // NOTE (changyu): next state data is only meaningful at BuildReturnMapping stage,
+    // we can reuse these buffers to splat particle contact dv to the grid.
+    T* contact_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
+    T* contact_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
+    T* contact_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
+    T* contact_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
+    uint32_t* contact_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
+    uint32_t* contact_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
+
+    T* forces() { return d_forces_; }
+    const T* forces() const { return d_forces_; }
+    T* taus() { return d_taus_; }
+    const T* taus() const { return d_taus_; }
+    T* deformation_gradients() { return d_deformation_gradients_; }
+    const T* deformation_gradients() const { return d_deformation_gradients_; }
+    T* backup_deformation_gradients() { return d_backup_deformation_gradients_; }
+    T* Dm_inverses() { return d_Dm_inverses_; }
+    const T* Dm_inverses() const { return d_Dm_inverses_; }
+    int* indices() { return d_indices_; }
+    const int* indices() const { return d_indices_; }
+    int* index_mappings() { return d_index_mappings_; }
+    const int* index_mappings() const { return d_index_mappings_; }
 
     T* grid_masses() { return grid_buffer_.d_g_masses; }
     const T* grid_masses() const { return grid_buffer_.d_g_masses; }
@@ -84,15 +101,31 @@ public:
     unsigned int* sort_buffer() { return sort_buffer_; };
     size_t& sort_buffer_size() { return sort_buffer_size_; }
 
-    // NOTE (changyu): initialize GPU MPM state, all gpu memory allocation should be done here to avoid re-allocation.
-    void InitializeQRCloth(const std::vector<Vec3<T>> &pos, 
+    std::vector<Vec3<T>>& positions_host() { return h_positions_; }
+    const std::vector<Vec3<T>>& positions_host() const { return h_positions_; }
+    std::vector<Vec3<T>>& velocities_host() { return h_velocities_; }
+    const std::vector<Vec3<T>>& velocities_host() const { return h_velocities_; }
+    std::vector<T>& volumes_host() { return h_volumes_; }
+    const std::vector<T>& volumes_host() const { return h_volumes_; }
+    std::vector<int>& contact_ids_host() { return h_contact_ids_; }
+    const std::vector<int>& contact_ids_host() const { return h_contact_ids_; }
+    std::vector<Vec3<T>>& post_contact_dv_host() { return h_post_contact_dv_; }
+    const std::vector<Vec3<T>>& post_contact_dv_host() const { return h_post_contact_dv_; }
+
+    void AddQRCloth(const std::vector<Vec3<T>> &pos, 
                            const std::vector<Vec3<T>> &vel,
                            const std::vector<int> &indices);
+
+    // NOTE (changyu): finalize system configuration and initialize GPU MPM state, 
+    // all gpu memory allocation should be done here to avoid re-allocation.    
+    void Finalize();
 
     // NOTE (changyu): free GPU MPM state, all gpu memory free should be done here.
     void Destroy();
 
     void SwitchCurrentState() { current_particle_buffer_id_ ^= 1; }
+    void BackUpState();
+    void RestoreStateFromBackup();
 
     // NOTE (changyu): sync all visualization data to CPU side.
     using DumpT = std::tuple<std::vector<Vec3<T>>, std::vector<int>>;
@@ -101,9 +134,9 @@ public:
 private:
 
     // Particles state device ptrs
-    size_t n_verts_;
-    size_t n_faces_;
-    size_t n_particles_;
+    size_t n_verts_ = 0;
+    size_t n_faces_ = 0;
+    size_t n_particles_ = 0;
 
     // scratch data
     T* d_forces_ = nullptr;       // size: n_faces + n_verts, NO sort
@@ -115,8 +148,11 @@ private:
 
     // element-based data
     int* d_indices_ = nullptr; // size: n_faces NO sort
-    T* d_deformation_gradients_ = nullptr; // size: n_faces NO sort
     T* d_Dm_inverses_ = nullptr; // size: n_faces NO sort
+
+    T* d_deformation_gradients_ = nullptr; // size: n_faces NO sort
+    // NOTE (changyu): backup state used for substepping.
+    T* d_backup_deformation_gradients_ = nullptr; // size: n_faces NO sort
     
     struct ParticleBuffer {
         T* d_positions = nullptr;   // size: n_faces + n_verts
@@ -131,16 +167,26 @@ private:
     };
     
     uint32_t current_particle_buffer_id_ = 0;
-    std::array<ParticleBuffer, 2> particle_buffer_;
+    // NOTE (changyu): 
+    //    particle_buffer_[0/1] is used for switch between current state and next state,
+    //    particle buffer [2] is used for the backup state.
+    //    Note that while one of buffer[0/1] will not be used after sorting in a timestep,
+    //    we cannot reuse it as the backup state,
+    //    since it's already reserved for the collision state.
+    std::array<ParticleBuffer, 3> particle_buffer_;
 
     size_t sort_buffer_size_ = 0;
+    static constexpr size_t backup_buffer_id = 2;
     unsigned int* sort_buffer_ = nullptr;
 
     // Particles state host ptrs
-    // TODO(changyu): Host memory should be managed by Drake context instead of here.
     std::vector<Vec3<T>> h_positions_;
     std::vector<Vec3<T>> h_velocities_;
+    std::vector<T> h_volumes_;
     std::vector<int> h_indices_;
+    // host ptrs for post contact solving
+    std::vector<int> h_contact_ids_;
+    std::vector<Vec3<T>> h_post_contact_dv_;
 
     // Grid state device ptrs
 

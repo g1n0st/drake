@@ -54,7 +54,8 @@ GTEST_TEST(EstTest, SmokeTest) {
     }
   }
 
-  mpm_state.InitializeQRCloth(inital_pos, inital_vel, indices);
+  mpm_state.AddQRCloth(inital_pos, inital_vel, indices);
+  mpm_state.Finalize();
 
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 

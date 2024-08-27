@@ -37,7 +37,8 @@ void DiscreteUpdateManager<T>::CalcDiscreteValues(
   DRAKE_DEMAND(updates != nullptr);
   // Perform discrete updates for deformable bodies if they exist.
   if constexpr (std::is_same_v<T, double>) {
-    if (deformable_driver_ != nullptr) {
+    if (deformable_driver_ != nullptr &&
+        deformable_driver_->num_deformable_bodies() > 0) {
       deformable_driver_->CalcDiscreteStates(context, updates);
     }
   }
@@ -731,8 +732,12 @@ void DiscreteUpdateManager<T>::CalcDiscreteContactPairs(
   AppendDiscreteContactPairsForPointContact(context, result);
   AppendDiscreteContactPairsForHydroelasticContact(context, result);
   if constexpr (std::is_same_v<T, double>) {
-    if (deformable_driver_ != nullptr) {
+    if (deformable_driver_ != nullptr &&
+        deformable_driver_->num_deformable_bodies() > 0) {
       deformable_driver_->AppendDiscreteContactPairs(context, result);
+    } else if (deformable_driver_ != nullptr &&
+               deformable_driver_->ExistsMpmBody()) {
+      deformable_driver_->AppendDiscreteContactPairsMpm(context, result);
     }
   }
 }
@@ -1235,7 +1240,7 @@ void DiscreteUpdateManager<T>::ExtractConcreteModel(
   if constexpr (std::is_same_v<T, double>) {
     DRAKE_DEMAND(model != nullptr);
     DRAKE_DEMAND(deformable_driver_ == nullptr);
-    if (model->num_bodies() > 0) {
+    if (model->num_bodies() > 0 || model->ExistsMpmModel()) {
       deformable_driver_ =
           std::make_unique<DeformableDriver<double>>(model, this);
     }

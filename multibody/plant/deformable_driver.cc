@@ -205,6 +205,47 @@ void DeformableDriver<T>::DeclareCacheEntries(
           constraint_participation_and_xd_tickets);
   cache_indexes_.participating_free_motion_velocities =
       participating_free_motion_velocities_cache_entry.cache_index();
+
+    // NOTE (changyu): cache entries for MPM (mostly CPU parts)
+    if (deformable_model_->ExistsMpmModel()) {
+      // mpm contact pairs
+      std::vector<geometry::internal::MpmParticleContactPair<T>> mpm_contact_pairs;
+      const auto& mpm_contact_pairs_cache_entry = manager->DeclareCacheEntry(
+        "contact pairs between mpm particle and rigid body",
+        systems::ValueProducer(
+          mpm_contact_pairs,
+          std::function<void(
+                const Context<T>&, std::vector<geometry::internal::MpmParticleContactPair<T>>*)>{
+                [this](
+                    const Context<T>& context,
+                    std::vector<geometry::internal::MpmParticleContactPair<T>>*
+                        mpm_contact_pairs_in) {
+                  this->CalcMpmContactPairs(context, mpm_contact_pairs_in);
+                }}),
+        {
+            manager_->plant().abstract_state_ticket(deformable_model_->gpu_mpm_state_index()),
+        });
+      cache_indexes_.mpm_contact_pairs = mpm_contact_pairs_cache_entry.cache_index();
+
+      // mpm post contact dv
+      VectorX<T> mpm_post_contact_dv;
+      const auto& mmpm_post_contact_dv_cache_entry = manager->DeclareCacheEntry(
+        "mpm particle contact impulse dv after SAP contact solving",
+        systems::ValueProducer(
+          mpm_post_contact_dv,
+          std::function<void(
+                const Context<T>&, VectorX<T>*)>{
+                [this](
+                    const Context<T>& context,
+                    VectorX<T>*
+                        mpm_post_contact_dv_in) {
+                  this->CalcMpmPostContactDV(context, mpm_post_contact_dv_in);
+                }}),
+        {
+            manager_->plant().cache_entry_ticket(cache_indexes_.mpm_contact_pairs),
+        });
+      cache_indexes_.mpm_post_contact_dv = mmpm_post_contact_dv_cache_entry.cache_index();
+    }
 }
 
 template <typename T>

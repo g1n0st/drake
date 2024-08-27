@@ -150,6 +150,9 @@ drake_cc_library(
         "//multibody/tree",
         "//systems/framework:diagram_builder",
         "//systems/framework:leaf_system",
+        "//systems/framework:context",
+        "//multibody/gpu_mpm:cuda_mpm",
+        "//geometry/query_results:mpm_particle_contact_pair",
     ],
 )
 

@@ -165,6 +165,20 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
    update. */
   void CalcDiscreteValues(const systems::Context<T>& context,
                           systems::DiscreteValues<T>* updates) const;
+  
+  // NOTE (changyu): add for MPM
+  /* MultibodyPlant invokes this method to perform the abstract variables
+   update in discrete timestep. */
+  void CalcAbstractValues(const systems::Context<T>& context,
+                          systems::State<T>* update) const {
+    DRAKE_DEMAND(update != nullptr);
+    // DoCalcAbstractValues(context, update);
+    if constexpr (std::is_same_v<T, double>) {
+      if (deformable_driver_ != nullptr) {
+        deformable_driver_->CalcAbstractStates(context, update);
+      }
+    }
+  }
 
   /* Evaluates the contact results used in CalcDiscreteValues() to advance the
    discrete update from the state stored in `context`. */

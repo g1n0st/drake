@@ -419,6 +419,15 @@ void DeformableModel<T>::DoDeclareSystemResources() {
     body_id_to_index_[id] = i;
   }
 
+  // NOTE (changyu): when finailize, use `CpuMpmModel` as config to initialize `GpuMpmState`
+  // and allocate GPU resources here.
+  if (ExistsMpmModel()) {
+    gmpm::GpuMpmState<gmpm::config::GpuT> mpm_state;
+    mpm_state.AddQRCloth(cpu_mpm_model_->cloth_pos, cpu_mpm_model_->cloth_vel, cpu_mpm_model_->cloth_indices);
+    mpm_state.Finalize();
+    gpu_mpm_state_index_ = this->DeclareAbstractState(Value<gmpm::GpuMpmState<gmpm::config::GpuT>>(mpm_state));
+  }
+
   /* Add user defined external forces to each body. */
   body_index_to_force_densities_.resize(num_bodies());
   for (int i = 0; i < num_bodies(); ++i) {
@@ -464,6 +473,20 @@ void DeformableModel<T>::DoDeclareSceneGraphPorts() {
                 this->CopyVertexPositions(context, output);
               },
               {systems::System<double>::xd_ticket()})
+          .get_index();
+  
+  // NOTE (changyu): output port for mpm visualization (drake visualizer)
+  mpm_output_port_index_ =
+      this->DeclareAbstractOutputPort(
+              "mpm_output_port",
+              []() {
+                return AbstractValue::Make<gmpm::MpmPortData<gmpm::config::GpuT>>();
+              },
+              [this](const systems::Context<T>& context,
+                     AbstractValue* output) {
+                this->DumpMpmData(context, output);
+              },
+              {systems::System<double>::all_sources_ticket()})
           .get_index();
 }
 

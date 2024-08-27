@@ -89,6 +89,33 @@ drake_cc_binary(
 )
 
 drake_cc_binary(
+    name = "mpm_cloth",
+    srcs = [
+        "mpm_cloth.cc",
+    ],
+    add_test_rule = 1,
+    data = [
+        ":models",
+    ],
+    test_rule_args = [
+        "-simulation_time=0.1",
+        "-realtime_rate=0.0",
+    ],
+    deps = [
+        ":parallel_gripper_controller",
+        ":point_source_force_field",
+        ":suction_cup_controller",
+        "//geometry:drake_visualizer",
+        "//geometry:scene_graph",
+        "//multibody/parsing",
+        "//multibody/plant",
+        "//systems/analysis:simulator",
+        "//systems/framework:diagram",
+        "@gflags",
+    ],
+)
+
+drake_cc_binary(
     name = "bubble_gripper",
     srcs = [
         "bubble_gripper.cc",

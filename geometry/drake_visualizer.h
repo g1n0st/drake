@@ -17,6 +17,9 @@
 #include "drake/systems/framework/leaf_system.h"
 #include "drake/systems/framework/output_port.h"
 
+// NOTE (changyu): add for MPM
+#include "multibody/gpu_mpm/cpu_mpm_model.h"
+
 namespace drake {
 namespace geometry {
 // Forward declare a tester class used as a friend of DrakeVisualizer.
@@ -173,6 +176,11 @@ class DrakeVisualizer final : public systems::LeafSystem<T> {
     return this->get_input_port(query_object_input_port_);
   }
 
+  // NOTE (changyu): for MPM
+  const systems::InputPort<T>& mpm_input_port() const {
+    return this->get_input_port(mpm_input_port_);
+  }
+
   /** @name Utility functions for instantiating and connecting a visualizer
 
    These methods provide a convenient mechanism for adding a DrakeVisualizer
@@ -261,6 +269,12 @@ class DrakeVisualizer final : public systems::LeafSystem<T> {
 
   /* Dispatches a "deformable geometries" message that defines the topology and
    configuration of all deformable geometries at a given time. */
+  static void SendMpmMessage(
+      const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>& mpm_object, const DrakeVisualizerParams& params,
+      double time, lcm::DrakeLcmInterface* lcm);
+  
+  // NOTE (changyu): send a "mpm object" message that defines the topology and
+  // configuration of MPM particles at a given time.
   static void SendDeformableGeometriesMessage(
       const QueryObject<T>& query_object, const DrakeVisualizerParams& params,
       double time, lcm::DrakeLcmInterface* lcm);
@@ -316,6 +330,9 @@ class DrakeVisualizer final : public systems::LeafSystem<T> {
 
   /* The index of this System's QueryObject-valued input port.  */
   int query_object_input_port_{};
+
+  // NOTE (changyu): this extra port is specialized to visualize MPM data
+  int mpm_input_port_{};
 
   /* The LCM interface: the owned (if such exists) and the active interface
    (whether owned or not). The active interface is mutable because we non-const
