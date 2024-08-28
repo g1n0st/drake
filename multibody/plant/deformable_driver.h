@@ -161,22 +161,53 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
   void UpdateContactDv(const systems::Context<T>& context, 
                        gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt) const {
+    const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
+    using GpuT = gmpm::config::GpuT;
     std::vector<geometry::internal::MpmParticleContactPair<T>> mpm_contact_pairs;
     CalcMpmContactPairs(context, mpm_state, &mpm_contact_pairs);
     mpm_state->contact_ids_host().resize(mpm_contact_pairs.size());
     mpm_state->post_contact_dv_host().resize(mpm_contact_pairs.size());
+    gmpm::ContactForceSolver<GpuT> solver(dt, 
+      deformable_model_->cpu_mpm_model().config.contact_stiffness, 
+      deformable_model_->cpu_mpm_model().config.contact_damping);
     if (mpm_contact_pairs.size() > 0) {
 #if defined(_OPENMP)
 #pragma omp parallel for num_threads(16)
 #endif
       for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
         mpm_state->contact_ids_host()[i] = static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index);
-        Vector3<gmpm::config::GpuT> dv_normal = 
-          dt *
-          deformable_model_->cpu_mpm_model().config.contact_stiffness * 
-          (mpm_contact_pairs[i].penetration_distance * 
-           mpm_contact_pairs[i].normal).template cast<gmpm::config::GpuT>();
-        mpm_state->post_contact_dv_host()[i] = dv_normal;
+        mpm_state->post_contact_dv_host()[i].setZero();
+        const Vector3<GpuT>& nhat_W = -mpm_contact_pairs[i].normal.template cast<GpuT>();
+        const Vector3<GpuT>& particle_v = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
+        const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);
+        const BodyIndex index_rigid =
+            manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
+        const TreeIndex tree_index_rigid =
+            tree_topology.body_to_tree_index(index_rigid);
+        Vector3<GpuT> rigid_v = Vector3<GpuT>::Zero();
+        if (tree_index_rigid.is_valid()) {
+          rigid_v = v.segment(tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+                              tree_topology.num_tree_velocities(tree_index_rigid))
+                              .template cast<GpuT>();
+        }
+        const Vector3<GpuT> v_rel = particle_v - rigid_v;
+        const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
+        const GpuT& mu = deformable_model_->cpu_mpm_model().config.contact_friction_mu;
+        const GpuT vn = v_rel.dot(nhat_W);
+        const GpuT phi0 = -static_cast<T>(mpm_contact_pairs[i].penetration_distance);
+
+        const Vector3<GpuT> vt = v_rel - vn * nhat_W;
+        const GpuT vn_next = solver.Solve(m, vn, phi0);
+
+        if (vn != vn_next) {
+          GpuT dvn = vn_next - vn;
+          mpm_state->post_contact_dv_host()[i] += dvn * nhat_W;
+          if (dvn * mu < vt.norm()) {
+            mpm_state->post_contact_dv_host()[i] -= dvn * mu * vt.normalized();
+          } else {
+            mpm_state->post_contact_dv_host()[i] -= vt;
+          }
+        }
       }
     }
   }
