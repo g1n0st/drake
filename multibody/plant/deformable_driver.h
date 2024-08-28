@@ -127,6 +127,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     const geometry::QueryObject<T>& query_object =
         manager_->plant().get_geometry_query_input_port().template Eval<geometry::QueryObject<T>>(context);
     // loop over each particle
+#if defined(_OPENMP)
+#pragma omp parallel for num_threads(16)
+#endif
     for (size_t p = 0; p < mpm_state->n_particles(); ++p) {
       // compute the distance of this particle with each geometry in file
       // NOTE (changyu): when access attributes in GpuMpmState,
@@ -142,10 +145,13 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           // i.e., if one mpm particle has multiple collision pairs, it will be treated as
           // multiple collision particles and get independent impulse dv for each constraint.
           // Not sure if it's worked.
-          result->emplace_back(geometry::internal::MpmParticleContactPair<T>(
-              p, p2geometry.id_G, p2geometry.distance,
-              -p2geometry.grad_W.normalized(),
-              mpm_state->positions_host()[p].template cast<T>()));
+          #pragma omp critical
+          {
+            result->emplace_back(geometry::internal::MpmParticleContactPair<T>(
+                p, p2geometry.id_G, p2geometry.distance,
+                -p2geometry.grad_W.normalized(),
+                mpm_state->positions_host()[p].template cast<T>()));
+          }
         }
       }
     }
@@ -157,18 +163,20 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
                        gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt) const {
     std::vector<geometry::internal::MpmParticleContactPair<T>> mpm_contact_pairs;
     CalcMpmContactPairs(context, mpm_state, &mpm_contact_pairs);
-    mpm_state->contact_ids_host().clear();
-    mpm_state->post_contact_dv_host().clear();
+    mpm_state->contact_ids_host().resize(mpm_contact_pairs.size());
+    mpm_state->post_contact_dv_host().resize(mpm_contact_pairs.size());
     if (mpm_contact_pairs.size() > 0) {
+#if defined(_OPENMP)
+#pragma omp parallel for num_threads(16)
+#endif
       for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-        mpm_state->contact_ids_host().emplace_back(
-          static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index));
+        mpm_state->contact_ids_host()[i] = static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index);
         Vector3<gmpm::config::GpuT> dv_normal = 
           dt *
           deformable_model_->cpu_mpm_model().config.contact_stiffness * 
           (mpm_contact_pairs[i].penetration_distance * 
            mpm_contact_pairs[i].normal).template cast<gmpm::config::GpuT>();
-        mpm_state->post_contact_dv_host().emplace_back(dv_normal);
+        mpm_state->post_contact_dv_host()[i] = dv_normal;
       }
     }
   }
@@ -200,7 +208,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, ddt);
         mpm_solver_.UpdateGrid(&mutable_mpm_state);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/true);
-        mpm_solver_.GpuSync();
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
         substep += 1;
       }
