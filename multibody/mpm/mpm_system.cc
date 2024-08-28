@@ -35,6 +35,10 @@ MpmSystem<T>::MpmSystem(const MultibodyPlant<double>& plant, T dx,
                                       &MpmSystem::CalcRigidForces)
           .get_index();
 
+  particles_output_port_ =
+      this->DeclareAbstractOutputPort("particles", &MpmSystem::CalcParticles)
+          .get_index();
+
   geometry_id_to_body_index_ = plant.geometry_id_to_body_index();
 }
 
@@ -92,6 +96,21 @@ void MpmSystem<T>::CalcRigidForces(
   const auto& mpm_state =
       context.get_abstract_state<internal::MpmDriver<T>>(mpm_state_index_);
   *output = mpm_state.rigid_forces();
+}
+
+template <typename T>
+void MpmSystem<T>::CalcParticles(const systems::Context<double>& context,
+                                 perception::PointCloud* output) const {
+  DRAKE_THROW_UNLESS(is_finalized_);
+  const auto& mpm_state =
+      context.get_abstract_state<internal::MpmDriver<T>>(mpm_state_index_);
+  const std::vector<Vector3<T>>& x = mpm_state.particles().x;
+  const int num_particles = ssize(x);
+  output->resize(num_particles, true);
+  Eigen::Ref<Matrix3X<float>> p_WPs = output->mutable_xyzs();
+  for (int i = 0; i < num_particles; ++i) {
+    p_WPs.col(i) = x[i].template cast<float>();
+  }
 }
 
 }  // namespace mpm

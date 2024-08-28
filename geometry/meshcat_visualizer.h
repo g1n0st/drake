@@ -114,6 +114,11 @@ class MeshcatVisualizer final : public systems::LeafSystem<T> {
     return this->get_input_port(query_object_input_port_);
   }
 
+  /** Returns the MPM particle input port. */
+  const systems::InputPort<T>& mpm_particles_input_port() const {
+    return this->get_input_port(mpm_particles_input_port_);
+  }
+
   /** Adds a MeshcatVisualizer and connects it to the given SceneGraph's
    QueryObject-valued output port. See
    MeshcatVisualizer::MeshcatVisualizer(MeshcatVisualizer*,
@@ -169,6 +174,9 @@ class MeshcatVisualizer final : public systems::LeafSystem<T> {
 
   /* The index of this System's QueryObject-valued input port. */
   int query_object_input_port_{};
+
+  /* The index of this System's pointcloud-valued input port. */
+  int mpm_particles_input_port_{};
 
   /* Meshcat is mutable because we must send messages (a non-const operation)
    from a const System (e.g. during simulation).  We use shared_ptr instead of

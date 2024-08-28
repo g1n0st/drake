@@ -48,6 +48,10 @@ MeshcatVisualizer<T>::MeshcatVisualizer(std::shared_ptr<Meshcat> meshcat,
       this->DeclareAbstractInputPort("query_object", Value<QueryObject<T>>())
           .get_index();
 
+  mpm_particles_input_port_ =
+      this->DeclareAbstractInputPort("mpm_particles", Value<perception::PointCloud>())
+          .get_index();
+
   if (params_.enable_alpha_slider) {
     alpha_value_ = params_.initial_alpha_slider_value;
     meshcat_->AddSlider(alpha_slider_name_, 0.02, 1.0, 0.02, alpha_value_);
@@ -145,6 +149,14 @@ systems::EventStatus MeshcatVisualizer<T>::UpdateMeshcat(
       SetAlphas(/* initializing = */ false);
     }
   }
+
+  // Update the MPM particles if the port is connected.
+  const auto& mpm_port = mpm_particles_input_port();
+  if (mpm_port.HasValue(context)) {
+    const perception::PointCloud& point_cloud = mpm_port.template Eval<perception::PointCloud>(context);
+    meshcat_->SetObject("particles", point_cloud);
+  }
+
   std::optional<double> rate = realtime_rate_calculator_.UpdateAndRecalculate(
       ExtractDoubleOrThrow(context.get_time()));
   if (rate) {

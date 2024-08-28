@@ -4,6 +4,7 @@
 
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/systems/framework/leaf_system.h"
+#include "drake/perception/point_cloud.h"
 
 namespace drake {
 namespace multibody {
@@ -19,6 +20,10 @@ class MpmSystem : public systems::LeafSystem<double> {
 
   const systems::OutputPort<double>& rigid_forces_output_port() const {
     return this->get_output_port(rigid_forces_output_port_);
+  }
+
+  const systems::OutputPort<double>& particles_output_port() const {
+    return this->get_output_port(particles_output_port_);
   }
 
   const systems::InputPort<double>& query_object_input_port() const {
@@ -54,12 +59,16 @@ class MpmSystem : public systems::LeafSystem<double> {
       const systems::Context<double>& context,
       std::vector<ExternallyAppliedSpatialForce<double>>* output) const;
 
+  void CalcParticles(const systems::Context<double>& context,
+                     perception::PointCloud* output) const;
+
   internal::MpmDriver<T> blueprint_;
   systems::AbstractStateIndex mpm_state_index_;
   systems::InputPortIndex query_object_input_port_;
   systems::InputPortIndex spatial_velocities_input_port_;
   systems::InputPortIndex poses_input_port_;
   systems::OutputPortIndex rigid_forces_output_port_;
+  systems::OutputPortIndex particles_output_port_;
   std::unordered_map<geometry::GeometryId, multibody::BodyIndex>
       geometry_id_to_body_index_;
   bool is_finalized_{false};

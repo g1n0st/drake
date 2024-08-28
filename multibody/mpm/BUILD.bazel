@@ -121,6 +121,7 @@ cc_library(
         "//common:parallelism",
         "//multibody/plant",
         "//systems/framework",
+        "//perception:point_cloud",
     ],
 )
 
@@ -279,6 +280,7 @@ cc_binary(
         ":mpm_system",
         ":particles_to_bgeo",
         "//geometry:drake_visualizer",
+        "//geometry:meshcat_visualizer",
         "//geometry:scene_graph",
         "//multibody/plant",
         "//systems/analysis:simulator",

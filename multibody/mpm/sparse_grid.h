@@ -65,6 +65,7 @@ struct GridData {
   Vector3<T> rigid_v{Vector3<T>::Zero()};
   T m{0.0};
   T mu{0.0};
+  T phi{0.0};
   int index{-1};
 };
 

@@ -19,6 +19,58 @@ namespace multibody {
 namespace mpm {
 namespace internal {
 
+/* Solves the contact problem for a single particle against a rigid body
+ assuming the rigid body has infinite mass and inertia.
+
+ Let phi be the penetration distance (positive when penetration occurs) and vn
+ be the relative velocity of the particle with respect to the rigid body in the
+normal direction (vn>0 when separting). Then we have phi_dot = -vn.
+
+In the normal direction, the contact force is modeled as a linear elastic system
+with Hunt-Crossley dissipation.
+
+  f = k * phi_+ * (1 + d * phi_dot)_+
+
+  where phi_+ = max(0, phi)
+
+The momentum balance in the normal direction becomes
+
+m(vn_next - vn) = k * dt * (phi0 - dt * vn_next)_+ * (1 - d * vn_next)_+
+
+where we used the fact that phi = phi0 - dt * vn_next. This is a quadratic
+equation in vn_next, and we solve it to get the next velocity vn_next.
+
+The quadratic equation is ax^2 + bx + c = 0, where
+
+a = k * d * dt^2
+b = -m - (k * dt * (dt + d * phi0))
+c = k * dt * phi0 + m * vn
+
+After solving for vn_next, we check if the friction force lies in the friction
+cone, if not, we project the velocity back into the friction cone. */
+template <typename T>
+class ContactForceSolver {
+ public:
+  ContactForceSolver(T dt, T k, T d) : dt_(dt), k_(k), d_(d) {}
+  // TODO(xuchenhan-tri): Take in the entire velocity vector and return the
+  // next velocity (vector) after treating friction.
+  T Solve(T m, T v0, T phi0) {
+    T v_hat = std::min(phi0 / dt_, 1 / d_);
+    if (v0 > v_hat) return v0;
+    T a = k_ * d_ * dt_ * dt_;
+    T b = -m - (k_ * dt_ * (dt_ + d_ * phi0));
+    T c = k_ * dt_ * phi0 + m * v0;
+    T discriminant = b * b - 4.0 * a * c;
+    T v_next = (-b - std::sqrt(discriminant)) / (2.0 * a);
+    return v_next;
+  }
+
+ private:
+  T dt_;
+  T k_;
+  T d_;
+};
+
 template <typename T>
 SparseGrid<T>::SparseGrid(T dx, Parallelism parallelism)
     : dx_(dx),
@@ -231,7 +283,7 @@ void SparseGrid<T>::RasterizeRigidData(
                 multibody::internal::GetCoulombFriction(
                     geometry_id, query_object.inspector());
             node_data.mu = coulomb_friction.dynamic_friction();
-
+            node_data.phi = -min_distance;
             const int body_index = geometry_id_to_body_index.at(geometry_id);
             node_data.index = body_index;
             node_data.nhat_W = min_val.grad_W.normalized().cast<T>();
@@ -259,6 +311,9 @@ void SparseGrid<T>::ExplicitVelocityUpdate(
   auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
   Array grid_data = allocator_->Get_Array();
   for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
+    const T kStiffness = 1e6;
+    const T kDamping = 10.0;
+    ContactForceSolver<T> solver(1e-3, kStiffness, kDamping);
     const uint64_t block_offset = block_offsets[b];
     uint64_t node_offset = block_offset;
     /* The coordinate of the origin of this block. */
@@ -280,15 +335,17 @@ void SparseGrid<T>::ExplicitVelocityUpdate(
               const Vector3<T> v_rel = node_data.v - node_data.rigid_v;
               const T& mu = node_data.mu;
               const T vn = v_rel.dot(nhat_W);
-              Vector3<T> vt = v_rel - vn * nhat_W;
-              if (vn < 0) {
+              const T& phi0 = node_data.phi;
+              const Vector3<T> vt = v_rel - vn * nhat_W;
+              const T vn_next = solver.Solve(m, vn, phi0);
+              if (vn != vn_next) {
                 const Vector3<T> old_v = node_data.v;
-                node_data.v -= vn * nhat_W;
-                if (-vn * mu < vt.norm()) {
-                  vt += vn * mu * vt.normalized();
-                  node_data.v = node_data.rigid_v + vt;
+                T dvn = vn_next - vn;
+                node_data.v += dvn * nhat_W;
+                if (dvn * mu < vt.norm()) {
+                  node_data.v -= dvn * mu * vt.normalized();
                 } else {
-                  node_data.v = node_data.rigid_v;
+                  node_data.v -= vt;
                 }
                 /* We negate the sign of the grid node's momentum change to get
                  the impulse applied to the rigid body at the grid node. */
