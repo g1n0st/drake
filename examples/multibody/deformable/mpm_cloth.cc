@@ -111,8 +111,8 @@ int do_main() {
   else if (FLAGS_testcase == 1) {
     for (int i = 0; i < 4; i++) {
       for (int j = 0; j < 4; j++) {
-        Capsule collision_object{0.03, 0.12};
-        const RigidTransformd X_WG_OBJ(Eigen::Vector3d{0.3 + i * 0.12, 0.3 + j * 0.12, 0.5});
+        Capsule collision_object{0.03, 0.02};
+        const RigidTransformd X_WG_OBJ(Eigen::Vector3d{0.3 + i * 0.12, 0.3 + j * 0.12, 0.05});
         plant.RegisterCollisionGeometry(plant.world_body(), X_WG_OBJ, collision_object, ("collision" + std::to_string(i) + std::to_string(j)).c_str(), rigid_proximity_props);
         plant.RegisterVisualGeometry(plant.world_body(), X_WG_OBJ, collision_object, ("collision_visual" + std::to_string(i) + std::to_string(j)).c_str(), std::move(illustration_props));
       }
