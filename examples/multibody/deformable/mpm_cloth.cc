@@ -97,13 +97,13 @@ int do_main() {
 
   /* Set up a ground. */
   Box ground{4, 4, 4};
-  const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2});
+  const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2 + 0.05});
   plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", rigid_proximity_props);
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   if (FLAGS_testcase == 0) {
     Box box{0.1, 0.1, 0.2};
-    const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.11});
+    const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.16});
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
   }
@@ -111,7 +111,7 @@ int do_main() {
     for (int i = 0; i < 4; i++) {
       for (int j = 0; j < 4; j++) {
         Capsule collision_object{0.03, 0.02};
-        const RigidTransformd X_WG_OBJ(Eigen::Vector3d{0.3 + i * 0.12, 0.3 + j * 0.12, 0.05});
+        const RigidTransformd X_WG_OBJ(Eigen::Vector3d{0.3 + i * 0.12, 0.3 + j * 0.12, 0.1});
         plant.RegisterCollisionGeometry(plant.world_body(), X_WG_OBJ, collision_object, ("collision" + std::to_string(i) + std::to_string(j)).c_str(), rigid_proximity_props);
         plant.RegisterVisualGeometry(plant.world_body(), X_WG_OBJ, collision_object, ("collision_visual" + std::to_string(i) + std::to_string(j)).c_str(), std::move(illustration_props));
       }
