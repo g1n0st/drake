@@ -29,7 +29,7 @@ DEFINE_double(time_step, 1e-3,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(substep, 1e-3,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
-DEFINE_string(contact_approximation, "sap",
+DEFINE_string(contact_approximation, "lagged",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
               "are: 'sap', 'lagged', and 'similar'.");
@@ -89,10 +89,9 @@ int do_main() {
    how fine the mesh used to represent the rigid collision geometry is. */
   ProximityProperties rigid_proximity_props;
   /* Set the friction coefficient close to that of rubber against rubber. */
-  const CoulombFriction<double> surface_friction(1.15, 1.15);
+  const CoulombFriction<double> surface_friction(1.0, 1.0);
+  AddCompliantHydroelasticProperties(1.0, 1e6, &rigid_proximity_props);
   AddContactMaterial({}, {}, surface_friction, &rigid_proximity_props);
-  rigid_proximity_props.AddProperty(geometry::internal::kHydroGroup,
-                                    geometry::internal::kRezHint, 0.01);
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
 
@@ -131,6 +130,18 @@ int do_main() {
                                    );
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
+  }
+  else if (FLAGS_testcase == 4) {
+    const double side_length = 0.10;
+    Box box(side_length, side_length, side_length);
+    /* density = 10 kg/m^3. */
+    const RigidBody<double>& box1 = plant.AddRigidBody(
+        "box1", SpatialInertia<double>::SolidBoxWithMass(
+                    1.0, side_length, side_length, side_length));
+    plant.RegisterCollisionGeometry(box1, RigidTransformd::Identity(), box,
+                                    "box1_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(box1, RigidTransformd::Identity(), box,
+                                "box1_visual", illustration_props);
   }
   else {
   }
@@ -200,6 +211,14 @@ int do_main() {
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
+
+  if (FLAGS_testcase == 4) {
+    const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.11});
+    const multibody::RigidBody<double>& box1 = plant.GetBodyByName("box1");
+    auto& plant_context =
+      plant.GetMyMutableContextFromRoot(diagram_context.get());
+    plant.SetFreeBodyPose(&plant_context, box1, X_WG_BOX);
+  }
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));
