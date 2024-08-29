@@ -134,10 +134,10 @@ int do_main() {
   else if (FLAGS_testcase == 4) {
     const double side_length = 0.10;
     Box box(side_length, side_length, side_length);
-    /* density = 10 kg/m^3. */
+    /* density = 1000 kg/m^3. */
     const RigidBody<double>& box1 = plant.AddRigidBody(
-        "box1", SpatialInertia<double>::SolidBoxWithMass(
-                    1.0, side_length, side_length, side_length));
+        "box1", SpatialInertia<double>::SolidBoxWithDensity(
+                    1000.0, side_length, side_length, side_length));
     plant.RegisterCollisionGeometry(box1, RigidTransformd::Identity(), box,
                                     "box1_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(box1, RigidTransformd::Identity(), box,
