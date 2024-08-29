@@ -18,6 +18,7 @@
 #include "drake/multibody/plant/discrete_contact_data.h"
 #include "drake/multibody/plant/discrete_contact_pair.h"
 #include "drake/systems/framework/context.h"
+#include "drake/geometry/geometry_state.h"
 
 // NOTE (changyu): GPU MPM solver header files
 #include "drake/multibody/contact_solvers/contact_solver_results.h"
@@ -135,7 +136,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       // NOTE (changyu): when access attributes in GpuMpmState,
       // always remember it is type GpuT and should be casted to type T explicitly.
       std::vector<geometry::SignedDistanceToPoint<T>> p_to_geometries =
-          query_object.ComputeSignedDistanceToPoint(mpm_state->positions_host()[p].template cast<T>());
+          query_object.geometry_state().ComputeSignedDistanceToPoint(
+            mpm_state->positions_host()[p].template cast<T>(), T(0));
       // identify those that are in contact, i.e. signed_distance < 0
       for (const auto& p2geometry : p_to_geometries) {
         if (p2geometry.distance < 0) {
@@ -145,7 +147,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           // i.e., if one mpm particle has multiple collision pairs, it will be treated as
           // multiple collision particles and get independent impulse dv for each constraint.
           // Not sure if it's worked.
+          #if defined(_OPENMP)
           #pragma omp critical
+          #endif
           {
             result->emplace_back(geometry::internal::MpmParticleContactPair<T>(
                 p, p2geometry.id_G, p2geometry.distance,
