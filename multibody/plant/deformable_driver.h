@@ -163,6 +163,29 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     printf("\033[32mcollision detection time=%lldms N(contacts)=%lu\033[0m\n", (after_ts - before_ts), result->size());
   }
 
+  void InitalizeExternalContactForces(const systems::Context<T>& context, 
+                       gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state) const {
+    mpm_state->external_forces_host().resize(manager_->plant().num_bodies());
+    for (size_t i = 0; i < mpm_state->external_forces_host().size(); ++i) {
+      mpm_state->external_forces_host()[i].p_BoBq_B = 
+        manager_->plant().EvalBodyPoseInWorld(
+          context, manager_->plant().get_body(BodyIndex(i))).translation()
+          .template cast<gmpm::config::GpuT>();
+      mpm_state->external_forces_host()[i].F_Bq_W_tau = Vector3<gmpm::config::GpuT>::Zero();
+      mpm_state->external_forces_host()[i].F_Bq_W_f = Vector3<gmpm::config::GpuT>::Zero();
+    }
+  }
+
+  void FinalizeExternalContactForces(gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, 
+                       const gmpm::config::GpuT &dt) const {
+    // Restore p_BoBq_B value and divide by dt to turn impulse into forces.
+    for (size_t i = 0; i < mpm_state->external_forces_host().size(); ++i) {
+      mpm_state->external_forces_host()[i].p_BoBq_B = Vector3<gmpm::config::GpuT>::Zero();
+      mpm_state->external_forces_host()[i].F_Bq_W_tau /= dt;
+      mpm_state->external_forces_host()[i].F_Bq_W_f /= dt;
+    }
+  }
+
   void UpdateContactDv(const systems::Context<T>& context, 
                        gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt) const {
     const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
@@ -180,7 +203,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 #endif
       for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
         mpm_state->contact_ids_host()[i] = static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index);
-        mpm_state->post_contact_dv_host()[i].setZero();
+        auto &dv = mpm_state->post_contact_dv_host()[i];
+        dv.setZero();
         const Vector3<GpuT>& nhat_W = -mpm_contact_pairs[i].normal.template cast<GpuT>();
         const Vector3<GpuT>& particle_v = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
         const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);
@@ -205,11 +229,28 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
         if (vn != vn_next) {
           GpuT dvn = vn_next - vn;
-          mpm_state->post_contact_dv_host()[i] += dvn * nhat_W;
+          dv += dvn * nhat_W;
           if (dvn * mu < vt.norm()) {
-            mpm_state->post_contact_dv_host()[i] -= dvn * mu * vt.normalized();
+            dv -= dvn * mu * vt.normalized();
           } else {
-            mpm_state->post_contact_dv_host()[i] -= vt;
+            dv -= vt;
+          }
+          /* We negate the sign of the grid node's momentum change to get
+                 the impulse applied to the rigid body at the grid node. */
+          const Vector3<GpuT> l_WN_W = (m * (-dv));
+          const Vector3<GpuT> p_WN = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
+          const Vector3<GpuT>& p_WB = mpm_state->external_forces_host()[index_rigid].p_BoBq_B;
+          const Vector3<GpuT> p_BN_W = p_WN - p_WB;
+          /* The angular impulse applied to the rigid body at the grid node. */
+          const Vector3<GpuT> h_WNBo_W = p_BN_W.cross(l_WN_W);
+          /* Use `F_Bq_W` to store the spatial impulse applied to the body
+            at its origin, expressed in the world frame. */
+          #if defined(_OPENMP)
+          #pragma omp critical
+          #endif
+          {
+            mpm_state->external_forces_host()[index_rigid].F_Bq_W_tau += h_WNBo_W;
+            mpm_state->external_forces_host()[index_rigid].F_Bq_W_f += l_WN_W;
           }
         }
       }
@@ -232,6 +273,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       GpuT dt_left = dt;
       int substep = 0;
       long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      InitalizeExternalContactForces(context, &mutable_mpm_state);
       while (dt_left > 0) {
         GpuT ddt = std::min(dt_left, substep_dt);
         dt_left -= ddt;
@@ -246,6 +288,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
         substep += 1;
       }
+      FinalizeExternalContactForces(&mutable_mpm_state, dt);
 
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();

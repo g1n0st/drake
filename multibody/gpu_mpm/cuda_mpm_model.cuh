@@ -15,6 +15,15 @@ namespace drake {
 namespace multibody {
 namespace gmpm {
 
+// NOTE (changyu): buffers used for aggregating substepping contact impulse to rigid bodies;
+template <typename T>
+struct ExternalSpatialForce {
+    Vec3<T> p_BoBq_B;
+    // a spatial force F from a torque 𝛕 (tau) and a force 𝐟.
+    Vec3<T> F_Bq_W_tau;
+    Vec3<T> F_Bq_W_f;
+};
+
 template <typename T>
 struct GpuMpmState {
 
@@ -112,6 +121,9 @@ public:
     std::vector<Vec3<T>>& post_contact_dv_host() { return h_post_contact_dv_; }
     const std::vector<Vec3<T>>& post_contact_dv_host() const { return h_post_contact_dv_; }
 
+    const std::vector<ExternalSpatialForce<T>>& external_forces_host() const { return h_external_forces_; }
+    std::vector<ExternalSpatialForce<T>>& external_forces_host() { return h_external_forces_; }
+
     void AddQRCloth(const std::vector<Vec3<T>> &pos, 
                            const std::vector<Vec3<T>> &vel,
                            const std::vector<int> &indices);
@@ -187,6 +199,8 @@ private:
     // host ptrs for post contact solving
     std::vector<int> h_contact_ids_;
     std::vector<Vec3<T>> h_post_contact_dv_;
+
+    std::vector<ExternalSpatialForce<T>> h_external_forces_;
 
     // Grid state device ptrs
 
