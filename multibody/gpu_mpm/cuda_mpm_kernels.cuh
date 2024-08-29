@@ -59,7 +59,7 @@ __global__ void initialize_fem_state_kernel(
 
         T D0xD1[3];
         cross_product3(D0, D1, D0xD1);
-        T volume_4 = norm<3>(D0xD1) / T(8.);
+        T volume_4 = norm<3>(D0xD1) / T(8.) * config::G_DX<T>;
 
         volumes[idx] += volume_4;
         atomicAdd(&volumes[v0], volume_4);
