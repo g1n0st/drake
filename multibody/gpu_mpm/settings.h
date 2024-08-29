@@ -70,24 +70,24 @@ namespace config {
 
 	// material parameters
 	template<class T> constexpr T YOUNGS_MODULUS;
-	template<> constexpr float YOUNGS_MODULUS<float> = 400.f;
-	template<> constexpr double YOUNGS_MODULUS<double> = 400.;
+	template<> constexpr float YOUNGS_MODULUS<float> = 400000.f;
+	template<> constexpr double YOUNGS_MODULUS<double> = 400000.;
 
 	template<class T> constexpr T POISSON_RATIO;
 	template<> constexpr float POISSON_RATIO<float> = .3f;
 	template<> constexpr double POISSON_RATIO<double> = .3;
 
 	template<class T> constexpr T DENSITY;
-	template<> constexpr float DENSITY<float> = 2.f;
-	template<> constexpr double DENSITY<double> = 2.;
+	template<> constexpr float DENSITY<float> = 2000.f;
+	template<> constexpr double DENSITY<double> = 2000.;
 
 	template<class T> constexpr T GAMMA;
 	template<> constexpr float GAMMA<float> = 0.f;
 	template<> constexpr double GAMMA<double> = 0.;
 
 	template<class T> constexpr T K;
-	template<> constexpr float K<float> = 100.f;
-	template<> constexpr double K<double> = 100.;
+	template<> constexpr float K<float> = 100000.f;
+	template<> constexpr double K<double> = 100000.;
 
 	template<class T> constexpr T V;
 	template<> constexpr float V<float> = .8f;
