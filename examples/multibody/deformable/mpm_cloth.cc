@@ -134,14 +134,32 @@ int do_main() {
   else if (FLAGS_testcase == 4) {
     const double side_length = 0.10;
     Box box(side_length, side_length, side_length);
-    /* density = 1000 kg/m^3. */
     const RigidBody<double>& box1 = plant.AddRigidBody(
         "box1", SpatialInertia<double>::SolidBoxWithDensity(
-                    1000.0, side_length, side_length, side_length));
+                    2000.0, side_length, side_length, side_length));
     plant.RegisterCollisionGeometry(box1, RigidTransformd::Identity(), box,
                                     "box1_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(box1, RigidTransformd::Identity(), box,
                                 "box1_visual", illustration_props);
+  }
+  else if (FLAGS_testcase == 5) {
+    const double side_length = 0.10;
+    Box box(side_length, side_length, side_length);
+    const RigidBody<double>& box1 = plant.AddRigidBody(
+        "box1", SpatialInertia<double>::SolidBoxWithDensity(
+                    5000.0, side_length, side_length, side_length));
+    plant.RegisterCollisionGeometry(box1, RigidTransformd::Identity(), box,
+                                    "box1_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(box1, RigidTransformd::Identity(), box,
+                                "box1_visual", illustration_props);
+    
+    const RigidBody<double>& box2 = plant.AddRigidBody(
+        "box2", SpatialInertia<double>::SolidBoxWithDensity(
+                    5000.0, side_length, side_length, side_length));
+    plant.RegisterCollisionGeometry(box2, RigidTransformd::Identity(), box,
+                                    "box2_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(box2, RigidTransformd::Identity(), box,
+                                "box2_visual", illustration_props);
   }
   else {
   }
@@ -165,7 +183,9 @@ int do_main() {
     std::vector<int> indices;
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx + k * 0.01, (0.5 - 0.5 * l) + j * dx + k * 0.01, FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
+        double z = FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1;
+        if (FLAGS_testcase == 5) z = 0.18;
+        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx + k * 0.01, (0.5 - 0.5 * l) + j * dx + k * 0.01, z);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }
@@ -218,6 +238,11 @@ int do_main() {
     auto& plant_context =
       plant.GetMyMutableContextFromRoot(diagram_context.get());
     plant.SetFreeBodyPose(&plant_context, box1, X_WG_BOX);
+  }
+  if (FLAGS_testcase == 5) {
+    auto& plant_context = plant.GetMyMutableContextFromRoot(diagram_context.get());
+    plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box1"), RigidTransformd(Eigen::Vector3d{0.5, 0.5, 0.11}));
+    plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box2"), RigidTransformd(Eigen::Vector3d{0.5, 0.5, 0.26}));
   }
 
   /* Build the simulator and run! */
