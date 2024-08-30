@@ -46,27 +46,13 @@ template <typename T>
 struct GridData {
   void set_zero() {
     v.setZero();
-    nhat_W.setZero();
-    rigid_v.setZero();
-    m = 0.0;
-    mu = 0.0;
-    index = -1;
-  }
-
-  void reset_mass_and_velocity() {
-    v.setZero();
     m = 0.0;
   }
 
   bool operator==(const GridData<T>& other) const = default;
 
   Vector3<T> v{Vector3<T>::Zero()};
-  Vector3<T> nhat_W{Vector3<T>::Zero()};
-  Vector3<T> rigid_v{Vector3<T>::Zero()};
   T m{0.0};
-  T mu{0.0};
-  T phi{0.0};
-  int index{-1};
 };
 
 /* A Pad is a 3x3x3 subgrid around a particle.
@@ -165,13 +151,6 @@ class SparseGrid {
     }
     result->padded_blocks_->Update_Block_Offsets();
 
-    result->doubly_padded_blocks_->Clear();
-    std::tie(block_offsets, num_blocks) = doubly_padded_blocks_->Get_Blocks();
-    for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
-      result->doubly_padded_blocks_->Set_Page(block_offsets[b]);
-    }
-    result->doubly_padded_blocks_->Update_Block_Offsets();
-
     /* Now we copy over the grid data. The blocks touched by `blocks_` is a
      subset of blocks touched by `padded_blocks_`. */
     auto [result_block_offsets, result_num_blocks] =
@@ -190,20 +169,6 @@ class SparseGrid {
       }
     }
 
-    /* Finally we copy over the data touched by `doubly_padded_blocks_` that may
-     include additional data. */
-    std::tie(block_offsets, num_blocks) = doubly_padded_blocks_->Get_Blocks();
-    std::tie(result_block_offsets, result_num_blocks) =
-        result->doubly_padded_blocks_->Get_Blocks();
-    DRAKE_DEMAND(result_num_blocks == num_blocks);
-    for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
-      const uint64_t offset = block_offsets[b];
-      DRAKE_DEMAND(offset == result_block_offsets[b]);
-      for (uint64_t i = 0; i < page_size; i += data_size) {
-        to_data(offset + i) = from_data(offset + i);
-      }
-    }
-
     return result;
   }
 
@@ -214,7 +179,6 @@ class SparseGrid {
    "offset" of their base nodes. In the process, it builds `sentinel_particles`
    and `particle_indices` (see corresponding accessors below). */
   void Allocate(const std::vector<Vector3<T>>& q_WPs);
-  void AllocateForCollision(const std::vector<Vector3<T>>& q_WPs);
 
   /* All but last entry store indices of particles marking the boundary of a new
    block. The last entry stores the number of particles. This always has size
@@ -254,28 +218,14 @@ class SparseGrid {
   void SetPadData(uint64_t center_node_offset,
                   const Pad<GridData<T>>& pad_data);
 
-  /* Transfers rigid body data to the grid nodes that intersect with rigid
-   geometries. */
-  void RasterizeRigidData(
-      const geometry::QueryObject<double>& query_object,
-      const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
-      const std::vector<math::RigidTransform<double>>& poses,
-      const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
-          geometry_id_to_body_index,
-      std::vector<multibody::ExternallyAppliedSpatialForce<double>>*
-          rigid_forces);
-
   /* For each active grid node, divide by the grid node mass to convert the
    momentum to velocity and then increment the velocity by dv.
    Also apply boundary conditions along the way.
    @pre the grid data stores momentum of the node, not velocity. */
-  void ExplicitVelocityUpdate(
-      const Vector3<T>& dv,
-      std::vector<multibody::ExternallyAppliedSpatialForce<double>>*
-          rigid_forces);
+  void ExplicitVelocityUpdate(const Vector3<T>& dv);
 
-  /* Returns the offset (1D index) of a grid node given its 3D grid coordinates
-   in world space. */
+  /* Returns the offset (1D index) of a grid node given its 3D grid
+   coordinates in world space. */
   uint64_t CoordinateToOffset(int x, int y, int z) const {
     const uint64_t world_space_offset = Mask::Linear_Offset(x, y, z);
     return Mask::Packed_Add(world_space_offset, origin_offset_);
@@ -367,8 +317,6 @@ class SparseGrid {
   /* Blocks containing all active grid nodes. These are the blocks that are
    actually allocated. */
   std::unique_ptr<PageMap> padded_blocks_;
-  /* Blocks for all grid nodes for which we test for boundary conditions. */
-  std::unique_ptr<PageMap> doubly_padded_blocks_;
 
   // TODO(xuchenhan-tri): Allow moving the maximumly allowed grid around the
   // center of the objects so that the grid can be accommodated to the objects

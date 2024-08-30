@@ -1,5 +1,7 @@
 #include "sparse_grid.h"
 
+#include <bitset>
+#include <iostream>
 #include <utility>
 
 #include "ips2ra/ips2ra.hpp"
@@ -10,7 +12,6 @@
 #include <omp.h>
 #endif
 
-using drake::geometry::ProximityProperties;
 using drake::geometry::SignedDistanceToPoint;
 using Eigen::Vector3d;
 
@@ -19,58 +20,6 @@ namespace multibody {
 namespace mpm {
 namespace internal {
 
-/* Solves the contact problem for a single particle against a rigid body
- assuming the rigid body has infinite mass and inertia.
-
- Let phi be the penetration distance (positive when penetration occurs) and vn
- be the relative velocity of the particle with respect to the rigid body in the
-normal direction (vn>0 when separting). Then we have phi_dot = -vn.
-
-In the normal direction, the contact force is modeled as a linear elastic system
-with Hunt-Crossley dissipation.
-
-  f = k * phi_+ * (1 + d * phi_dot)_+
-
-  where phi_+ = max(0, phi)
-
-The momentum balance in the normal direction becomes
-
-m(vn_next - vn) = k * dt * (phi0 - dt * vn_next)_+ * (1 - d * vn_next)_+
-
-where we used the fact that phi = phi0 - dt * vn_next. This is a quadratic
-equation in vn_next, and we solve it to get the next velocity vn_next.
-
-The quadratic equation is ax^2 + bx + c = 0, where
-
-a = k * d * dt^2
-b = -m - (k * dt * (dt + d * phi0))
-c = k * dt * phi0 + m * vn
-
-After solving for vn_next, we check if the friction force lies in the friction
-cone, if not, we project the velocity back into the friction cone. */
-template <typename T>
-class ContactForceSolver {
- public:
-  ContactForceSolver(T dt, T k, T d) : dt_(dt), k_(k), d_(d) {}
-  // TODO(xuchenhan-tri): Take in the entire velocity vector and return the
-  // next velocity (vector) after treating friction.
-  T Solve(T m, T v0, T phi0) {
-    T v_hat = std::min(phi0 / dt_, 1 / d_);
-    if (v0 > v_hat) return v0;
-    T a = k_ * d_ * dt_ * dt_;
-    T b = -m - (k_ * dt_ * (dt_ + d_ * phi0));
-    T c = k_ * dt_ * phi0 + m * v0;
-    T discriminant = b * b - 4.0 * a * c;
-    T v_next = (-b - std::sqrt(discriminant)) / (2.0 * a);
-    return v_next;
-  }
-
- private:
-  T dt_;
-  T k_;
-  T d_;
-};
-
 template <typename T>
 SparseGrid<T>::SparseGrid(T dx, Parallelism parallelism)
     : dx_(dx),
@@ -78,7 +27,6 @@ SparseGrid<T>::SparseGrid(T dx, Parallelism parallelism)
                                              kMaxGridSize)),
       blocks_(std::make_unique<PageMap>(*allocator_)),
       padded_blocks_(std::make_unique<PageMap>(*allocator_)),
-      doubly_padded_blocks_(std::make_unique<PageMap>(*allocator_)),
       parallelism_(parallelism) {
   DRAKE_DEMAND(dx > 0);
 
@@ -144,37 +92,6 @@ void SparseGrid<T>::Allocate(const std::vector<Vector3<T>>& q_WPs) {
   for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
     const uint64_t offset = block_offsets[b];
     for (uint64_t i = 0; i < page_size; i += data_size) {
-      data(offset + i).reset_mass_and_velocity();
-    }
-  }
-}
-
-template <typename T>
-void SparseGrid<T>::AllocateForCollision(const std::vector<Vector3<T>>& q_WPs) {
-  Allocate(q_WPs);
-  auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
-  /* Touch all neighboring blocks of each block in `padded_blocks_`. */
-  for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
-    const uint64_t current_offset = block_offsets[b];
-    for (int i = 0; i < 3; ++i) {
-      for (int j = 0; j < 3; ++j) {
-        for (int k = 0; k < 3; ++k) {
-          const uint64_t neighbor_block_offset =
-              Mask::Packed_Add(current_offset, block_offset_strides_[i][j][k]);
-          doubly_padded_blocks_->Set_Page(neighbor_block_offset);
-        }
-      }
-    }
-  }
-  doubly_padded_blocks_->Update_Block_Offsets();
-  std::tie(block_offsets, num_blocks) = doubly_padded_blocks_->Get_Blocks();
-  Array data = allocator_->Get_Array();
-  const uint64_t page_size = 1 << kLog2Page;
-  const uint64_t data_size = 1 << kDataBits;
-  /* Zero out the data in each block. */
-  for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
-    const uint64_t offset = block_offsets[b];
-    for (uint64_t i = 0; i < page_size; i += data_size) {
       data(offset + i).set_zero();
     }
   }
@@ -227,97 +144,14 @@ void SparseGrid<T>::SetPadData(uint64_t center_node_offset,
 }
 
 template <typename T>
-void SparseGrid<T>::RasterizeRigidData(
-    const geometry::QueryObject<double>& query_object,
-    const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
-    const std::vector<math::RigidTransform<double>>& poses,
-    const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
-        geometry_id_to_body_index,
-    std::vector<multibody::ExternallyAppliedSpatialForce<double>>*
-        rigid_forces) {
-  DRAKE_DEMAND(rigid_forces != nullptr);
-  DRAKE_DEMAND(spatial_velocities.size() == poses.size());
-  rigid_forces->resize(spatial_velocities.size());
-  for (int i = 0; i < ssize(*rigid_forces); ++i) {
-    auto& force = (*rigid_forces)[i];
-    force.body_index = BodyIndex(i);
-    /* We use `p_BoBq_B` to temporarily store p_WB. We will replace it with the
-     actual value of p_BoBq_B later on. */
-    force.p_BoBq_B = poses[i].translation();
-    force.F_Bq_W = SpatialForce<double>(Vector3d::Zero(), Vector3d::Zero());
-  }
-  const uint64_t data_size = 1 << kDataBits;
-  auto [block_offsets, num_blocks] = doubly_padded_blocks_->Get_Blocks();
-  Array grid_data = allocator_->Get_Array();
-  for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
-    const uint64_t block_offset = block_offsets[b];
-    uint64_t node_offset = block_offset;
-    /* The coordinate of the origin of this block. */
-    const Vector3<int> block_origin = OffsetToCoordinate(block_offset);
-    for (int i = 0; i < kNumNodesInBlockX; ++i) {
-      for (int j = 0; j < kNumNodesInBlockY; ++j) {
-        for (int k = 0; k < kNumNodesInBlockZ; ++k) {
-          GridData<T>& node_data = grid_data(node_offset);
-          node_offset += data_size;
-          /* World frame position of the node. */
-          const Vector3<T> p_WN =
-              (block_origin + Vector3<int>(i, j, k)).cast<T>() * dx_;
-          const std::vector<SignedDistanceToPoint<double>>& signed_distances =
-              query_object.ComputeSignedDistanceToPoint(
-                  p_WN.template cast<double>());
-          double min_distance = 0.0;
-          int geometry_index = -1;
-          for (int g = 0; g < ssize(signed_distances); ++g) {
-            const SignedDistanceToPoint<double>& signed_distance =
-                signed_distances[g];
-            if (signed_distance.distance < min_distance) {
-              min_distance = signed_distance.distance;
-              geometry_index = g;
-            }
-          }
-          if (min_distance < 0.0) {
-            const SignedDistanceToPoint<double>& min_val =
-                signed_distances[geometry_index];
-            const geometry::GeometryId geometry_id = min_val.id_G;
-            const CoulombFriction<double>& coulomb_friction =
-                multibody::internal::GetCoulombFriction(
-                    geometry_id, query_object.inspector());
-            node_data.mu = coulomb_friction.dynamic_friction();
-            node_data.phi = -min_distance;
-            const int body_index = geometry_id_to_body_index.at(geometry_id);
-            node_data.index = body_index;
-            node_data.nhat_W = min_val.grad_W.normalized().cast<T>();
-            /* World frame position of the origin of the rigid body. */
-            const Vector3<double>& p_WR = poses[body_index].translation();
-            const Vector3<double> p_RN = p_WN.template cast<double>() - p_WR;
-            /* World frame velocity of a point affixed to the rigid body that
-             coincide with the the grid node. */
-            const Vector3<double> v_WN =
-                spatial_velocities[body_index].Shift(p_RN).translational();
-            node_data.rigid_v = v_WN.cast<T>();
-          }
-        }
-      }
-    }
-  }
-}
-
-template <typename T>
-void SparseGrid<T>::ExplicitVelocityUpdate(
-    const Vector3<T>& dv,
-    std::vector<multibody::ExternallyAppliedSpatialForce<double>>*
-        rigid_forces) {
+void SparseGrid<T>::ExplicitVelocityUpdate(const Vector3<T>& dv) {
   const uint64_t data_size = 1 << kDataBits;
   auto [block_offsets, num_blocks] = padded_blocks_->Get_Blocks();
   Array grid_data = allocator_->Get_Array();
   for (int b = 0; b < static_cast<int>(num_blocks); ++b) {
-    const T kStiffness = 1e6;
-    const T kDamping = 10.0;
-    ContactForceSolver<T> solver(1e-3, kStiffness, kDamping);
     const uint64_t block_offset = block_offsets[b];
     uint64_t node_offset = block_offset;
     /* The coordinate of the origin of this block. */
-    const Vector3<int> block_origin = OffsetToCoordinate(block_offset);
     for (int i = 0; i < kNumNodesInBlockX; ++i) {
       for (int j = 0; j < kNumNodesInBlockY; ++j) {
         for (int k = 0; k < kNumNodesInBlockZ; ++k) {
@@ -327,44 +161,6 @@ void SparseGrid<T>::ExplicitVelocityUpdate(
           if (m > 0.0) {
             node_data.v /= m;
             node_data.v += dv;
-            if (node_data.index >= 0) {
-              // TODO(xuchenhan-tri): Consider the friction coefficient of
-              // particles. Currently, we are using the friction coefficient of
-              // the rigid body as the combined friction coefficient.
-              const Vector3<T>& nhat_W = node_data.nhat_W;
-              const Vector3<T> v_rel = node_data.v - node_data.rigid_v;
-              const T& mu = node_data.mu;
-              const T vn = v_rel.dot(nhat_W);
-              const T& phi0 = node_data.phi;
-              const Vector3<T> vt = v_rel - vn * nhat_W;
-              const T vn_next = solver.Solve(m, vn, phi0);
-              if (vn != vn_next) {
-                const Vector3<T> old_v = node_data.v;
-                T dvn = vn_next - vn;
-                node_data.v += dvn * nhat_W;
-                if (dvn * mu < vt.norm()) {
-                  node_data.v -= dvn * mu * vt.normalized();
-                } else {
-                  node_data.v -= vt;
-                }
-                /* We negate the sign of the grid node's momentum change to get
-                 the impulse applied to the rigid body at the grid node. */
-                const Vector3d l_WN_W =
-                    (m * (old_v - node_data.v)).template cast<double>();
-                const Vector3d p_WN =
-                    (block_origin + Vector3<int>(i, j, k)).cast<double>() * dx_;
-                const Vector3d& p_WB =
-                    rigid_forces->at(node_data.index).p_BoBq_B;
-                const Vector3d p_BN_W = p_WN - p_WB;
-                /* The angular impulse applied to the rigid body at the grid
-                 node. */
-                const Vector3d h_WNBo_W = p_BN_W.cross(l_WN_W);
-                /* Use `F_Bq_W` to store the spatial impulse applied to the body
-                 at its origin, expressed in the world frame. */
-                rigid_forces->at(node_data.index).F_Bq_W +=
-                    SpatialForce<double>(h_WNBo_W, l_WN_W);
-              }
-            }
           }
         }
       }

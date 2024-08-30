@@ -3,8 +3,8 @@
 #include "particles.h"
 #include "sparse_grid.h"
 
-#include "drake/common/parallelism.h"
 #include "drake/common/copyable_unique_ptr.h"
+#include "drake/common/parallelism.h"
 #include "drake/geometry/geometry_instance.h"
 #include "drake/multibody/fem/deformable_body_config.h"
 
@@ -42,6 +42,13 @@ class MpmDriver {
       int particles_per_cell, const fem::DeformableBodyConfig<T>& config);
 
   void AdvanceOneTimeStep(
+      const geometry::QueryObject<double>& query_object,
+      const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
+      const std::vector<math::RigidTransform<double>>& poses,
+      const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
+          geometry_id_to_body_index);
+
+  void UpdateContactForces(
       const geometry::QueryObject<double>& query_object,
       const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
       const std::vector<math::RigidTransform<double>>& poses,

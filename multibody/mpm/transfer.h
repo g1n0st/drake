@@ -69,7 +69,7 @@ class Transfer {
    course notes referenced in the class documentation. */
   T D_inverse_{0.0};
   T D_inverse_dt_{0.0};
-  T kApicRatio{0.0};
+  T kApicRatio{0.9};
 };
 
 }  // namespace internal

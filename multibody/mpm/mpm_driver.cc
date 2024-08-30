@@ -10,18 +10,75 @@
 #include "drake/math/rigid_transform.h"
 #include "drake/multibody/fem/corotated_model.h"
 #include "drake/multibody/mpm/poisson_disk.h"
+#include "drake/multibody/plant/contact_properties.h"
+#include "drake/multibody/plant/coulomb_friction.h"
 
 namespace drake {
 namespace multibody {
 namespace mpm {
 namespace internal {
+namespace {
+/* Solves the contact problem for a single particle against a rigid body
+ assuming the rigid body has infinite mass and inertia.
 
+ Let phi be the penetration distance (positive when penetration occurs) and vn
+ be the relative velocity of the particle with respect to the rigid body in the
+normal direction (vn>0 when separting). Then we have phi_dot = -vn.
+
+In the normal direction, the contact force is modeled as a linear elastic system
+with Hunt-Crossley dissipation.
+
+  f = k * phi_+ * (1 + d * phi_dot)_+
+
+  where phi_+ = max(0, phi)
+
+The momentum balance in the normal direction becomes
+
+m(vn_next - vn) = k * dt * (phi0 - dt * vn_next)_+ * (1 - d * vn_next)_+
+
+where we used the fact that phi = phi0 - dt * vn_next. This is a quadratic
+equation in vn_next, and we solve it to get the next velocity vn_next.
+
+The quadratic equation is ax^2 + bx + c = 0, where
+
+a = k * d * dt^2
+b = -m - (k * dt * (dt + d * phi0))
+c = k * dt * phi0 + m * vn
+
+After solving for vn_next, we check if the friction force lies in the friction
+cone, if not, we project the velocity back into the friction cone. */
+template <typename T>
+class ContactForceSolver {
+ public:
+  ContactForceSolver(T dt, T k, T d) : dt_(dt), k_(k), d_(d) {}
+  // TODO(xuchenhan-tri): Take in the entire velocity vector and return the
+  // next velocity (vector) after treating friction.
+  T Solve(T m, T v0, T phi0) {
+    T v_hat = std::min(phi0 / dt_, 1 / d_);
+    if (v0 > v_hat) return v0;
+    T a = k_ * d_ * dt_ * dt_;
+    T b = -m - (k_ * dt_ * (dt_ + d_ * phi0));
+    T c = k_ * dt_ * phi0 + m * v0;
+    T discriminant = b * b - 4.0 * a * c;
+    T v_next = (-b - std::sqrt(discriminant)) / (2.0 * a);
+    return v_next;
+  }
+
+ private:
+  T dt_;
+  T k_;
+  T d_;
+};
+}  // namespace
+
+using drake::geometry::SignedDistanceToPoint;
+using Eigen::Vector3d;
 using fem::DeformableBodyConfig;
+using geometry::Box;
 using geometry::GeometryInstance;
 using geometry::Shape;
 using geometry::ShapeReifier;
 using geometry::Sphere;
-using geometry::Box;
 using math::RigidTransform;
 
 class BoundingBoxCalculator : public ShapeReifier {
@@ -134,16 +191,25 @@ void MpmDriver<T>::AdvanceOneTimeStep(
     const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
         geometry_id_to_body_index) {
   rigid_forces_.resize(poses.size());
-  grid_->AllocateForCollision(particles_.x);
-  grid_->RasterizeRigidData(query_object, spatial_velocities, poses,
-                            geometry_id_to_body_index, &rigid_forces_);
+  for (int i = 0; i < ssize(rigid_forces_); ++i) {
+    /* We use `p_BoBq_B` to temporarily store p_WB. We will replace it with the
+     actual value of p_BoBq_B later on. */
+    auto& force = rigid_forces_[i];
+    force.body_index = BodyIndex(i);
+    force.p_BoBq_B = poses[i].translation();
+    force.F_Bq_W.SetZero();
+  }
   for (int i = 0; i < num_subteps_; ++i) {
     UpdateParticleStress();
+    /* Update particle's contact (and friction) momentum and accumulate the
+     opposite momentum in rigid_forces_. */
+    UpdateContactForces(query_object, spatial_velocities, poses,
+                        geometry_id_to_body_index);
     // Particle to grid transfer.
     Transfer<T> transfer(substep_dt_, grid_.get_mutable(), &particles_);
     transfer.ParallelSimdParticleToGrid(parallelism_);
     // Grid velocity update.
-    grid_->ExplicitVelocityUpdate(substep_dt_ * gravity_, &rigid_forces_);
+    grid_->ExplicitVelocityUpdate(Vector3<T>::Zero());
     // Grid to particle transfer.
     transfer.ParallelSimdGridToParticle(parallelism_);
   }
@@ -152,6 +218,76 @@ void MpmDriver<T>::AdvanceOneTimeStep(
     rigid_forces_[i].p_BoBq_B = Vector3<double>::Zero();
     rigid_forces_[i].F_Bq_W.rotational() /= dt_;
     rigid_forces_[i].F_Bq_W.translational() /= dt_;
+  }
+}
+
+template <typename T>
+void MpmDriver<T>::UpdateContactForces(
+    const geometry::QueryObject<double>& query_object,
+    const std::vector<multibody::SpatialVelocity<double>>& spatial_velocities,
+    const std::vector<math::RigidTransform<double>>& poses,
+    const std::unordered_map<geometry::GeometryId, multibody::BodyIndex>&
+        geometry_id_to_body_index) {
+  const double kStiffness = 1e6;
+  const double kDamping = 1.0;
+  const double substep_dt = dt_ / double(num_subteps_);
+  for (auto& v : particles_.v) {
+    v += gravity_.template cast<T>() * substep_dt;
+  }
+  ContactForceSolver<double> solver(substep_dt, kStiffness, kDamping);
+
+  // TODO(xuchenhan-tri): Run this in parallel. Be careful about the race
+  // condition.
+  for (int p = 0; p < ssize(particles_.m); ++p) {
+    const Vector3<double>& p_WP = particles_.x[p].template cast<double>();
+    const std::vector<SignedDistanceToPoint<double>>& signed_distances =
+        query_object.ComputeSignedDistanceToPoint(p_WP, 0.001);
+    for (const SignedDistanceToPoint<double>& sd : signed_distances) {
+      const double& phi = -sd.distance;
+      if (phi < 0) continue;
+      const int body_index = geometry_id_to_body_index.at(sd.id_G);
+      const CoulombFriction<double>& coulomb_friction =
+          multibody::internal::GetCoulombFriction(sd.id_G,
+                                                  query_object.inspector());
+      double mu = coulomb_friction.dynamic_friction();
+      const Vector3<double> nhat_W = sd.grad_W.normalized();
+      /* World frame position of the origin of the rigid body. */
+      const Vector3<double>& p_WR = poses[body_index].translation();
+      const Vector3<double> p_RP = p_WP - p_WR;
+      /* World frame velocity of a point affixed to the rigid body that
+       coincide with the particle. */
+      const Vector3<double> v_WRp =
+          spatial_velocities[body_index].Shift(p_RP).translational();
+      const Vector3<double> vc =
+          particles_.v[p].template cast<double>() - v_WRp;  // relative velocity
+      const double vn = vc.dot(nhat_W);
+      const double mp = particles_.m[p];
+      const double vn_next = solver.Solve(mp, vn, phi);
+      if (vn_next != vn) {
+        const Vector3<double> vt = vc - vn * nhat_W;
+        double dvn = vn_next - vn;
+        /* The velocity change at the particle. */
+        Vector3<double> dv = dvn * nhat_W;
+        if (dvn * mu < vt.norm()) {
+          dv -= dvn * mu * vt.normalized();
+        } else {
+          dv -= vt;
+        }
+        particles_.v[p] += dv.template cast<T>();
+        /* We negate the sign of the particles momentum change to get
+         the impulse applied to the rigid body at the grid node. */
+        const Vector3d l_WR_W = -mp * dv;
+        const Vector3d& p_WR = rigid_forces_.at(body_index).p_BoBq_B;
+        const Vector3d p_RP_W = p_WP - p_WR;
+        /* The angular impulse applied to the rigid body at the grid
+         node. */
+        const Vector3d h_WPRo_W = p_RP_W.cross(l_WR_W);
+        /* Use `F_Bq_W` to store the spatial impulse applied to the body
+         at its origin, expressed in the world frame. */
+        rigid_forces_.at(body_index).F_Bq_W +=
+            SpatialForce<double>(h_WPRo_W, l_WR_W);
+      }
+    }
   }
 }
 
