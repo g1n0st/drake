@@ -29,7 +29,7 @@ DEFINE_double(time_step, 1e-3,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(substep, 1e-3,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
-DEFINE_string(contact_approximation, "lagged",
+DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
               "are: 'sap', 'lagged', and 'similar'.");
