@@ -218,7 +218,19 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
             tree_topology.body_to_tree_index(index_rigid);
         Vector3<GpuT> rigid_v = Vector3<GpuT>::Zero();
         if (tree_index_rigid.is_valid()) {
-          rigid_v = v.segment(tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+          Matrix3X<T> Jv_v_WBc_W(3, manager_->plant().num_velocities());
+          const Body<T>& rigid_body = manager_->plant().get_body(index_rigid);
+          const Frame<T>& frame_W = manager_->plant().world_frame();
+          manager_->internal_tree().CalcJacobianTranslationalVelocity(
+              context, JacobianWrtVariable::kV, rigid_body.body_frame(), frame_W,
+              mpm_contact_pairs[i].particle_in_contact_position, frame_W, frame_W,
+              &Jv_v_WBc_W);
+          Matrix3X<GpuT> J_rigid =
+              Jv_v_WBc_W.middleCols(
+                  tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+                  tree_topology.num_tree_velocities(tree_index_rigid)).template cast<GpuT>();
+          rigid_v = J_rigid * 
+                      v.segment(tree_topology.tree_velocities_start_in_v(tree_index_rigid),
                               tree_topology.num_tree_velocities(tree_index_rigid))
                               .template cast<GpuT>();
         }
