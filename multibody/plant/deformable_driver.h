@@ -127,6 +127,10 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     result->clear();
     const geometry::QueryObject<T>& query_object =
         manager_->plant().get_geometry_query_input_port().template Eval<geometry::QueryObject<T>>(context);
+    
+    // NOTE (changyu): make sure the pose is up-to-date at the time performing the distance query.
+    query_object.FullPoseUpdate();
+
     // loop over each particle
 #if defined(_OPENMP)
 #pragma omp parallel for num_threads(16)
