@@ -20,7 +20,6 @@ struct MpmConfigParams {
     T contact_stiffness{static_cast<T>(1e5)};
     T contact_damping{static_cast<T>(0.0)};
     T contact_friction_mu{static_cast<T>(0.0)};
-    T use_predicted_contact{false};
 };
 
 // NOTE(changyu): `CpuMpmModel` is responsive to store the initial config in `DeformableModel`,
