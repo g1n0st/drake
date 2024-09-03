@@ -66,13 +66,13 @@ int do_main() {
   plant.RegisterVisualGeometry(box1, RigidTransformd::Identity(), box,
                                "box1_visual", illustration_props);
 
-  // const RigidBody<double>& box2 =
-  //     plant.AddRigidBody("box2", SpatialInertia<double>::SolidBoxWithDensity(
-  //                                    1000, side_length, side_length, side_length));
-  // plant.RegisterCollisionGeometry(box2, RigidTransformd::Identity(), box,
-  //                                 "box2_collision", rigid_proximity_props);
-  // plant.RegisterVisualGeometry(box2, RigidTransformd::Identity(), box,
-  //                              "box2_visual", illustration_props);
+  const RigidBody<double>& box2 =
+      plant.AddRigidBody("box2", SpatialInertia<double>::SolidBoxWithDensity(
+                                     1000, side_length, side_length, side_length));
+  plant.RegisterCollisionGeometry(box2, RigidTransformd::Identity(), box,
+                                  "box2_collision", rigid_proximity_props);
+  plant.RegisterVisualGeometry(box2, RigidTransformd::Identity(), box,
+                               "box2_visual", illustration_props);
 
   /* Set up a ground. */
   Box ground{4, 4, 4};
@@ -101,13 +101,13 @@ int do_main() {
   body_config.set_mass_density(2000);
   mpm->SampleParticles(std::move(mpm_box1), 8, body_config);
 
-  // math::RigidTransform<double> X_WB2(Vector3d(0, 0, 3.5 * side_length));
-  // auto mpm_box2 =
-  //     std::make_unique<geometry::GeometryInstance>(X_WB2, box, "mpm_box2");
-  // body_config.set_youngs_modulus(1e4);
-  // body_config.set_yield_stress(2.5e7);
-  // body_config.set_mass_density(1000);
-  // mpm->SampleParticles(std::move(mpm_box2), 8, body_config);
+  math::RigidTransform<double> X_WB2(Vector3d(0, 0, 3.5 * side_length));
+  auto mpm_box2 =
+      std::make_unique<geometry::GeometryInstance>(X_WB2, box, "mpm_box2");
+  body_config.set_youngs_modulus(1e4);
+  body_config.set_yield_stress(2.5e7);
+  body_config.set_mass_density(1000);
+  mpm->SampleParticles(std::move(mpm_box2), 8, body_config);
 
   mpm->Finalize();
 
@@ -134,8 +134,8 @@ int do_main() {
       plant.GetMyMutableContextFromRoot(diagram_context.get());
   plant.SetFreeBodyPose(&plant_context, box1,
                         RigidTransformd(Vector3d(0, 0, 0.5 * side_length)));
-  // plant.SetFreeBodyPose(&plant_context, box2,
-  //                       RigidTransformd(Vector3d(0, 0.0, 2.5 * side_length)));
+  plant.SetFreeBodyPose(&plant_context, box2,
+                        RigidTransformd(Vector3d(0, 0.0, 2.5 * side_length)));
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));

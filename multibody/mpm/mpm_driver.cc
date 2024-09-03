@@ -268,11 +268,17 @@ void MpmDriver<T>::UpdateContactForces(
         double dvn = vn_next - vn;
         /* The velocity change at the particle. */
         Vector3<double> dv = dvn * nhat_W;
-        if (dvn * mu < vt.norm()) {
-          dv -= dvn * mu * vt.normalized();
-        } else {
-          dv -= vt;
+        const double vt_norm = vt.norm();
+        /* Safely normalize the tangent vector. */
+        Vector3<double> vt_hat = Vector3<double>::Zero();
+        if (vt_norm > 1e-10) {
+          vt_hat = vt / vt_norm;
         }
+        /* kf is the slope of the regulated friction in stiction. Larger kf
+         resolves static friction better, but is less numerically stable. */
+        const double kf = 10.0;
+        dv -= std::min(dvn * mu, kf * vt_norm) * vt_hat;
+
         particles_.v[p] += dv.template cast<T>();
         /* We negate the sign of the particles momentum change to get
          the impulse applied to the rigid body at the grid node. */

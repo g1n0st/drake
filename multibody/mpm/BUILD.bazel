@@ -275,7 +275,6 @@ drake_py_experiment_binary(
 cc_binary(
     name = "driver_test",
     srcs = ["driver_test.cc"],
-    # copts = ["-march=native"],
     deps = [
         ":mpm_system",
         ":particles_to_bgeo",
@@ -286,6 +285,32 @@ cc_binary(
         "//systems/analysis:simulator",
         "//systems/framework:diagram",
     ]
+)
+
+filegroup(
+    name = "models",
+    srcs = glob(["models/**"]),
+    visibility = ["//:__pkg__"],
+)
+
+cc_binary(
+    name = "grasping_test",
+    srcs = ["grasping_test.cc"],
+    deps = [
+        ":mpm_system",
+        ":particles_to_bgeo",
+        "//geometry:drake_visualizer",
+        "//geometry:meshcat_visualizer",
+        "//geometry:scene_graph",
+        "//multibody/plant",
+        "//systems/analysis:simulator",
+        "//systems/framework:diagram",
+        "//multibody/parsing",
+        "//examples/multibody/deformable:parallel_gripper_controller",
+    ],
+    data = [
+        ":models",
+    ],
 )
 
 # add_lint_tests()
