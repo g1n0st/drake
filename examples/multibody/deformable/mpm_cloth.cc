@@ -88,17 +88,20 @@ int do_main() {
    queries can be performed against deformable geometries.) The value dictates
    how fine the mesh used to represent the rigid collision geometry is. */
   ProximityProperties rigid_proximity_props;
+  ProximityProperties ground_proximity_props;
   /* Set the friction coefficient close to that of rubber against rubber. */
   const CoulombFriction<double> surface_friction(1.0, 1.0);
-  AddCompliantHydroelasticProperties(1.0, 1e6, &rigid_proximity_props);
+  AddCompliantHydroelasticProperties(1.0, 2e5, &rigid_proximity_props);
+  AddRigidHydroelasticProperties(1.0, &ground_proximity_props);
   AddContactMaterial({}, {}, surface_friction, &rigid_proximity_props);
+  AddContactMaterial({}, {}, surface_friction, &ground_proximity_props);
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
 
   /* Set up a ground. */
   Box ground{4, 4, 4};
   const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2 + 0.05});
-  plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", rigid_proximity_props);
+  plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", ground_proximity_props);
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   if (FLAGS_testcase == 0) {
