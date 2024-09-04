@@ -38,6 +38,7 @@ DEFINE_double(damping, 1e-5,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
 
+using drake::examples::deformable::ParallelGripperController;
 using drake::geometry::AddContactMaterial;
 using drake::geometry::Box;
 using drake::geometry::Sphere;
@@ -71,6 +72,36 @@ namespace drake {
 namespace examples {
 namespace {
 
+/* Adds a parallel gripper to the given MultibodyPlant and assign
+ `proximity_props` to all the registered collision geometries. Returns the
+ ModelInstanceIndex of the gripper model. */
+ModelInstanceIndex AddParallelGripper(
+    MultibodyPlant<double>* plant, const ProximityProperties& proximity_props) {
+  // TODO(xuchenhan-tri): Consider using a schunk gripper from the manipulation
+  // station instead.
+  Parser parser(plant);
+  ModelInstanceIndex model_instance = parser.AddModelsFromUrl(
+      "package://drake/examples/multibody/deformable/models/simple_gripper.sdf")[0];
+  /* Add collision geometries. */
+  const RigidTransformd X_BG = RigidTransformd(math::RollPitchYawd(M_PI_2, 0, 0), Vector3d::Zero());
+  const RigidBody<double>& left_finger = plant->GetBodyByName("left_finger");
+  const RigidBody<double>& right_finger = plant->GetBodyByName("right_finger");
+  /* The size of the fingers is set to match the visual geometries in
+   simple_gripper.sdf. */
+  Capsule capsule(0.01, 0.08);
+  plant->RegisterCollisionGeometry(left_finger, X_BG, capsule, "left_finger_collision", proximity_props);
+  plant->RegisterCollisionGeometry(right_finger, X_BG, capsule, "right_finger_collision", proximity_props);
+  /* Get joints so that we can set initial conditions. */
+  PrismaticJoint<double>& left_slider = plant->GetMutableJointByName<PrismaticJoint>("left_slider");
+  PrismaticJoint<double>& right_slider = plant->GetMutableJointByName<PrismaticJoint>("right_slider");
+  /* Initialize the gripper in an "open" position. */
+  const double kInitialWidth = 0.085;
+  left_slider.set_default_translation(-kInitialWidth / 2.0);
+  right_slider.set_default_translation(kInitialWidth / 2.0);
+
+  return model_instance;
+}
+
 int do_main() {
   systems::DiagramBuilder<double> builder;
 
@@ -97,17 +128,6 @@ int do_main() {
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
 
-  /* Set up a ground. */
-  Box ground{4, 4, 4};
-  const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2 + 0.05});
-  plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", ground_proximity_props);
-  plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
-
-  Sphere ball{0.05};
-  const RigidTransformd X_WG_BALL(Eigen::Vector3d{0.5, 0.5, 0.21});
-  plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BALL, ball, "ball_collision", rigid_proximity_props);
-  plant.RegisterVisualGeometry(plant.world_body(), X_WG_BALL, ball, "ball_visual", std::move(illustration_props));
-
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
 
   const int res = FLAGS_res;
@@ -126,7 +146,7 @@ int do_main() {
     std::vector<int> indices;
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, 0.3);
+        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, 0.12);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }
@@ -156,6 +176,8 @@ int do_main() {
   mpm_config.contact_friction_mu = FLAGS_friction;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
+  ModelInstanceIndex gripper_instance = AddParallelGripper(&plant, rigid_proximity_props);
+
   /* All rigid and deformable models have been added. Finalize the plant. */
   plant.Finalize();
 
@@ -168,6 +190,16 @@ int do_main() {
   builder.Connect(plant.get_output_port(
     plant.deformable_model().mpm_output_port_index()), 
     visualizer.mpm_input_port());
+
+  /* Set the width between the fingers for open and closed states as well as
+     the height to which the gripper lifts the deformable torus. */
+    const double kL = 0.09 * 0.65;
+    const double kOpenWidth = kL * 1.5;
+    const double kClosedWidth = 0;
+    const double kLiftedHeight = 0.18;
+    const auto& control = *builder.AddSystem<ParallelGripperController>(
+        kOpenWidth, kClosedWidth, kLiftedHeight);
+    builder.Connect(control.get_output_port(), plant.get_desired_state_input_port(gripper_instance));
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
