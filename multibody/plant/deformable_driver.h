@@ -240,17 +240,23 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         const GpuT vn = v_rel.dot(nhat_W);
         const GpuT phi0 = -static_cast<T>(mpm_contact_pairs[i].penetration_distance);
 
-        const Vector3<GpuT> vt = v_rel - vn * nhat_W;
         const GpuT vn_next = solver.Solve(m, vn, phi0);
 
         if (vn != vn_next) {
           GpuT dvn = vn_next - vn;
           dv += dvn * nhat_W;
-          if (dvn * mu < vt.norm()) {
-            dv -= dvn * mu * vt.normalized();
-          } else {
-            dv -= vt;
+
+          const Vector3<GpuT> vt = v_rel - vn * nhat_W;
+          const GpuT vt_norm = vt.norm();
+          /* Safely normalize the tangent vector. */
+          Vector3<GpuT> vt_hat = Vector3<GpuT>::Zero();
+          if (vt_norm > GpuT(1e-10)) {
+            vt_hat = vt / vt_norm;
           }
+          /* kf is the slope of the regulated friction in stiction. Larger kf
+          resolves static friction better, but is less numerically stable. */
+          const GpuT kf = GpuT(10.0);
+          dv -= std::min(dvn * mu, kf * vt_norm) * vt_hat;
           /* We negate the sign of the grid node's momentum change to get
                  the impulse applied to the rigid body at the grid node. */
           const Vector3<GpuT> l_WN_W = (m * (-dv));
