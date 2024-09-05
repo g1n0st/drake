@@ -72,22 +72,35 @@ namespace drake {
 namespace examples {
 namespace {
 
-class MyGripperController : public systems::LeafSystem<double> {
- public:
-  MyGripperController() {
-    this->DeclareVectorOutputPort("desired state", BasicVector<double>(6),
-                                   &MyGripperController::CalcDesiredState);
-  }
+/* Adds a parallel gripper to the given MultibodyPlant and assign
+ `proximity_props` to all the registered collision geometries. Returns the
+ ModelInstanceIndex of the gripper model. */
+ModelInstanceIndex AddParallelGripper(
+    MultibodyPlant<double>* plant, const ProximityProperties& proximity_props) {
+  // TODO(xuchenhan-tri): Consider using a schunk gripper from the manipulation
+  // station instead.
+  Parser parser(plant);
+  ModelInstanceIndex model_instance = parser.AddModelsFromUrl(
+      "package://drake/examples/multibody/deformable/models/simple_gripper.sdf")[0];
+  /* Add collision geometries. */
+  const RigidTransformd X_BG = RigidTransformd(math::RollPitchYawd(M_PI_2, 0, 0), Vector3d::Zero());
+  const RigidBody<double>& left_finger = plant->GetBodyByName("left_finger");
+  const RigidBody<double>& right_finger = plant->GetBodyByName("right_finger");
+  /* The size of the fingers is set to match the visual geometries in
+   simple_gripper.sdf. */
+  Capsule capsule(0.01, 0.08);
+  plant->RegisterCollisionGeometry(left_finger, X_BG, capsule, "left_finger_collision", proximity_props);
+  plant->RegisterCollisionGeometry(right_finger, X_BG, capsule, "right_finger_collision", proximity_props);
+  /* Get joints so that we can set initial conditions. */
+  PrismaticJoint<double>& left_slider = plant->GetMutableJointByName<PrismaticJoint>("left_slider");
+  PrismaticJoint<double>& right_slider = plant->GetMutableJointByName<PrismaticJoint>("right_slider");
+  /* Initialize the gripper in an "open" position. */
+  const double kInitialWidth = 0.085;
+  left_slider.set_default_translation(-kInitialWidth / 2.0);
+  right_slider.set_default_translation(kInitialWidth / 2.0);
 
- private:
-  void CalcDesiredState(const systems::Context<double>& context,
-                        systems::BasicVector<double>* output) const {
-    unused(context);
-    Vector3d desired_velocities = Vector3d::Zero();
-    Vector3d desired_positions = Vector3d(0.5, 0.5, 0.5);
-    output->get_mutable_value() << desired_positions, desired_velocities;
-  }
-};
+  return model_instance;
+}
 
 int do_main() {
   systems::DiagramBuilder<double> builder;
@@ -163,37 +176,7 @@ int do_main() {
   mpm_config.contact_friction_mu = FLAGS_friction;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
-  const double gripper_xy = 0.05;
-  const double gripper_z = 0.025;
-  const double gripper_density = 4000.0;
-  Box gripper_shape(gripper_xy, gripper_xy, gripper_density);
-  const auto &gripper_inertia = SpatialInertia<double>::SolidBoxWithDensity(gripper_density, gripper_xy, gripper_xy, gripper_z);
-
-  ModelInstanceIndex g1_instance = plant.AddModelInstance("g1_instance");
-  const RigidBody<double>& x_body = plant.AddRigidBody("g1_x", g1_instance, gripper_inertia);
-  const auto& x_joint = plant.AddJoint<PrismaticJoint>("g1_x", plant.world_body(), 
-        RigidTransformd::Identity(), x_body, std::nullopt, Vector3d::UnitX());
-  const RigidBody<double>& y_body = plant.AddRigidBody("g1_y", g1_instance, gripper_inertia);
-  const auto& y_joint = plant.AddJoint<PrismaticJoint>("g1_y", x_body, 
-        RigidTransformd::Identity(), y_body, std::nullopt, Vector3d::UnitY());
-  const RigidBody<double>& z_body = plant.AddRigidBody("g1_z", g1_instance, gripper_inertia);
-  const auto& z_joint = plant.AddJoint<PrismaticJoint>("g1_z", y_body, 
-        RigidTransformd::Identity(), z_body, std::nullopt, Vector3d::UnitZ());
-  plant.RegisterCollisionGeometry(z_body, RigidTransformd::Identity(), gripper_shape,
-                                    "g1_collision", rigid_proximity_props);
-  plant.RegisterVisualGeometry(z_body, RigidTransformd::Identity(), gripper_shape,
-                                    "g1_visual", illustration_props);
-  const auto g1_x_actuator = plant.AddJointActuator("prismatic g1_x", x_joint).index();
-  const auto g1_y_actuator = plant.AddJointActuator("prismatic g1_y", y_joint).index();
-  const auto g1_z_actuator = plant.AddJointActuator("prismatic g1_z", z_joint).index();
-  plant.GetMutableJointByName<PrismaticJoint>("g1_x").set_default_translation(0.0);
-  plant.GetMutableJointByName<PrismaticJoint>("g1_y").set_default_translation(0.0);
-  plant.GetMutableJointByName<PrismaticJoint>("g1_z").set_default_translation(0.0);
-  plant.get_mutable_joint_actuator(g1_x_actuator).set_controller_gains({1e4, 1});
-  plant.get_mutable_joint_actuator(g1_y_actuator).set_controller_gains({1e4, 1});
-  plant.get_mutable_joint_actuator(g1_z_actuator).set_controller_gains({1e4, 1});
-
-
+  ModelInstanceIndex gripper_instance = AddParallelGripper(&plant, rigid_proximity_props);
 
   /* All rigid and deformable models have been added. Finalize the plant. */
   plant.Finalize();
@@ -207,10 +190,16 @@ int do_main() {
   builder.Connect(plant.get_output_port(
     plant.deformable_model().mpm_output_port_index()), 
     visualizer.mpm_input_port());
-  
-  const auto& control = *builder.AddSystem<MyGripperController>();
-  builder.Connect(control.get_output_port(),
-                  plant.get_desired_state_input_port(g1_instance));
+
+  /* Set the width between the fingers for open and closed states as well as
+     the height to which the gripper lifts the deformable torus. */
+    const double kL = 0.09 * 0.65;
+    const double kOpenWidth = kL * 1.5;
+    const double kClosedWidth = 0;
+    const double kLiftedHeight = 0.18;
+    const auto& control = *builder.AddSystem<ParallelGripperController>(
+        kOpenWidth, kClosedWidth, kLiftedHeight);
+    builder.Connect(control.get_output_port(), plant.get_desired_state_input_port(gripper_instance));
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
