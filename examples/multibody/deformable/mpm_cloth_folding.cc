@@ -21,7 +21,7 @@
 #include "drake/systems/framework/diagram_builder.h"
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
-DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 20.0, "Desired duration of the simulation [s].");
 DEFINE_int32(res, 70, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-3,
@@ -75,17 +75,28 @@ namespace {
 class FoldingGripperController : public systems::LeafSystem<double> {
  public:
   FoldingGripperController() {
-    this->DeclareVectorOutputPort("desired state", BasicVector<double>(12),
+    this->DeclareVectorOutputPort("desired state", BasicVector<double>(24),
                                    &FoldingGripperController::CalcDesiredState);
   }
+ 
+ static constexpr double gripper_xy = 0.04;
+ static constexpr double gripper_z = 0.02;
+ static constexpr double gripper_density = 10000.0;
+
+ static constexpr double up_duration = 3.5;
+ static constexpr double forward_duration = 4.0;
+ static constexpr double up_v = 0.025;
+ static constexpr double forward_v = 0.05;
+ static constexpr double l_z = 0.14;
+ static constexpr double h_z = 0.16;
+ static constexpr double offset_x = 0.1;
+ static constexpr double l_x = 0.5 - offset_x;
+ static constexpr double h_x = 0.5 + offset_x;
 
  static ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityProperties rigid_proximity_props) {
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse", Vector4d(0.5, 0.5, 0.5, 0.8));
 
-  const double gripper_xy = 0.04;
-  const double gripper_z = 0.02;
-  const double gripper_density = 10000.0;
   Box gripper_shape(gripper_xy, gripper_xy, gripper_z);
   const auto &gripper_inertia = SpatialInertia<double>::SolidBoxWithDensity(gripper_density, gripper_xy, gripper_xy, gripper_z);
 
@@ -118,8 +129,10 @@ class FoldingGripperController : public systems::LeafSystem<double> {
     plant->get_mutable_joint_actuator(z_actuator).set_controller_gains({1e5, 1});
   };
 
-  add_single_gripper("g1_up",  0.4, 0.4, 0.17);
-  add_single_gripper("g1_down", 0.4, 0.4, 0.13);
+  add_single_gripper("g1_up",  l_x, l_x, h_z + 0.4 * up_v);
+  add_single_gripper("g1_down", l_x, l_x, l_z - 0.4 * up_v);
+  add_single_gripper("g2_up",  h_x, l_x,  h_z + 0.4 * up_v);
+  add_single_gripper("g2_down", h_x, l_x, l_z - 0.4 * up_v);
 
   return gripper_instance;
 }
@@ -132,25 +145,52 @@ class FoldingGripperController : public systems::LeafSystem<double> {
     Vector3d g1_up_p;
     Vector3d g1_down_v;
     Vector3d g1_down_p;
+    Vector3d g2_up_v;
+    Vector3d g2_up_p;
+    Vector3d g2_down_v;
+    Vector3d g2_down_p;
 
     if (t <= 0.4) {
-      g1_up_v = Vector3d(0.0, 0.0, -0.025);
-      g1_up_p = Vector3d(0.4, 0.4, 0.17 - t * 0.025);
-      g1_down_v = Vector3d(0.0, 0.0, 0.025);
-      g1_down_p = Vector3d(0.4, 0.4, 0.13 + t * 0.025);
-    } else if (t < 4.4) {
-      g1_up_v = Vector3d(0.0, 0.0, 0.025);
-      g1_up_p = Vector3d(0.4, 0.4, 0.16 + (t-0.4) * 0.025);
-      g1_down_v = Vector3d(0.0, 0.0, 0.025);
-      g1_down_p = Vector3d(0.4, 0.4, 0.14 + (t-0.4) * 0.025);
+      g1_up_v = Vector3d(0.0, 0.0, -up_v);
+      g1_up_p = Vector3d(l_x, l_x, h_z + 0.4 * up_v - t * up_v);
+      g1_down_v = Vector3d(0.0, 0.0, up_v);
+      g1_down_p = Vector3d(l_x, l_x, l_z - 0.4 * up_v + t * up_v);
+      g2_up_v = Vector3d(0.0, 0.0, -up_v);
+      g2_up_p = Vector3d(h_x, l_x, h_z + 0.4 * up_v - t * up_v);
+      g2_down_v = Vector3d(0.0, 0.0, up_v);
+      g2_down_p = Vector3d(h_x, l_x, l_z - 0.4 * up_v + t * up_v);
+    } else if (t < 0.4 + up_duration) {
+      double dt = t-0.4;
+      g1_up_v = Vector3d(0.0, 0.0, up_v);
+      g1_up_p = Vector3d(l_x, l_x, h_z + dt * up_v);
+      g1_down_v = Vector3d(0.0, 0.0, up_v);
+      g1_down_p = Vector3d(l_x, l_x, l_z + dt * up_v);
+      g2_up_v = Vector3d(0.0, 0.0, up_v);
+      g2_up_p = Vector3d(h_x, l_x, h_z + dt * up_v);
+      g2_down_v = Vector3d(0.0, 0.0, up_v);
+      g2_down_p = Vector3d(h_x, l_x, l_z + dt * up_v);
+    } else if (t < 0.4 + up_duration + forward_duration) {
+      double dt = t-0.4-up_duration;
+      g1_up_v = Vector3d(0.0, forward_v, 0.0);
+      g1_up_p = Vector3d(l_x, l_x + dt * forward_v, h_z + up_duration * 0.025);
+      g1_down_v = Vector3d(0.0, forward_v, 0.0);
+      g1_down_p = Vector3d(l_x, l_x + dt * forward_v, l_z + up_duration * 0.025);
+      g2_up_v = Vector3d(0.0, forward_v, 0.0);
+      g2_up_p = Vector3d(h_x, l_x + dt * forward_v, h_z + up_duration * 0.025);
+      g2_down_v = Vector3d(0.0, forward_v, 0.0);
+      g2_down_p = Vector3d(h_x, l_x + dt * forward_v, l_z + up_duration * 0.025);
     } else {
       g1_up_v = Vector3d(0.0, 0.0, 0.0);
-      g1_up_p = Vector3d(0.4, 0.4, 0.26);
+      g1_up_p = Vector3d(l_x, l_x + forward_duration * forward_v, h_z + up_duration * 0.025 +1.0);
       g1_down_v = Vector3d(0.0, 0.0, 0.0);
-      g1_down_p = Vector3d(0.4, 0.4, 0.24);
+      g1_down_p = Vector3d(l_x, l_x + forward_duration * forward_v, l_z + up_duration * 0.025+1.0);
+      g2_up_v = Vector3d(0.0, 0.0, 0.0);
+      g2_up_p = Vector3d(h_x, l_x + forward_duration * forward_v, h_z + up_duration * 0.025+1.0);
+      g2_down_v = Vector3d(0.0, 0.0, 0.0);
+      g2_down_p = Vector3d(h_x, l_x + forward_duration * forward_v, l_z + up_duration * 0.025+1.0);
     }
 
-    output->get_mutable_value() << g1_up_p, g1_down_p, g1_up_v, g1_down_v;
+    output->get_mutable_value() << g1_up_p, g1_down_p, g2_up_p, g2_down_p, g1_up_v, g1_down_v, g2_up_v, g2_down_v;
   }
 };
 
