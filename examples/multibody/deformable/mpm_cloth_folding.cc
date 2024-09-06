@@ -75,18 +75,21 @@ namespace {
 class FoldingGripperController : public systems::LeafSystem<double> {
  public:
   FoldingGripperController() {
-    this->DeclareVectorOutputPort("desired state", BasicVector<double>(6),
+    this->DeclareVectorOutputPort("desired state", BasicVector<double>(12),
                                    &FoldingGripperController::CalcDesiredState);
   }
 
  private:
   void CalcDesiredState(const systems::Context<double>& context,
                         systems::BasicVector<double>* output) const {
-    unused(context);
     const double t = context.get_time();
-    Vector3d desired_velocities = Vector3d(0.0, 0.0, 0.05);
-    Vector3d desired_positions = Vector3d(0.5, 0.5, 0.1 + t * 0.05);
-    output->get_mutable_value() << desired_positions, desired_velocities;
+
+    Vector3d g1_up_v = Vector3d(0.0, 0.0, 0.05);
+    Vector3d g1_up_p = Vector3d(0.5, 0.5, 0.3 + t * 0.05);
+    Vector3d g1_down_v = Vector3d(0.0, 0.0, 0.05);
+    Vector3d g1_down_p = Vector3d(0.5, 0.5, 0.1 + t * 0.05);
+
+    output->get_mutable_value() << g1_up_p, g1_down_p, g1_up_v, g1_down_v;
   }
 };
 
@@ -168,7 +171,9 @@ ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityPr
     plant->get_mutable_joint_actuator(z_actuator).set_controller_gains({1e10, 1});
   };
 
-  add_single_gripper("g1", 0.5, 0.5, 0.1);
+  add_single_gripper("g1_up",  0.5, 0.5, 0.3);
+  add_single_gripper("g1_down", 0.5, 0.5, 0.1);
+
 
   return gripper_instance;
 }
