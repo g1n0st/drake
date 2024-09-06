@@ -128,11 +128,27 @@ class FoldingGripperController : public systems::LeafSystem<double> {
   void CalcDesiredState(const systems::Context<double>& context,
                         systems::BasicVector<double>* output) const {
     const double t = context.get_time();
+    Vector3d g1_up_v;
+    Vector3d g1_up_p;
+    Vector3d g1_down_v;
+    Vector3d g1_down_p;
 
-    Vector3d g1_up_v = Vector3d(0.0, 0.0, 0.05);
-    Vector3d g1_up_p = Vector3d(0.4, 0.4, 0.17 + t * 0.05);
-    Vector3d g1_down_v = Vector3d(0.0, 0.0, 0.05);
-    Vector3d g1_down_p = Vector3d(0.4, 0.4, 0.13 + t * 0.05);
+    if (t <= 0.4) {
+      g1_up_v = Vector3d(0.0, 0.0, -0.025);
+      g1_up_p = Vector3d(0.4, 0.4, 0.17 - t * 0.025);
+      g1_down_v = Vector3d(0.0, 0.0, 0.025);
+      g1_down_p = Vector3d(0.4, 0.4, 0.13 + t * 0.025);
+    } else if (t < 4.4) {
+      g1_up_v = Vector3d(0.0, 0.0, 0.025);
+      g1_up_p = Vector3d(0.4, 0.4, 0.16 + (t-0.4) * 0.025);
+      g1_down_v = Vector3d(0.0, 0.0, 0.025);
+      g1_down_p = Vector3d(0.4, 0.4, 0.14 + (t-0.4) * 0.025);
+    } else {
+      g1_up_v = Vector3d(0.0, 0.0, 0.0);
+      g1_up_p = Vector3d(0.4, 0.4, 0.26);
+      g1_down_v = Vector3d(0.0, 0.0, 0.0);
+      g1_down_p = Vector3d(0.4, 0.4, 0.24);
+    }
 
     output->get_mutable_value() << g1_up_p, g1_down_p, g1_up_v, g1_down_v;
   }
