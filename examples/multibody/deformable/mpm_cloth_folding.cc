@@ -83,8 +83,9 @@ class MyGripperController : public systems::LeafSystem<double> {
   void CalcDesiredState(const systems::Context<double>& context,
                         systems::BasicVector<double>* output) const {
     unused(context);
+    const double t = context.get_time();
     Vector3d desired_velocities = Vector3d::Zero();
-    Vector3d desired_positions = Vector3d(0.5, 0.5, 0.1);
+    Vector3d desired_positions = Vector3d(0.5, 0.5, 0.1 + t * 0.05);
     output->get_mutable_value() << desired_positions, desired_velocities;
   }
 };
