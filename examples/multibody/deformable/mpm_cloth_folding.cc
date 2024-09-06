@@ -22,7 +22,7 @@
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
-DEFINE_int32(res, 50, "Cloth Resolution.");
+DEFINE_int32(res, 70, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-3,
               "Discrete time step for the system [s]. Must be positive.");
@@ -79,15 +79,60 @@ class FoldingGripperController : public systems::LeafSystem<double> {
                                    &FoldingGripperController::CalcDesiredState);
   }
 
+ static ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityProperties rigid_proximity_props) {
+  IllustrationProperties illustration_props;
+  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.5, 0.5, 0.5, 0.8));
+
+  const double gripper_xy = 0.04;
+  const double gripper_z = 0.02;
+  const double gripper_density = 10000.0;
+  Box gripper_shape(gripper_xy, gripper_xy, gripper_z);
+  const auto &gripper_inertia = SpatialInertia<double>::SolidBoxWithDensity(gripper_density, gripper_xy, gripper_xy, gripper_z);
+
+  ModelInstanceIndex gripper_instance = plant->AddModelInstance("gripper_instance");
+
+  const auto &add_single_gripper = [&](std::string name, double x, double y, double z) {
+    const RigidBody<double>& x_body = plant->AddRigidBody(name + "_x", gripper_instance, gripper_inertia);
+    const auto& x_joint = plant->AddJoint<PrismaticJoint>(name + "_x", plant->world_body(), 
+          RigidTransformd::Identity(), x_body, std::nullopt, Vector3d::UnitX());
+
+    const RigidBody<double>& y_body = plant->AddRigidBody(name + "_y", gripper_instance, gripper_inertia);
+    const auto& y_joint = plant->AddJoint<PrismaticJoint>(name + "_y", x_body, 
+          RigidTransformd::Identity(), y_body, std::nullopt, Vector3d::UnitY());
+
+    const RigidBody<double>& z_body = plant->AddRigidBody(name + "_z", gripper_instance, gripper_inertia);
+    const auto& z_joint = plant->AddJoint<PrismaticJoint>(name + "_z", y_body, 
+          RigidTransformd::Identity(), z_body, std::nullopt, Vector3d::UnitZ());
+
+    plant->RegisterCollisionGeometry(z_body, RigidTransformd::Identity(), gripper_shape, name + "_collision", rigid_proximity_props);
+    plant->RegisterVisualGeometry   (z_body, RigidTransformd::Identity(), gripper_shape, name + "_visual"   , illustration_props);
+
+    const auto x_actuator = plant->AddJointActuator("prismatic" + name + "_x", x_joint).index();
+    const auto y_actuator = plant->AddJointActuator("prismatic" + name + "_y", y_joint).index();
+    const auto z_actuator = plant->AddJointActuator("prismatic" + name + "_z", z_joint).index();
+    plant->GetMutableJointByName<PrismaticJoint>(name + "_x").set_default_translation(x);
+    plant->GetMutableJointByName<PrismaticJoint>(name + "_y").set_default_translation(y);
+    plant->GetMutableJointByName<PrismaticJoint>(name + "_z").set_default_translation(z);
+    plant->get_mutable_joint_actuator(x_actuator).set_controller_gains({1e5, 1});
+    plant->get_mutable_joint_actuator(y_actuator).set_controller_gains({1e5, 1});
+    plant->get_mutable_joint_actuator(z_actuator).set_controller_gains({1e5, 1});
+  };
+
+  add_single_gripper("g1_up",  0.4, 0.4, 0.17);
+  add_single_gripper("g1_down", 0.4, 0.4, 0.13);
+
+  return gripper_instance;
+}
+
  private:
   void CalcDesiredState(const systems::Context<double>& context,
                         systems::BasicVector<double>* output) const {
     const double t = context.get_time();
 
     Vector3d g1_up_v = Vector3d(0.0, 0.0, 0.05);
-    Vector3d g1_up_p = Vector3d(0.5, 0.5, 0.3 + t * 0.05);
+    Vector3d g1_up_p = Vector3d(0.4, 0.4, 0.17 + t * 0.05);
     Vector3d g1_down_v = Vector3d(0.0, 0.0, 0.05);
-    Vector3d g1_down_p = Vector3d(0.5, 0.5, 0.1 + t * 0.05);
+    Vector3d g1_down_p = Vector3d(0.4, 0.4, 0.13 + t * 0.05);
 
     output->get_mutable_value() << g1_up_p, g1_down_p, g1_up_v, g1_down_v;
   }
@@ -132,52 +177,6 @@ void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis)
   }
 }
 
-ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityProperties rigid_proximity_props) {
-  IllustrationProperties illustration_props;
-  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.5, 0.5, 0.5, 0.8));
-
-  const double gripper_xy = 0.05;
-  const double gripper_z = 0.025;
-  const double gripper_density = 4000.0;
-  Box gripper_shape(gripper_xy, gripper_xy, gripper_z);
-  const auto &gripper_inertia = SpatialInertia<double>::SolidBoxWithDensity(gripper_density, gripper_xy, gripper_xy, gripper_z);
-
-  ModelInstanceIndex gripper_instance = plant->AddModelInstance("gripper_instance");
-
-  const auto &add_single_gripper = [&](std::string name, double x, double y, double z) {
-    const RigidBody<double>& x_body = plant->AddRigidBody(name + "_x", gripper_instance, gripper_inertia);
-    const auto& x_joint = plant->AddJoint<PrismaticJoint>(name + "_x", plant->world_body(), 
-          RigidTransformd::Identity(), x_body, std::nullopt, Vector3d::UnitX());
-
-    const RigidBody<double>& y_body = plant->AddRigidBody(name + "_y", gripper_instance, gripper_inertia);
-    const auto& y_joint = plant->AddJoint<PrismaticJoint>(name + "_y", x_body, 
-          RigidTransformd::Identity(), y_body, std::nullopt, Vector3d::UnitY());
-
-    const RigidBody<double>& z_body = plant->AddRigidBody(name + "_z", gripper_instance, gripper_inertia);
-    const auto& z_joint = plant->AddJoint<PrismaticJoint>(name + "_z", y_body, 
-          RigidTransformd::Identity(), z_body, std::nullopt, Vector3d::UnitZ());
-
-    plant->RegisterCollisionGeometry(z_body, RigidTransformd::Identity(), gripper_shape, name + "_collision", rigid_proximity_props);
-    plant->RegisterVisualGeometry   (z_body, RigidTransformd::Identity(), gripper_shape, name + "_visual"   , illustration_props);
-
-    const auto x_actuator = plant->AddJointActuator("prismatic" + name + "_x", x_joint).index();
-    const auto y_actuator = plant->AddJointActuator("prismatic" + name + "_y", y_joint).index();
-    const auto z_actuator = plant->AddJointActuator("prismatic" + name + "_z", z_joint).index();
-    plant->GetMutableJointByName<PrismaticJoint>(name + "_x").set_default_translation(x);
-    plant->GetMutableJointByName<PrismaticJoint>(name + "_y").set_default_translation(y);
-    plant->GetMutableJointByName<PrismaticJoint>(name + "_z").set_default_translation(z);
-    plant->get_mutable_joint_actuator(x_actuator).set_controller_gains({1e10, 1});
-    plant->get_mutable_joint_actuator(y_actuator).set_controller_gains({1e10, 1});
-    plant->get_mutable_joint_actuator(z_actuator).set_controller_gains({1e10, 1});
-  };
-
-  add_single_gripper("g1_up",  0.5, 0.5, 0.3);
-  add_single_gripper("g1_down", 0.5, 0.5, 0.1);
-
-
-  return gripper_instance;
-}
-
 int do_main() {
   systems::DiagramBuilder<double> builder;
 
@@ -197,8 +196,14 @@ int do_main() {
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
 
+  /* Set up a ground. */
+  Box ground{4, 4, 4};
+  const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2 + 0.1});
+  plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", ground_proximity_props);
+  plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
+
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, FLAGS_res, 0.2);
+  AddCloth(&deformable_model, FLAGS_res, 0.15);
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
@@ -208,7 +213,7 @@ int do_main() {
   mpm_config.contact_friction_mu = FLAGS_friction;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
-  const auto& gripper_instance = AddGripperInstance(&plant, rigid_proximity_props);
+  const auto& gripper_instance = FoldingGripperController::AddGripperInstance(&plant, rigid_proximity_props);
 
   /* All rigid and deformable models have been added. Finalize the plant. */
   plant.Finalize();
