@@ -72,11 +72,11 @@ namespace drake {
 namespace examples {
 namespace {
 
-class MyGripperController : public systems::LeafSystem<double> {
+class FoldingGripperController : public systems::LeafSystem<double> {
  public:
-  MyGripperController() {
+  FoldingGripperController() {
     this->DeclareVectorOutputPort("desired state", BasicVector<double>(6),
-                                   &MyGripperController::CalcDesiredState);
+                                   &FoldingGripperController::CalcDesiredState);
   }
 
  private:
@@ -129,6 +129,43 @@ void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis)
   }
 }
 
+ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityProperties rigid_proximity_props) {
+  IllustrationProperties illustration_props;
+  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.5, 0.5, 0.5, 0.8));
+
+  const double gripper_xy = 0.05;
+  const double gripper_z = 0.025;
+  const double gripper_density = 4000.0;
+  Box gripper_shape(gripper_xy, gripper_xy, gripper_z);
+  const auto &gripper_inertia = SpatialInertia<double>::SolidBoxWithDensity(gripper_density, gripper_xy, gripper_xy, gripper_z);
+
+  ModelInstanceIndex g1_instance = plant->AddModelInstance("g1_instance");
+  const RigidBody<double>& x_body = plant->AddRigidBody("g1_x", g1_instance, gripper_inertia);
+  const auto& x_joint = plant->AddJoint<PrismaticJoint>("g1_x", plant->world_body(), 
+        RigidTransformd::Identity(), x_body, std::nullopt, Vector3d::UnitX());
+  const RigidBody<double>& y_body = plant->AddRigidBody("g1_y", g1_instance, gripper_inertia);
+  const auto& y_joint = plant->AddJoint<PrismaticJoint>("g1_y", x_body, 
+        RigidTransformd::Identity(), y_body, std::nullopt, Vector3d::UnitY());
+  const RigidBody<double>& z_body = plant->AddRigidBody("g1_z", g1_instance, gripper_inertia);
+  const auto& z_joint = plant->AddJoint<PrismaticJoint>("g1_z", y_body, 
+        RigidTransformd::Identity(), z_body, std::nullopt, Vector3d::UnitZ());
+  plant->RegisterCollisionGeometry(z_body, RigidTransformd::Identity(), gripper_shape,
+                                    "g1_collision", rigid_proximity_props);
+  plant->RegisterVisualGeometry(z_body, RigidTransformd::Identity(), gripper_shape,
+                                    "g1_visual", illustration_props);
+  const auto g1_x_actuator = plant->AddJointActuator("prismatic g1_x", x_joint).index();
+  const auto g1_y_actuator = plant->AddJointActuator("prismatic g1_y", y_joint).index();
+  const auto g1_z_actuator = plant->AddJointActuator("prismatic g1_z", z_joint).index();
+  plant->GetMutableJointByName<PrismaticJoint>("g1_x").set_default_translation(0.5);
+  plant->GetMutableJointByName<PrismaticJoint>("g1_y").set_default_translation(0.5);
+  plant->GetMutableJointByName<PrismaticJoint>("g1_z").set_default_translation(0.1);
+  plant->get_mutable_joint_actuator(g1_x_actuator).set_controller_gains({1e10, 1});
+  plant->get_mutable_joint_actuator(g1_y_actuator).set_controller_gains({1e10, 1});
+  plant->get_mutable_joint_actuator(g1_z_actuator).set_controller_gains({1e10, 1});
+
+  return g1_instance;
+}
+
 int do_main() {
   systems::DiagramBuilder<double> builder;
 
@@ -159,37 +196,7 @@ int do_main() {
   mpm_config.contact_friction_mu = FLAGS_friction;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
-  const double gripper_xy = 0.05;
-  const double gripper_z = 0.025;
-  const double gripper_density = 4000.0;
-  Box gripper_shape(gripper_xy, gripper_xy, gripper_z);
-  const auto &gripper_inertia = SpatialInertia<double>::SolidBoxWithDensity(gripper_density, gripper_xy, gripper_xy, gripper_z);
-
-  ModelInstanceIndex g1_instance = plant.AddModelInstance("g1_instance");
-  const RigidBody<double>& x_body = plant.AddRigidBody("g1_x", g1_instance, gripper_inertia);
-  const auto& x_joint = plant.AddJoint<PrismaticJoint>("g1_x", plant.world_body(), 
-        RigidTransformd::Identity(), x_body, std::nullopt, Vector3d::UnitX());
-  const RigidBody<double>& y_body = plant.AddRigidBody("g1_y", g1_instance, gripper_inertia);
-  const auto& y_joint = plant.AddJoint<PrismaticJoint>("g1_y", x_body, 
-        RigidTransformd::Identity(), y_body, std::nullopt, Vector3d::UnitY());
-  const RigidBody<double>& z_body = plant.AddRigidBody("g1_z", g1_instance, gripper_inertia);
-  const auto& z_joint = plant.AddJoint<PrismaticJoint>("g1_z", y_body, 
-        RigidTransformd::Identity(), z_body, std::nullopt, Vector3d::UnitZ());
-  plant.RegisterCollisionGeometry(z_body, RigidTransformd::Identity(), gripper_shape,
-                                    "g1_collision", rigid_proximity_props);
-  plant.RegisterVisualGeometry(z_body, RigidTransformd::Identity(), gripper_shape,
-                                    "g1_visual", illustration_props);
-  const auto g1_x_actuator = plant.AddJointActuator("prismatic g1_x", x_joint).index();
-  const auto g1_y_actuator = plant.AddJointActuator("prismatic g1_y", y_joint).index();
-  const auto g1_z_actuator = plant.AddJointActuator("prismatic g1_z", z_joint).index();
-  plant.GetMutableJointByName<PrismaticJoint>("g1_x").set_default_translation(0.5);
-  plant.GetMutableJointByName<PrismaticJoint>("g1_y").set_default_translation(0.5);
-  plant.GetMutableJointByName<PrismaticJoint>("g1_z").set_default_translation(0.1);
-  plant.get_mutable_joint_actuator(g1_x_actuator).set_controller_gains({1e10, 1});
-  plant.get_mutable_joint_actuator(g1_y_actuator).set_controller_gains({1e10, 1});
-  plant.get_mutable_joint_actuator(g1_z_actuator).set_controller_gains({1e10, 1});
-
-
+  const auto& gripper_instance = AddGripperInstance(&plant, rigid_proximity_props);
 
   /* All rigid and deformable models have been added. Finalize the plant. */
   plant.Finalize();
@@ -204,9 +211,7 @@ int do_main() {
     plant.deformable_model().mpm_output_port_index()), 
     visualizer.mpm_input_port());
   
-  const auto& control = *builder.AddSystem<MyGripperController>();
-  builder.Connect(control.get_output_port(),
-                  plant.get_desired_state_input_port(g1_instance));
+  builder.Connect(builder.AddSystem<FoldingGripperController>()->get_output_port(), plant.get_desired_state_input_port(gripper_instance));
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
