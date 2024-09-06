@@ -84,7 +84,7 @@ class MyGripperController : public systems::LeafSystem<double> {
                         systems::BasicVector<double>* output) const {
     unused(context);
     Vector3d desired_velocities = Vector3d::Zero();
-    Vector3d desired_positions = Vector3d(0.5, 0.5, 0.5);
+    Vector3d desired_positions = Vector3d(0.5, 0.5, 0.1);
     output->get_mutable_value() << desired_positions, desired_velocities;
   }
 };
@@ -133,7 +133,7 @@ int do_main() {
     std::vector<int> indices;
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, 0.12);
+        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, 0.2);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }
@@ -166,7 +166,7 @@ int do_main() {
   const double gripper_xy = 0.05;
   const double gripper_z = 0.025;
   const double gripper_density = 4000.0;
-  Box gripper_shape(gripper_xy, gripper_xy, gripper_density);
+  Box gripper_shape(gripper_xy, gripper_xy, gripper_z);
   const auto &gripper_inertia = SpatialInertia<double>::SolidBoxWithDensity(gripper_density, gripper_xy, gripper_xy, gripper_z);
 
   ModelInstanceIndex g1_instance = plant.AddModelInstance("g1_instance");
@@ -186,12 +186,12 @@ int do_main() {
   const auto g1_x_actuator = plant.AddJointActuator("prismatic g1_x", x_joint).index();
   const auto g1_y_actuator = plant.AddJointActuator("prismatic g1_y", y_joint).index();
   const auto g1_z_actuator = plant.AddJointActuator("prismatic g1_z", z_joint).index();
-  plant.GetMutableJointByName<PrismaticJoint>("g1_x").set_default_translation(0.0);
-  plant.GetMutableJointByName<PrismaticJoint>("g1_y").set_default_translation(0.0);
-  plant.GetMutableJointByName<PrismaticJoint>("g1_z").set_default_translation(0.0);
-  plant.get_mutable_joint_actuator(g1_x_actuator).set_controller_gains({1e4, 1});
-  plant.get_mutable_joint_actuator(g1_y_actuator).set_controller_gains({1e4, 1});
-  plant.get_mutable_joint_actuator(g1_z_actuator).set_controller_gains({1e4, 1});
+  plant.GetMutableJointByName<PrismaticJoint>("g1_x").set_default_translation(0.5);
+  plant.GetMutableJointByName<PrismaticJoint>("g1_y").set_default_translation(0.5);
+  plant.GetMutableJointByName<PrismaticJoint>("g1_z").set_default_translation(0.1);
+  plant.get_mutable_joint_actuator(g1_x_actuator).set_controller_gains({1e10, 1});
+  plant.get_mutable_joint_actuator(g1_y_actuator).set_controller_gains({1e10, 1});
+  plant.get_mutable_joint_actuator(g1_z_actuator).set_controller_gains({1e10, 1});
 
 
 
