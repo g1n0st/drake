@@ -90,35 +90,7 @@ class MyGripperController : public systems::LeafSystem<double> {
   }
 };
 
-int do_main() {
-  systems::DiagramBuilder<double> builder;
-
-  MultibodyPlantConfig plant_config;
-  plant_config.time_step = FLAGS_time_step;
-  plant_config.discrete_contact_approximation = FLAGS_contact_approximation;
-
-  auto [plant, scene_graph] = AddMultibodyPlant(plant_config, &builder);
-
-  /* Minimum required proximity properties for rigid bodies to interact with
-   deformable bodies.
-   1. A valid Coulomb friction coefficient, and
-   2. A resolution hint. (Rigid bodies need to be tessellated so that collision
-   queries can be performed against deformable geometries.) The value dictates
-   how fine the mesh used to represent the rigid collision geometry is. */
-  ProximityProperties rigid_proximity_props;
-  ProximityProperties ground_proximity_props;
-  /* Set the friction coefficient close to that of rubber against rubber. */
-  const CoulombFriction<double> surface_friction(1.0, 1.0);
-  AddCompliantHydroelasticProperties(1.0, 2e5, &rigid_proximity_props);
-  AddRigidHydroelasticProperties(1.0, &ground_proximity_props);
-  AddContactMaterial({}, {}, surface_friction, &rigid_proximity_props);
-  AddContactMaterial({}, {}, surface_friction, &ground_proximity_props);
-  IllustrationProperties illustration_props;
-  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
-
-  DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-
-  const int res = FLAGS_res;
+void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis) {
   const double l = 0.005 * res;
   int length = res;
   int width = res;
@@ -134,7 +106,7 @@ int do_main() {
     std::vector<int> indices;
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, 0.2);
+        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx, (0.5 - 0.5 * l) + j * dx, z_axis);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }
@@ -153,8 +125,31 @@ int do_main() {
       }
     }
 
-    deformable_model.RegisterMpmCloth(inital_pos, inital_vel, indices);
+    deformable_model->RegisterMpmCloth(inital_pos, inital_vel, indices);
   }
+}
+
+int do_main() {
+  systems::DiagramBuilder<double> builder;
+
+  MultibodyPlantConfig plant_config;
+  plant_config.time_step = FLAGS_time_step;
+  plant_config.discrete_contact_approximation = FLAGS_contact_approximation;
+
+  auto [plant, scene_graph] = AddMultibodyPlant(plant_config, &builder);
+
+  ProximityProperties rigid_proximity_props;
+  ProximityProperties ground_proximity_props;
+  const CoulombFriction<double> surface_friction(1.0, 1.0);
+  AddCompliantHydroelasticProperties(1.0, 2e5, &rigid_proximity_props);
+  AddRigidHydroelasticProperties(1.0, &ground_proximity_props);
+  AddContactMaterial({}, {}, surface_friction, &rigid_proximity_props);
+  AddContactMaterial({}, {}, surface_friction, &ground_proximity_props);
+  IllustrationProperties illustration_props;
+  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
+
+  DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
+  AddCloth(&deformable_model, FLAGS_res, 0.2);
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
@@ -230,12 +225,7 @@ int do_main() {
 }  // namespace drake
 
 int main(int argc, char* argv[]) {
-  gflags::SetUsageMessage(
-      "This is a demo used to showcase deformable body simulations in Drake. "
-      "A parallel (or suction) gripper grasps a deformable torus on the "
-      "ground, lifts it up, and then drops it back on the ground. "
-      "Launch meldis before running this example. "
-      "Refer to README for instructions on meldis as well as optional flags.");
+  gflags::SetUsageMessage("This is a demo used to showcase cloth folding simulations in Drake.");
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   return drake::examples::do_main();
 }
