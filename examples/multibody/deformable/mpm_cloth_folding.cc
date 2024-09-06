@@ -139,31 +139,38 @@ ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityPr
   Box gripper_shape(gripper_xy, gripper_xy, gripper_z);
   const auto &gripper_inertia = SpatialInertia<double>::SolidBoxWithDensity(gripper_density, gripper_xy, gripper_xy, gripper_z);
 
-  ModelInstanceIndex g1_instance = plant->AddModelInstance("g1_instance");
-  const RigidBody<double>& x_body = plant->AddRigidBody("g1_x", g1_instance, gripper_inertia);
-  const auto& x_joint = plant->AddJoint<PrismaticJoint>("g1_x", plant->world_body(), 
-        RigidTransformd::Identity(), x_body, std::nullopt, Vector3d::UnitX());
-  const RigidBody<double>& y_body = plant->AddRigidBody("g1_y", g1_instance, gripper_inertia);
-  const auto& y_joint = plant->AddJoint<PrismaticJoint>("g1_y", x_body, 
-        RigidTransformd::Identity(), y_body, std::nullopt, Vector3d::UnitY());
-  const RigidBody<double>& z_body = plant->AddRigidBody("g1_z", g1_instance, gripper_inertia);
-  const auto& z_joint = plant->AddJoint<PrismaticJoint>("g1_z", y_body, 
-        RigidTransformd::Identity(), z_body, std::nullopt, Vector3d::UnitZ());
-  plant->RegisterCollisionGeometry(z_body, RigidTransformd::Identity(), gripper_shape,
-                                    "g1_collision", rigid_proximity_props);
-  plant->RegisterVisualGeometry(z_body, RigidTransformd::Identity(), gripper_shape,
-                                    "g1_visual", illustration_props);
-  const auto g1_x_actuator = plant->AddJointActuator("prismatic g1_x", x_joint).index();
-  const auto g1_y_actuator = plant->AddJointActuator("prismatic g1_y", y_joint).index();
-  const auto g1_z_actuator = plant->AddJointActuator("prismatic g1_z", z_joint).index();
-  plant->GetMutableJointByName<PrismaticJoint>("g1_x").set_default_translation(0.5);
-  plant->GetMutableJointByName<PrismaticJoint>("g1_y").set_default_translation(0.5);
-  plant->GetMutableJointByName<PrismaticJoint>("g1_z").set_default_translation(0.1);
-  plant->get_mutable_joint_actuator(g1_x_actuator).set_controller_gains({1e10, 1});
-  plant->get_mutable_joint_actuator(g1_y_actuator).set_controller_gains({1e10, 1});
-  plant->get_mutable_joint_actuator(g1_z_actuator).set_controller_gains({1e10, 1});
+  ModelInstanceIndex gripper_instance = plant->AddModelInstance("gripper_instance");
 
-  return g1_instance;
+  const auto &add_single_gripper = [&](std::string name, double x, double y, double z) {
+    const RigidBody<double>& x_body = plant->AddRigidBody(name + "_x", gripper_instance, gripper_inertia);
+    const auto& x_joint = plant->AddJoint<PrismaticJoint>(name + "_x", plant->world_body(), 
+          RigidTransformd::Identity(), x_body, std::nullopt, Vector3d::UnitX());
+
+    const RigidBody<double>& y_body = plant->AddRigidBody(name + "_y", gripper_instance, gripper_inertia);
+    const auto& y_joint = plant->AddJoint<PrismaticJoint>(name + "_y", x_body, 
+          RigidTransformd::Identity(), y_body, std::nullopt, Vector3d::UnitY());
+
+    const RigidBody<double>& z_body = plant->AddRigidBody(name + "_z", gripper_instance, gripper_inertia);
+    const auto& z_joint = plant->AddJoint<PrismaticJoint>(name + "_z", y_body, 
+          RigidTransformd::Identity(), z_body, std::nullopt, Vector3d::UnitZ());
+
+    plant->RegisterCollisionGeometry(z_body, RigidTransformd::Identity(), gripper_shape, name + "_collision", rigid_proximity_props);
+    plant->RegisterVisualGeometry   (z_body, RigidTransformd::Identity(), gripper_shape, name + "_visual"   , illustration_props);
+
+    const auto x_actuator = plant->AddJointActuator("prismatic" + name + "_x", x_joint).index();
+    const auto y_actuator = plant->AddJointActuator("prismatic" + name + "_y", y_joint).index();
+    const auto z_actuator = plant->AddJointActuator("prismatic" + name + "_z", z_joint).index();
+    plant->GetMutableJointByName<PrismaticJoint>(name + "_x").set_default_translation(x);
+    plant->GetMutableJointByName<PrismaticJoint>(name + "_y").set_default_translation(y);
+    plant->GetMutableJointByName<PrismaticJoint>(name + "_z").set_default_translation(z);
+    plant->get_mutable_joint_actuator(x_actuator).set_controller_gains({1e10, 1});
+    plant->get_mutable_joint_actuator(y_actuator).set_controller_gains({1e10, 1});
+    plant->get_mutable_joint_actuator(z_actuator).set_controller_gains({1e10, 1});
+  };
+
+  add_single_gripper("g1", 0.5, 0.5, 0.1);
+
+  return gripper_instance;
 }
 
 int do_main() {
