@@ -98,8 +98,8 @@ namespace config {
 	template<> constexpr double c_F<double> = .0;
 
 	template<class T> constexpr T SDF_FRICTION;
-	template<> constexpr float SDF_FRICTION<float> = .0f;
-	template<> constexpr double SDF_FRICTION<double> = .0;
+	template<> constexpr float SDF_FRICTION<float> = 1.0f;
+	template<> constexpr double SDF_FRICTION<double> = 1.0;
 
 	// Lame parameters
 	template<class T> constexpr T MU = YOUNGS_MODULUS<T> / (T(2.) * (T(1.) + POISSON_RATIO<T>));

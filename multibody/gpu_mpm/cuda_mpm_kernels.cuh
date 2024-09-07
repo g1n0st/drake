@@ -642,7 +642,7 @@ __global__ void update_grid_kernel(
                     (xyz.z + T(.5)) * config::G_DX<T>
                 };
 
-#define MPM_BOUNDARY_CONDITION 2
+#define MPM_BOUNDARY_CONDITION 111
 #if MPM_BOUNDARY_CONDITION == 0               
                 const T sphere_radius = T(0.08);
                 const T sphere_pos[3] = { T(0.5), T(0.5), T(0.5) };
@@ -721,6 +721,20 @@ __global__ void update_grid_kernel(
                 T dotnv = T(0.);
                 T diff_vel[3] = {T(0.), T(0.), T(0.)};
                 T normal[3] = {T(0.), T(0.), T(0.)};
+#elif MPM_BOUNDARY_CONDITION == 111
+                const bool fixed = false;
+                bool inside = false;
+                T dotnv = T(0.);
+                T diff_vel[3] = {T(0.), T(0.), T(0.)};
+                T normal[3] = {T(0.), T(0.), T(1.)};
+                T dist = pos[2] - T(0.11);
+                if (dist < 0) {
+                    inside = true;
+                    diff_vel[0] = - g_vel[0];
+                    diff_vel[1] = - g_vel[1];
+                    diff_vel[2] = - g_vel[2];
+                    dotnv = dot<3>(diff_vel, normal);
+                }
 #endif
 
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
