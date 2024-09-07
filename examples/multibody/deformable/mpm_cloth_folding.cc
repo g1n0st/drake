@@ -97,8 +97,8 @@ class FoldingGripperController : public systems::LeafSystem<double> {
  static constexpr double s2_l_y = 0.57;
  static constexpr double s2_h_y = 0.63;
  static constexpr double s2_x = 0.6;
- static constexpr double s2_grasp_duration = 0.6;
- static constexpr double s2_grasp_v = 0.6;
+ static constexpr double s2_grasp_duration = 1.0;
+ static constexpr double s2_grasp_v = 0.35;
  static constexpr double s2_l_z = 0.14;
  static constexpr double s2_h_z = 0.16;
  static constexpr double s2_up_duration = 3.5;
