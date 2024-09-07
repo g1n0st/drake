@@ -85,9 +85,9 @@ class FoldingGripperController : public systems::LeafSystem<double> {
 
  static constexpr double grasp_duration = 2.5;
  static constexpr double up_duration = 3.5;
- static constexpr double forward_duration = 4.0;
+ static constexpr double forward_duration = 2.0;
  static constexpr double up_v = 0.025;
- static constexpr double forward_v = 0.05;
+ static constexpr double forward_v = 0.1;
  static constexpr double l_z = 0.14;
  static constexpr double h_z = 0.16;
  static constexpr double offset_x = 0.1;
@@ -103,8 +103,8 @@ class FoldingGripperController : public systems::LeafSystem<double> {
  static constexpr double s2_h_z = 0.16;
  static constexpr double s2_up_duration = 3.5;
  static constexpr double s2_up_v = 0.025;
- static constexpr double s2_forward_duration = 4.0;
- static constexpr double s2_forward_v = 0.05;
+ static constexpr double s2_forward_duration = 2.0;
+ static constexpr double s2_forward_v = 0.1;
 
  static ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityProperties rigid_proximity_props) {
   IllustrationProperties illustration_props;
