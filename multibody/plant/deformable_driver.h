@@ -191,11 +191,10 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   }
 
   void UpdateContactDv(const systems::Context<T>& context, 
-                       gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt) const {
+                       gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt,
+                       const std::vector<geometry::internal::MpmParticleContactPair<T>>& mpm_contact_pairs) const {
     const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
     using GpuT = gmpm::config::GpuT;
-    std::vector<geometry::internal::MpmParticleContactPair<T>> mpm_contact_pairs;
-    CalcMpmContactPairs(context, mpm_state, &mpm_contact_pairs);
     mpm_state->contact_ids_host().resize(mpm_contact_pairs.size());
     mpm_state->post_contact_dv_host().resize(mpm_contact_pairs.size());
     gmpm::ContactForceSolver<GpuT> solver(dt, 
@@ -206,73 +205,79 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 #pragma omp parallel for num_threads(16)
 #endif
       for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-        mpm_state->contact_ids_host()[i] = static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index);
-        auto &dv = mpm_state->post_contact_dv_host()[i];
-        dv.setZero();
         const Vector3<GpuT>& nhat_W = -mpm_contact_pairs[i].normal.template cast<GpuT>();
-        const Vector3<GpuT>& particle_v = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
-        const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);
-        const BodyIndex index_rigid =
-            manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
-        const TreeIndex tree_index_rigid =
-            tree_topology.body_to_tree_index(index_rigid);
-        Vector3<GpuT> rigid_v = Vector3<GpuT>::Zero();
-        if (tree_index_rigid.is_valid()) {
-          Matrix3X<T> Jv_v_WBc_W(3, manager_->plant().num_velocities());
-          const Body<T>& rigid_body = manager_->plant().get_body(index_rigid);
-          const Frame<T>& frame_W = manager_->plant().world_frame();
-          manager_->internal_tree().CalcJacobianTranslationalVelocity(
-              context, JacobianWrtVariable::kV, rigid_body.body_frame(), frame_W,
-              mpm_contact_pairs[i].particle_in_contact_position, frame_W, frame_W,
-              &Jv_v_WBc_W);
-          Matrix3X<GpuT> J_rigid =
-              Jv_v_WBc_W.middleCols(
-                  tree_topology.tree_velocities_start_in_v(tree_index_rigid),
-                  tree_topology.num_tree_velocities(tree_index_rigid)).template cast<GpuT>();
-          rigid_v = J_rigid * 
-                      v.segment(tree_topology.tree_velocities_start_in_v(tree_index_rigid),
-                              tree_topology.num_tree_velocities(tree_index_rigid))
-                              .template cast<GpuT>();
-        }
-        const Vector3<GpuT> v_rel = particle_v - rigid_v;
-        const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
-        const GpuT& mu = deformable_model_->cpu_mpm_model().config.contact_friction_mu;
-        const GpuT vn = v_rel.dot(nhat_W);
-        const GpuT phi0 = -static_cast<T>(mpm_contact_pairs[i].penetration_distance);
-
-        const GpuT vn_next = solver.Solve(m, vn, phi0);
-
-        if (vn != vn_next) {
-          GpuT dvn = vn_next - vn;
-          dv += dvn * nhat_W;
-
-          const Vector3<GpuT> vt = v_rel - vn * nhat_W;
-          const GpuT vt_norm = vt.norm();
-          /* Safely normalize the tangent vector. */
-          Vector3<GpuT> vt_hat = Vector3<GpuT>::Zero();
-          if (vt_norm > GpuT(1e-10)) {
-            vt_hat = vt / vt_norm;
+        const GpuT phi0 = -(
+          static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
+            (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
+            mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
+          );
+        if (phi0 >= 0) {
+          mpm_state->contact_ids_host()[i] = static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index);
+          auto &dv = mpm_state->post_contact_dv_host()[i];
+          dv.setZero();
+          const Vector3<GpuT>& particle_v = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
+          const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);
+          const BodyIndex index_rigid =
+              manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
+          const TreeIndex tree_index_rigid =
+              tree_topology.body_to_tree_index(index_rigid);
+          Vector3<GpuT> rigid_v = Vector3<GpuT>::Zero();
+          if (tree_index_rigid.is_valid()) {
+            Matrix3X<T> Jv_v_WBc_W(3, manager_->plant().num_velocities());
+            const Body<T>& rigid_body = manager_->plant().get_body(index_rigid);
+            const Frame<T>& frame_W = manager_->plant().world_frame();
+            manager_->internal_tree().CalcJacobianTranslationalVelocity(
+                context, JacobianWrtVariable::kV, rigid_body.body_frame(), frame_W,
+                mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index].template cast<T>(), frame_W, frame_W,
+                &Jv_v_WBc_W);
+            Matrix3X<GpuT> J_rigid =
+                Jv_v_WBc_W.middleCols(
+                    tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+                    tree_topology.num_tree_velocities(tree_index_rigid)).template cast<GpuT>();
+            rigid_v = J_rigid * 
+                        v.segment(tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+                                tree_topology.num_tree_velocities(tree_index_rigid))
+                                .template cast<GpuT>();
           }
-          /* kf is the slope of the regulated friction in stiction. Larger kf
-          resolves static friction better, but is less numerically stable. */
-          const GpuT kf = GpuT(10.0);
-          dv -= std::min(dvn * mu, kf * vt_norm) * vt_hat;
-          /* We negate the sign of the grid node's momentum change to get
-                 the impulse applied to the rigid body at the grid node. */
-          const Vector3<GpuT> l_WN_W = (m * (-dv));
-          const Vector3<GpuT> p_WN = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
-          const Vector3<GpuT>& p_WB = mpm_state->external_forces_host()[index_rigid].p_BoBq_B;
-          const Vector3<GpuT> p_BN_W = p_WN - p_WB;
-          /* The angular impulse applied to the rigid body at the grid node. */
-          const Vector3<GpuT> h_WNBo_W = p_BN_W.cross(l_WN_W);
-          /* Use `F_Bq_W` to store the spatial impulse applied to the body
-            at its origin, expressed in the world frame. */
-          #if defined(_OPENMP)
-          #pragma omp critical
-          #endif
-          {
-            mpm_state->external_forces_host()[index_rigid].F_Bq_W_tau += h_WNBo_W;
-            mpm_state->external_forces_host()[index_rigid].F_Bq_W_f += l_WN_W;
+          const Vector3<GpuT> v_rel = particle_v - rigid_v;
+          const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
+          const GpuT& mu = deformable_model_->cpu_mpm_model().config.contact_friction_mu;
+          const GpuT vn = v_rel.dot(nhat_W);
+
+          const GpuT vn_next = solver.Solve(m, vn, phi0);
+
+          if (vn != vn_next) {
+            GpuT dvn = vn_next - vn;
+            dv += dvn * nhat_W;
+
+            const Vector3<GpuT> vt = v_rel - vn * nhat_W;
+            const GpuT vt_norm = vt.norm();
+            /* Safely normalize the tangent vector. */
+            Vector3<GpuT> vt_hat = Vector3<GpuT>::Zero();
+            if (vt_norm > GpuT(1e-10)) {
+              vt_hat = vt / vt_norm;
+            }
+            /* kf is the slope of the regulated friction in stiction. Larger kf
+            resolves static friction better, but is less numerically stable. */
+            const GpuT kf = GpuT(10.0);
+            dv -= std::min(dvn * mu, kf * vt_norm) * vt_hat;
+            /* We negate the sign of the grid node's momentum change to get
+                  the impulse applied to the rigid body at the grid node. */
+            const Vector3<GpuT> l_WN_W = (m * (-dv));
+            const Vector3<GpuT> p_WN = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
+            const Vector3<GpuT>& p_WB = mpm_state->external_forces_host()[index_rigid].p_BoBq_B;
+            const Vector3<GpuT> p_BN_W = p_WN - p_WB;
+            /* The angular impulse applied to the rigid body at the grid node. */
+            const Vector3<GpuT> h_WNBo_W = p_BN_W.cross(l_WN_W);
+            /* Use `F_Bq_W` to store the spatial impulse applied to the body
+              at its origin, expressed in the world frame. */
+            #if defined(_OPENMP)
+            #pragma omp critical
+            #endif
+            {
+              mpm_state->external_forces_host()[index_rigid].F_Bq_W_tau += h_WNBo_W;
+              mpm_state->external_forces_host()[index_rigid].F_Bq_W_f += l_WN_W;
+            }
           }
         }
       }
@@ -296,14 +301,19 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       int substep = 0;
       long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       InitalizeExternalContactForces(context, &mutable_mpm_state);
+      std::vector<geometry::internal::MpmParticleContactPair<T>> mpm_contact_pairs;
+
       while (dt_left > 0) {
         GpuT ddt = std::min(dt_left, substep_dt);
         dt_left -= ddt;
-        mpm_solver_.RebuildMapping(&mutable_mpm_state, substep == 0);
+        mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
         mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
         // NOTE (changyu): update contact information at each substep for weak coupling scheme
-        UpdateContactDv(context, &mutable_mpm_state, ddt);
+        if (current_frame > 0 && substep % deformable_model_->cpu_mpm_model().config.contact_query_frequency == 0) {
+          CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs);
+        }
+        UpdateContactDv(context, &mutable_mpm_state, ddt, mpm_contact_pairs);
         mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, ddt);
         mpm_solver_.UpdateGrid(&mutable_mpm_state);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/true);

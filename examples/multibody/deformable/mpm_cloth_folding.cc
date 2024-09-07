@@ -24,15 +24,15 @@ DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 20.0, "Desired duration of the simulation [s].");
 DEFINE_int32(res, 50, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 1e-3,
+DEFINE_double(time_step, 2e-3,
               "Discrete time step for the system [s]. Must be positive.");
-DEFINE_double(substep, 1e-3,
+DEFINE_double(substep, 5e-4,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
 DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
               "are: 'sap', 'lagged', and 'similar'.");
-DEFINE_double(stiffness, 1000000.0, "Contact Stiffness.");
+DEFINE_double(stiffness, 1.5e3, "Contact Stiffness.");
 DEFINE_double(friction, 1.0, "Contact Friction.");
 DEFINE_double(damping, 1e-5,
     "Hunt and Crossley damping for the deformable body, only used when "
@@ -319,6 +319,7 @@ int do_main() {
   mpm_config.contact_stiffness = FLAGS_stiffness;
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
+  mpm_config.contact_query_frequency = 8;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   const auto& gripper_instance = FoldingGripperController::AddGripperInstance(&plant, rigid_proximity_props);
