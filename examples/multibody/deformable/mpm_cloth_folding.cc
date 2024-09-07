@@ -22,7 +22,7 @@
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 20.0, "Desired duration of the simulation [s].");
-DEFINE_int32(res, 70, "Cloth Resolution.");
+DEFINE_int32(res, 50, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-3,
               "Discrete time step for the system [s]. Must be positive.");
@@ -80,7 +80,7 @@ class FoldingGripperController : public systems::LeafSystem<double> {
   }
  
  static constexpr double gripper_xy = 0.04;
- static constexpr double gripper_z = 0.04;
+ static constexpr double gripper_z = 0.02;
  static constexpr double gripper_density = 10000.0;
 
  static constexpr double up_duration = 3.5;
@@ -88,7 +88,7 @@ class FoldingGripperController : public systems::LeafSystem<double> {
  static constexpr double up_v = 0.025;
  static constexpr double forward_v = 0.05;
  static constexpr double l_z = 0.14;
- static constexpr double h_z = 0.18;
+ static constexpr double h_z = 0.16;
  static constexpr double offset_x = 0.1;
  static constexpr double l_x = 0.5 - offset_x;
  static constexpr double h_x = 0.5 + offset_x;
@@ -100,7 +100,7 @@ class FoldingGripperController : public systems::LeafSystem<double> {
  static constexpr double s2_down_duration = 0.5;
  static constexpr double s2_down_z = 0.297;
  static constexpr double s2_down_v = 0.35;
- static constexpr double s2_forward_duration = 1.6;
+ static constexpr double s2_forward_duration = 0.6;
  static constexpr double s2_forward_v = 0.05;
  static constexpr double s2_up_duration = 1.0;
  static constexpr double s2_up_v = 0.1;
@@ -247,7 +247,7 @@ class FoldingGripperController : public systems::LeafSystem<double> {
 };
 
 void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis) {
-  const double l = 0.005 * res;
+  const double l = 0.007 * res;
   int length = res;
   int width = res;
   double dx = l / width;
