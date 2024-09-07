@@ -19,6 +19,8 @@
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
+#include "drake/geometry/proximity/obj_to_surface_mesh.h"
+#include "drake/geometry/proximity/triangle_surface_mesh.h"
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 25.0, "Desired duration of the simulation [s].");
@@ -38,6 +40,8 @@ DEFINE_double(damping, 1e-5,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
 
+using drake::geometry::ReadObjToTriangleSurfaceMesh;
+using drake::geometry::TriangleSurfaceMesh;
 using drake::examples::deformable::ParallelGripperController;
 using drake::geometry::AddContactMaterial;
 using drake::geometry::Box;
@@ -83,7 +87,7 @@ class FoldingGripperController : public systems::LeafSystem<double> {
  static constexpr double gripper_z = 0.02;
  static constexpr double gripper_density = 10000.0;
 
- static constexpr double grasp_duration = 2.0;
+ static constexpr double grasp_duration = 4.0;
  static constexpr double up_duration = 1.75;
  static constexpr double forward_duration = 2.0;
  static constexpr double up_v = 0.05;
@@ -239,7 +243,7 @@ class FoldingGripperController : public systems::LeafSystem<double> {
   }
 };
 
-void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis) {
+[[maybe_unused]] void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis) {
   const double l = 0.007 * res;
   int length = res;
   int width = res;
@@ -278,6 +282,23 @@ void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis)
   }
 }
 
+[[maybe_unused]] void AddClothFromFile(DeformableModel<double> *deformable_model, std::string filename) {
+  const auto &mesh = ReadObjToTriangleSurfaceMesh(filename);
+  std::vector<Eigen::Vector3d> inital_pos;
+  std::vector<Eigen::Vector3d> inital_vel;
+  std::vector<int> indices;
+  for (int i = 0; i < mesh.num_triangles(); ++i) {
+    indices.push_back(mesh.triangles()[i].vertex(0));
+    indices.push_back(mesh.triangles()[i].vertex(1));
+    indices.push_back(mesh.triangles()[i].vertex(2));
+  }
+  for (int i = 0; i < mesh.num_vertices(); ++i) {
+    inital_pos.emplace_back(mesh.vertices()[i][0], mesh.vertices()[i][2], mesh.vertices()[i][1]); // swap y-axis and z-axis
+    inital_vel.emplace_back(0., 0., 0.);
+  }
+  deformable_model->RegisterMpmCloth(inital_pos, inital_vel, indices);
+}
+
 int do_main() {
   systems::DiagramBuilder<double> builder;
 
@@ -304,7 +325,8 @@ int do_main() {
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, FLAGS_res, 0.15);
+  // AddCloth(&deformable_model, FLAGS_res, 0.15);
+  AddClothFromFile(&deformable_model, "/home/changyu/Desktop/tshirt.obj");
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
