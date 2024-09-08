@@ -53,9 +53,10 @@ __global__ void initialize_fem_state_kernel(
         inverse2(Dm, &Dm_inverses[idx * 4]);
 
         T *F = &deformation_gradients[idx * 9];
-        F[0] = T(1.); F[1] = T(0.); F[2] = T(0.);
-        F[3] = T(0.); F[4] = T(1.); F[5] = T(0.);
-        F[6] = T(0.); F[7] = T(0.); F[8] = T(1.);
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            F[i] = Q[i];
+        }
 
         T D0xD1[3];
         cross_product3(D0, D1, D0xD1);
@@ -212,16 +213,16 @@ __global__ void calc_fem_state_and_force_kernel(
         // Eq.4 in Jiang et.al 2017, dE_p, β(x̂) = (∇x̂)p dE,n_p, β
         // but we could reuse traditional MPM deformation gradient updated as:
         // F̂E_p(x̂) = (∇x̂)p FE,n_p
-        ctF[0] = (T(1.0) + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
-        ctF[1] = (T(1.0) + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
+        ctF[0] = F[0];
+        ctF[1] = F[1];
         ctF[2] = (T(1.0) + dt * C[0]) * F[2] + dt * C[1] * F[5] + dt * C[2] * F[8];
 
-        ctF[3] = dt * C[3] * F[0] + (T(1.0) + dt * C[4]) * F[3] + dt * C[5] * F[6];
-        ctF[4] = dt * C[3] * F[1] + (T(1.0) + dt * C[4]) * F[4] + dt * C[5] * F[7];
+        ctF[3] = F[3];
+        ctF[4] = F[4];
         ctF[5] = dt * C[3] * F[2] + (T(1.0) + dt * C[4]) * F[5] + dt * C[5] * F[8];
 
-        ctF[6] = dt * C[6] * F[0] + dt * C[7] * F[3] + (T(1.0) + dt * C[8]) * F[6];
-        ctF[7] = dt * C[6] * F[1] + dt * C[7] * F[4] + (T(1.0) + dt * C[8]) * F[7];
+        ctF[6] = F[6];
+        ctF[7] = F[7];
         ctF[8] = dt * C[6] * F[2] + dt * C[7] * F[5] + (T(1.0) + dt * C[8]) * F[8];
 
         project_strain(ctF);
@@ -270,7 +271,9 @@ __global__ void calc_fem_state_and_force_kernel(
             T(-1.), T(0.), T(1.)
         };
         T grad_N[6];
-        matmul<2, 2, 3, T>(Dm_inverse, grad_N_hat, grad_N);
+        T Dm_inverse_T[4];
+        transpose<2, 2, T>(Dm_inverse, Dm_inverse_T);
+        matmul<2, 2, 3, T>(Dm_inverse_T, grad_N_hat, grad_N);
         T VP_local_c01[6] = { 
             VP_local[0], VP_local[1],
             VP_local[3], VP_local[4],
