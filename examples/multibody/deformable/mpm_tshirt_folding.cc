@@ -26,7 +26,7 @@ DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 25.0, "Desired duration of the simulation [s].");
 DEFINE_int32(res, 50, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 1e-2,
+DEFINE_double(time_step, 2e-3,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(substep, 1e-4,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
