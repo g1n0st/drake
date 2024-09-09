@@ -90,8 +90,8 @@ namespace config {
 	template<> constexpr double K<double> = 100000.;
 
 	template<class T> constexpr T V;
-	template<> constexpr float V<float> = .8f;
-	template<> constexpr double V<double> = .8;
+	template<> constexpr float V<float> = .2f;
+	template<> constexpr double V<double> = .2;
 
 	template<class T> constexpr T c_F;
 	template<> constexpr float c_F<float> = .0f;

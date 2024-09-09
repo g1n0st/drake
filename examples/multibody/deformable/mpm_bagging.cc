@@ -4,7 +4,7 @@ DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 25.0, "Desired duration of the simulation [s].");
 DEFINE_int32(res, 60, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 2e-3,
+DEFINE_double(time_step, 1e-3,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(substep, 5e-4,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
@@ -47,6 +47,22 @@ int do_main() {
   // plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", ground_proximity_props);
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
+  const auto &AddRigidBox = [&](std::string name) {
+    const double side_length = 0.05;
+    Box box(side_length, side_length, side_length);
+    const RigidBody<double>& rigid_box = plant.AddRigidBody(
+        name, SpatialInertia<double>::SolidBoxWithDensity(500.0, side_length, side_length, side_length));
+    plant.RegisterCollisionGeometry(rigid_box, RigidTransformd::Identity(), box,
+                                    name + "_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(rigid_box, RigidTransformd::Identity(), box,
+                                name + "_visual", illustration_props);
+  };
+
+  AddRigidBox("box1");
+  AddRigidBox("box2");
+  AddRigidBox("box3");
+  AddRigidBox("box4");
+
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   AddCloth(&deformable_model, FLAGS_res, 0.5);
   // AddClothFromFile(&deformable_model, "/home/changyu/Desktop/tshirt.obj");
@@ -76,6 +92,11 @@ int do_main() {
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
+  auto& plant_context = plant.GetMyMutableContextFromRoot(diagram_context.get());
+  plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box1"), RigidTransformd(Eigen::Vector3d{0.5, 0.5, 0.59}));
+  plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box2"), RigidTransformd(Eigen::Vector3d{0.4, 0.4, 0.54}));
+  plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box3"), RigidTransformd(Eigen::Vector3d{0.35, 0.55, 0.57}));
+  plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box4"), RigidTransformd(Eigen::Vector3d{0.55, 0.55, 0.51}));
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));
