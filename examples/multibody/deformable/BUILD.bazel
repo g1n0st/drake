@@ -115,14 +115,11 @@ drake_cc_binary(
     ],
 )
 
-drake_cc_binary(
-    name = "mpm_cloth_folding",
-    srcs = [
-        "mpm_cloth_folding.cc",
-    ],
-    add_test_rule = 1,
-    data = [
-        ":models",
+drake_cc_library(
+    name = "mpm_cloth_shared",
+    srcs = [],
+    hdrs = [
+        "mpm_cloth_shared.h",
     ],
     deps = [
         ":parallel_gripper_controller",
@@ -139,24 +136,36 @@ drake_cc_binary(
 )
 
 drake_cc_binary(
+    name = "mpm_bagging",
+    srcs = [
+        "mpm_bagging.cc",
+    ],
+    add_test_rule = 1,
+    deps = [
+        ":mpm_cloth_shared",
+        "@gflags",
+    ],
+)
+
+drake_cc_binary(
+    name = "mpm_cloth_folding",
+    srcs = [
+        "mpm_cloth_folding.cc",
+    ],
+    add_test_rule = 1,
+    deps = [
+        ":mpm_cloth_shared",
+        "@gflags",
+    ],
+)
+
+drake_cc_binary(
     name = "mpm_tshirt_folding",
     srcs = [
         "mpm_tshirt_folding.cc",
     ],
-    add_test_rule = 1,
-    data = [
-        ":models",
-    ],
     deps = [
-        ":parallel_gripper_controller",
-        ":point_source_force_field",
-        ":suction_cup_controller",
-        "//geometry:drake_visualizer",
-        "//geometry:scene_graph",
-        "//multibody/parsing",
-        "//multibody/plant",
-        "//systems/analysis:simulator",
-        "//systems/framework:diagram",
+        ":mpm_cloth_shared",
         "@gflags",
     ],
 )
