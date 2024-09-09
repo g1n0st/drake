@@ -86,8 +86,8 @@ namespace config {
 	template<> constexpr double GAMMA<double> = 0.;
 
 	template<class T> constexpr T K;
-	template<> constexpr float K<float> = 100000.f;
-	template<> constexpr double K<double> = 100000.;
+	template<> constexpr float K<float> = 400000.f;
+	template<> constexpr double K<double> = 400000.;
 
 	template<class T> constexpr T V;
 	template<> constexpr float V<float> = .2f;
