@@ -610,7 +610,7 @@ __global__ void clean_grid_kernel(
     }
 }
 
-template<typename T>
+template<typename T, int MPM_BOUNDARY_CONDITION=-1>
 __global__ void update_grid_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
@@ -637,77 +637,29 @@ __global__ void update_grid_kernel(
             if (xyz.z < boundary_condition && g_vel[2] < 0) g_vel[2] = 0;
             if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[2] > 0) g_vel[2] = 0;
 
-            // TODO, NOTE (changyu): ad-hoc hack for a sphere sdf
             {
                 T pos[3] = {
                     (xyz.x + T(.5)) * config::G_DX<T>,
                     (xyz.y + T(.5)) * config::G_DX<T>,
                     (xyz.z + T(.5)) * config::G_DX<T>
                 };
-
-#define MPM_BOUNDARY_CONDITION 111
-#if MPM_BOUNDARY_CONDITION == 0               
-                const T sphere_radius = T(0.08);
-                const T sphere_pos[3] = { T(0.5), T(0.5), T(0.5) };
-                const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
-                const bool fixed = false;
-
-                T dist = distance<3>(pos, sphere_pos) - sphere_radius;
-                T normal[3] = { 
-                    (pos[0] - sphere_pos[0]),
-                    (pos[1] - sphere_pos[1]),
-                    (pos[2] - sphere_pos[2])
-                };
-                normalize<3, T>(normal);
-
+                bool fixed = false;
                 bool inside = false;
-                T dotnv = T(0.);
-                T diff_vel[3] = { T(0.), T(0.), T(0.) };
-                if (dist < T(0.)) {
-                    diff_vel[0] = sphere_vel[0] - g_vel[0];
-                    diff_vel[1] = sphere_vel[1] - g_vel[1];
-                    diff_vel[2] = sphere_vel[2] - g_vel[2];
-                    dotnv = dot<3>(normal, diff_vel);
-                    if (dotnv > T(0.) || fixed) {
-                        inside = true;
-                    }
-                }
+                T dist = T(0);
+                T diff_vel[3] = { T(0), T(0), T(0) };
+                T normal[3] = { T(0), T(0), T(0) };
+                T dotnv = T(0);
 
-#elif MPM_BOUNDARY_CONDITION == 1
-                const T sphere_radius = T(0.04);
-                const T sphere_pos1[3] = { T(0.25), T(0.25), T(0.75) };
-                const T sphere_pos2[3] = { T(0.75), T(0.25), T(0.75) };
-                const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
-                const bool fixed = true;
+                if constexpr (MPM_BOUNDARY_CONDITION == 0) {
+                    const T sphere_radius = T(0.08);
+                    const T sphere_pos[3] = { T(0.5), T(0.5), T(0.5) };
+                    const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
 
-                T dist = distance<3>(pos, sphere_pos1) - sphere_radius;
-                T normal[3] = { 
-                    (pos[0] - sphere_pos1[0]),
-                    (pos[1] - sphere_pos1[1]),
-                    (pos[2] - sphere_pos1[2])
-                };
-                normalize<3, T>(normal);
-
-                bool inside = false;
-                T dotnv = T(0.);
-                T diff_vel[3] = { T(0.), T(0.), T(0.) };
-                if (dist < T(0.)) {
-                    diff_vel[0] = sphere_vel[0] - g_vel[0];
-                    diff_vel[1] = sphere_vel[1] - g_vel[1];
-                    diff_vel[2] = sphere_vel[2] - g_vel[2];
-                    dotnv = dot<3>(normal, diff_vel);
-                    if (dotnv > T(0.) || fixed) {
-                        inside = true;
-                    }
-                }
-                else {
-                    dist = distance<3>(pos, sphere_pos2) - sphere_radius;
-                    normal[0] = (pos[0] - sphere_pos2[0]);
-                    normal[1] = (pos[1] - sphere_pos2[1]);
-                    normal[2] = (pos[2] - sphere_pos2[2]);
+                    dist = distance<3>(pos, sphere_pos) - sphere_radius;
+                    normal[0] = (pos[0] - sphere_pos[0]);
+                    normal[1] = (pos[1] - sphere_pos[1]);
+                    normal[2] = (pos[2] - sphere_pos[2]);
                     normalize<3, T>(normal);
-
-                    dotnv = T(0.);
                     if (dist < T(0.)) {
                         diff_vel[0] = sphere_vel[0] - g_vel[0];
                         diff_vel[1] = sphere_vel[1] - g_vel[1];
@@ -718,27 +670,63 @@ __global__ void update_grid_kernel(
                         }
                     }
                 }
-#elif MPM_BOUNDARY_CONDITION == 2
-                const bool fixed = false;
-                const bool inside = false;
-                T dotnv = T(0.);
-                T diff_vel[3] = {T(0.), T(0.), T(0.)};
-                T normal[3] = {T(0.), T(0.), T(0.)};
-#elif MPM_BOUNDARY_CONDITION == 111
-                const bool fixed = false;
-                bool inside = false;
-                T dotnv = T(0.);
-                T diff_vel[3] = {T(0.), T(0.), T(0.)};
-                T normal[3] = {T(0.), T(0.), T(1.)};
-                T dist = pos[2] - T(0.11);
-                if (dist < 0) {
-                    inside = true;
-                    diff_vel[0] = - g_vel[0];
-                    diff_vel[1] = - g_vel[1];
-                    diff_vel[2] = - g_vel[2];
-                    dotnv = dot<3>(diff_vel, normal);
+
+                else if constexpr (MPM_BOUNDARY_CONDITION == 1) {
+                    const T sphere_radius = T(0.04);
+                    const T sphere_pos1[3] = { T(0.38), T(0.38), T(0.75) };
+                    const T sphere_pos2[3] = { T(0.38), T(0.62), T(0.75) };
+                    const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
+                    fixed = true;
+
+                    dist = distance<3>(pos, sphere_pos1) - sphere_radius;
+                    normal[0] = (pos[0] - sphere_pos1[0]);
+                    normal[1] = (pos[1] - sphere_pos1[1]);
+                    normal[2] = (pos[2] - sphere_pos1[2]);
+                    normalize<3, T>(normal);
+
+                    if (dist < T(0.)) {
+                        diff_vel[0] = sphere_vel[0] - g_vel[0];
+                        diff_vel[1] = sphere_vel[1] - g_vel[1];
+                        diff_vel[2] = sphere_vel[2] - g_vel[2];
+                        dotnv = dot<3>(normal, diff_vel);
+                        if (dotnv > T(0.) || fixed) {
+                            inside = true;
+                        }
+                    }
+                    else {
+                        dist = distance<3>(pos, sphere_pos2) - sphere_radius;
+                        normal[0] = (pos[0] - sphere_pos2[0]);
+                        normal[1] = (pos[1] - sphere_pos2[1]);
+                        normal[2] = (pos[2] - sphere_pos2[2]);
+                        normalize<3, T>(normal);
+
+                        dotnv = T(0.);
+                        if (dist < T(0.)) {
+                            diff_vel[0] = sphere_vel[0] - g_vel[0];
+                            diff_vel[1] = sphere_vel[1] - g_vel[1];
+                            diff_vel[2] = sphere_vel[2] - g_vel[2];
+                            dotnv = dot<3>(normal, diff_vel);
+                            if (dotnv > T(0.) || fixed) {
+                                inside = true;
+                            }
+                        }
+                    }
                 }
-#endif
+
+                // z-axis=0.1 used for cloth/tshirt folding demos
+                else if constexpr (MPM_BOUNDARY_CONDITION == 2) {
+                    normal[0] = T(0.);
+                    normal[1] = T(0.);
+                    normal[2] = T(1.);
+                    dist = pos[2] - T(0.11);
+                    if (dist < 0) {
+                        inside = true;
+                        diff_vel[0] = -g_vel[0];
+                        diff_vel[1] = -g_vel[1];
+                        diff_vel[2] = -g_vel[2];
+                        dotnv = dot<3>(diff_vel, normal);
+                    }
+                }
 
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
                 if (inside) {

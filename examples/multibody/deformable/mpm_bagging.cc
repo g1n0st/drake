@@ -58,6 +58,7 @@ int do_main() {
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.contact_query_frequency = 8;
+  mpm_config.mpm_bc = 1;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   /* All rigid and deformable models have been added. Finalize the plant. */
