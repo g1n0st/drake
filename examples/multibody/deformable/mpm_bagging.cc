@@ -230,16 +230,28 @@ int do_main() {
   plant.Finalize();
 
   /* Add a visualizer that emits LCM messages for visualization. */
-  geometry::DrakeVisualizerParams visualize_params;
+  /*geometry::DrakeVisualizerParams visualize_params;
   visualize_params.show_mpm = true;
   auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph, nullptr, visualize_params);
 
   // NOTE (changyu): MPM shortcut port shuould be explicit connected for visualization.
   builder.Connect(plant.get_output_port(
     plant.deformable_model().mpm_output_port_index()), 
-    visualizer.mpm_input_port());
+    visualizer.mpm_input_port());*/
 
   builder.Connect(builder.AddSystem<BaggingGripperController>()->get_output_port(), plant.get_desired_state_input_port(gripper_instance));
+
+  auto meshcat = std::make_shared<geometry::Meshcat>();
+  auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
+  // meshcat_params.publish_period = FLAGS_time_step * 2;
+  drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
+      &builder, scene_graph, meshcat, meshcat_params);
+  visualization::ApplyVisualizationConfig(
+      visualization::VisualizationConfig{
+          .default_proximity_color = geometry::Rgba{1, 0, 0, 0.25},
+          .enable_alpha_sliders = true,
+      },
+      &builder, nullptr, nullptr, nullptr, meshcat);
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
@@ -251,9 +263,16 @@ int do_main() {
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));
-  simulator.Initialize();
+  meshcat->StartRecording();
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
+  simulator.Initialize();
   simulator.AdvanceTo(FLAGS_simulation_time);
+  meshcat->StopRecording();
+  meshcat->PublishRecording();
+
+  std::ofstream htmlFile("mpm_bagging.html");
+  htmlFile << meshcat->StaticHtml();
+  htmlFile.close();
 
   return 0;
 }

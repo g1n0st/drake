@@ -131,6 +131,7 @@ drake_cc_library(
         "//multibody/plant",
         "//systems/analysis:simulator",
         "//systems/framework:diagram",
+        "//visualization",
         "@gflags",
     ],
 )

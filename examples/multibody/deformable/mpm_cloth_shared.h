@@ -1,5 +1,5 @@
 #include <memory>
-
+#include <fstream>
 #include <gflags/gflags.h>
 
 #include "drake/common/find_resource.h"
@@ -21,6 +21,11 @@
 #include "drake/systems/framework/diagram_builder.h"
 #include "drake/geometry/proximity/obj_to_surface_mesh.h"
 #include "drake/geometry/proximity/triangle_surface_mesh.h"
+#include "drake/visualization/visualization_config.h"
+#include "drake/visualization/visualization_config_functions.h"
+#include "drake/geometry/meshcat.h"
+#include "drake/geometry/meshcat_visualizer.h"
+#include "drake/geometry/meshcat_visualizer_params.h"
 
 using drake::geometry::ReadObjToTriangleSurfaceMesh;
 using drake::geometry::TriangleSurfaceMesh;
