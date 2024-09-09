@@ -2,7 +2,7 @@
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 25.0, "Desired duration of the simulation [s].");
-DEFINE_int32(res, 50, "Cloth Resolution.");
+DEFINE_int32(res, 60, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 2e-3,
               "Discrete time step for the system [s]. Must be positive.");
@@ -48,7 +48,7 @@ int do_main() {
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, FLAGS_res, 0.75);
+  AddCloth(&deformable_model, FLAGS_res, 0.5);
   // AddClothFromFile(&deformable_model, "/home/changyu/Desktop/tshirt.obj");
 
   MpmConfigParams mpm_config;
@@ -58,7 +58,7 @@ int do_main() {
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.contact_query_frequency = 8;
-  mpm_config.mpm_bc = 1;
+  mpm_config.mpm_bc = 3;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   /* All rigid and deformable models have been added. Finalize the plant. */

@@ -728,6 +728,31 @@ __global__ void update_grid_kernel(
                     }
                 }
 
+                // four-corner suspension used for bagging demo
+                else if constexpr (MPM_BOUNDARY_CONDITION == 3) {
+                    fixed = true;
+                    const T sphere_radius = T(0.02);
+                    const T span[2] = {T(0.3), T(0.7)};
+
+                    for (int _ = 0; _ < 4; ++_) {
+                        const T sphere_pos[3] = {span[_%2], span[_/2], 0.5};
+                        dist = distance<3>(pos, sphere_pos) - sphere_radius;
+                        normal[0] = (pos[0] - sphere_pos[0]);
+                        normal[1] = (pos[1] - sphere_pos[1]);
+                        normal[2] = (pos[2] - sphere_pos[2]);
+                        normalize<3, T>(normal);
+
+                        if (dist < T(0.)) {
+                            diff_vel[0] = -g_vel[0];
+                            diff_vel[1] = -g_vel[1];
+                            diff_vel[2] = -g_vel[2];
+                            dotnv = dot<3>(normal, diff_vel);
+                            inside = true;
+                            break;
+                        }
+                    }
+                }
+
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
                 if (inside) {
                     if (fixed) {
