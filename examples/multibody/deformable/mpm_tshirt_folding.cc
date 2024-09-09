@@ -26,9 +26,9 @@ DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 25.0, "Desired duration of the simulation [s].");
 DEFINE_int32(res, 50, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 2e-3,
+DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
-DEFINE_double(substep, 1e-4,
+DEFINE_double(substep, 5e-4,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
 DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
@@ -107,7 +107,7 @@ class FoldingGripperController : public systems::LeafSystem<double> {
  static constexpr double s2_h_z = 0.16;
  static constexpr double s2_up_duration = 1.75;
  static constexpr double s2_up_v = 0.05;
- static constexpr double s2_forward_duration = 3.0;
+ static constexpr double s2_forward_duration = 4.0;
  static constexpr double s2_forward_v = 0.05;
 
  static ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityProperties rigid_proximity_props) {
