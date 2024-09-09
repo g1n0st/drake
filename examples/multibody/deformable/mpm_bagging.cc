@@ -1,7 +1,7 @@
 #include "drake/examples/multibody/deformable/mpm_cloth_shared.h"
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
-DEFINE_double(simulation_time, 25.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 5.0, "Desired duration of the simulation [s].");
 DEFINE_int32(res, 60, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-3,
@@ -37,6 +37,10 @@ class BaggingGripperController : public systems::LeafSystem<double> {
  static constexpr double h_x = 0.66;
  static constexpr double l_z = 0.49+2e-3;
  static constexpr double h_z = 0.51-2e-3;
+
+ static constexpr double free_duration = 2.0;
+ static constexpr double bagging_duration = 1.25;
+ static constexpr double bagging_v = 0.1;
 
  static ModelInstanceIndex AddGripperInstance(MultibodyPlant<double>* plant, ProximityProperties rigid_proximity_props) {
   IllustrationProperties illustration_props;
@@ -90,7 +94,7 @@ class BaggingGripperController : public systems::LeafSystem<double> {
   void CalcDesiredState(const systems::Context<double>& context,
                         systems::BasicVector<double>* output) const {
     const double t = context.get_time();
-    unused(t);
+
     Vector3d gll_up_p;
     Vector3d glh_up_p;
     Vector3d ghl_up_p;
@@ -108,7 +112,7 @@ class BaggingGripperController : public systems::LeafSystem<double> {
     Vector3d glh_down_v;
     Vector3d ghl_down_v;
     Vector3d ghh_down_v;
-    if (true) {
+    if (t < free_duration) {
       gll_up_p = Vector3d(l_x, l_x, h_z);
       glh_up_p = Vector3d(l_x, h_x, h_z);
       ghl_up_p = Vector3d(h_x, l_x,  h_z);
@@ -117,6 +121,43 @@ class BaggingGripperController : public systems::LeafSystem<double> {
       glh_down_p = Vector3d(l_x, h_x, l_z);
       ghl_down_p = Vector3d(h_x, l_x,  l_z);
       ghh_down_p = Vector3d(h_x, h_x, l_z);
+
+      gll_up_v = Vector3d(0, 0, 0);
+      glh_up_v = Vector3d(0, 0, 0);
+      ghl_up_v = Vector3d(0, 0, 0);
+      ghh_up_v = Vector3d(0, 0, 0);
+      gll_down_v = Vector3d(0, 0, 0);
+      glh_down_v = Vector3d(0, 0, 0);
+      ghl_down_v = Vector3d(0, 0, 0);
+      ghh_down_v = Vector3d(0, 0, 0);
+    } else if (t < free_duration + bagging_duration) {
+      double dt = t - free_duration;
+      gll_up_p = Vector3d(l_x + dt * bagging_v, l_x + dt * bagging_v, h_z);
+      glh_up_p = Vector3d(l_x + dt * bagging_v, h_x - dt * bagging_v, h_z);
+      ghl_up_p = Vector3d(h_x - dt * bagging_v, l_x + dt * bagging_v,  h_z);
+      ghh_up_p = Vector3d(h_x - dt * bagging_v, h_x - dt * bagging_v, h_z);
+      gll_down_p = Vector3d(l_x + dt * bagging_v, l_x + dt * bagging_v, l_z);
+      glh_down_p = Vector3d(l_x + dt * bagging_v, h_x - dt * bagging_v, l_z);
+      ghl_down_p = Vector3d(h_x - dt * bagging_v, l_x + dt * bagging_v,  l_z);
+      ghh_down_p = Vector3d(h_x - dt * bagging_v, h_x - dt * bagging_v, l_z);
+
+      gll_up_v = Vector3d(+ dt * bagging_v, + dt * bagging_v, 0);
+      glh_up_v = Vector3d(+ dt * bagging_v, - dt * bagging_v, 0);
+      ghl_up_v = Vector3d(- dt * bagging_v, + dt * bagging_v, 0);
+      ghh_up_v = Vector3d(- dt * bagging_v, - dt * bagging_v, 0);
+      gll_down_v = Vector3d(+ dt * bagging_v, + dt * bagging_v, 0);
+      glh_down_v = Vector3d(+ dt * bagging_v, - dt * bagging_v, 0);
+      ghl_down_v = Vector3d(- dt * bagging_v, + dt * bagging_v, 0);
+      ghh_down_v = Vector3d(- dt * bagging_v, - dt * bagging_v, 0);
+    } else {
+      gll_up_p = Vector3d(l_x + bagging_duration * bagging_v, l_x + bagging_duration * bagging_v, h_z);
+      glh_up_p = Vector3d(l_x + bagging_duration * bagging_v, h_x - bagging_duration * bagging_v, h_z);
+      ghl_up_p = Vector3d(h_x - bagging_duration * bagging_v, l_x + bagging_duration * bagging_v,  h_z);
+      ghh_up_p = Vector3d(h_x - bagging_duration * bagging_v, h_x - bagging_duration * bagging_v, h_z);
+      gll_down_p = Vector3d(l_x + bagging_duration * bagging_v, l_x + bagging_duration * bagging_v, l_z);
+      glh_down_p = Vector3d(l_x + bagging_duration * bagging_v, h_x - bagging_duration * bagging_v, l_z);
+      ghl_down_p = Vector3d(h_x - bagging_duration * bagging_v, l_x + bagging_duration * bagging_v,  l_z);
+      ghh_down_p = Vector3d(h_x - bagging_duration * bagging_v, h_x - bagging_duration * bagging_v, l_z);
 
       gll_up_v = Vector3d(0, 0, 0);
       glh_up_v = Vector3d(0, 0, 0);
@@ -206,7 +247,7 @@ int do_main() {
   plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box1"), RigidTransformd(Eigen::Vector3d{0.5, 0.5, 0.59}));
   plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box2"), RigidTransformd(Eigen::Vector3d{0.4, 0.4, 0.54}));
   plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box3"), RigidTransformd(Eigen::Vector3d{0.35, 0.55, 0.57}));
-  plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box4"), RigidTransformd(Eigen::Vector3d{0.55, 0.55, 0.51}));
+  plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box4"), RigidTransformd(Eigen::Vector3d{0.55, 0.45, 0.53}));
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));
