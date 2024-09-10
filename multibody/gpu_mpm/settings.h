@@ -85,10 +85,16 @@ namespace config {
 	template<> constexpr float GAMMA<float> = 0.f;
 	template<> constexpr double GAMMA<double> = 0.;
 
+	// NOTE (changyu):
+	// for tshirt/cloth folding demo, K=100000
+	// for bagging demo, K=400000
 	template<class T> constexpr T K;
 	template<> constexpr float K<float> = 400000.f;
 	template<> constexpr double K<double> = 400000.;
 
+	// NOTE (changyu):
+	// for tshirt/cloth folding demo, V=0.8
+	// for bagging demo, K=0.2
 	template<class T> constexpr T V;
 	template<> constexpr float V<float> = .2f;
 	template<> constexpr double V<double> = .2;
