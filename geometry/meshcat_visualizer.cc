@@ -184,8 +184,11 @@ void MeshcatVisualizer<T>::SetMpmObjects(
     const TriangleSurfaceMesh<double> mesh(std::move(triangles), std::move(vertices));
     const Rgba rgba = params_.default_color;
     const std::string path = params_.prefix +"/mpm_object_visual";
-    meshcat_->SetTransform(path, math::RigidTransformd::Identity(), ExtractDoubleOrThrow(context.get_time()));
-    meshcat_->SetProperty(path, "modulated_opacity", 1.0);
+    const double time = ExtractDoubleOrThrow(context.get_time());
+    std::cout << time << std::endl;
+    meshcat_->SetTransform(path, math::RigidTransformd::Identity(), time);
+    meshcat_->SetProperty(path, "modulated_opacity", 1.0, time);
+    meshcat_->SetProperty(path, "visible", true, time);
     meshcat_->SetObject(path, mesh, rgba);
   }
 }
