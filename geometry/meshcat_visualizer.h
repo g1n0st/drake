@@ -15,6 +15,9 @@
 #include "drake/systems/framework/diagram_builder.h"
 #include "drake/systems/framework/leaf_system.h"
 
+// NOTE (changyu): add for MPM
+#include "multibody/gpu_mpm/cpu_mpm_model.h"
+
 namespace drake {
 namespace geometry {
 
@@ -114,6 +117,11 @@ class MeshcatVisualizer final : public systems::LeafSystem<T> {
     return this->get_input_port(query_object_input_port_);
   }
 
+  // NOTE (changyu): for MPM
+  const systems::InputPort<T>& mpm_input_port() const {
+    return this->get_input_port(mpm_input_port_);
+  }
+
   /** Adds a MeshcatVisualizer and connects it to the given SceneGraph's
    QueryObject-valued output port. See
    MeshcatVisualizer::MeshcatVisualizer(MeshcatVisualizer*,
@@ -149,6 +157,10 @@ class MeshcatVisualizer final : public systems::LeafSystem<T> {
   /* Makes calls to Meshcat::SetObject to register geometry in SceneGraph. */
   void SetObjects(const SceneGraphInspector<T>& inspector) const;
 
+  // NOTE (changyu): used for MPM Meshcat visualization.
+  void SetMpmObjects(const systems::Context<T>& context,
+                     const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT> & mpm_object) const;
+
   /* Makes calls to Meshcat::SetTransform to update the poses from SceneGraph.
    */
   void SetTransforms(const systems::Context<T>& context,
@@ -169,6 +181,9 @@ class MeshcatVisualizer final : public systems::LeafSystem<T> {
 
   /* The index of this System's QueryObject-valued input port. */
   int query_object_input_port_{};
+
+  // NOTE (changyu): this extra port is specialized to visualize MPM data
+  int mpm_input_port_{};
 
   /* Meshcat is mutable because we must send messages (a non-const operation)
    from a const System (e.g. during simulation).  We use shared_ptr instead of

@@ -47,6 +47,11 @@ MeshcatVisualizer<T>::MeshcatVisualizer(std::shared_ptr<Meshcat> meshcat,
   query_object_input_port_ =
       this->DeclareAbstractInputPort("query_object", Value<QueryObject<T>>())
           .get_index();
+  
+  // NOTE (changyu): in DrakeVisualizer, there is no knowledge of multibody::gmpm::config::GpuT,
+  // Restrictly using float here.
+  mpm_input_port_ = this->DeclareAbstractInputPort("mpm", 
+    Value<multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>>()).get_index();
 
   if (params_.enable_alpha_slider) {
     alpha_value_ = params_.initial_alpha_slider_value;
@@ -131,6 +136,11 @@ systems::EventStatus MeshcatVisualizer<T>::UpdateMeshcat(
     meshcat_->SetProperty(params_.prefix, "visible",
                           params_.visible_by_default);
   }
+  if (params_.show_mpm) {
+    const auto& mpm_object = 
+        mpm_input_port().template Eval<multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>>(context);
+    SetMpmObjects(context, mpm_object);
+  }
   if (!version_.has_value() ||
       !version_->IsSameAs(current_version, params_.role)) {
     SetObjects(query_object.inspector());
@@ -152,6 +162,32 @@ systems::EventStatus MeshcatVisualizer<T>::UpdateMeshcat(
   }
 
   return systems::EventStatus::Succeeded();
+}
+
+template <typename T>
+void MeshcatVisualizer<T>::SetMpmObjects(
+  const systems::Context<T>& context,
+  const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT> & mpm_object) const {
+  if constexpr (std::is_same_v<T, double>) {
+    std::vector<SurfaceTriangle> triangles;
+    std::vector<Vector3<T>> vertices;
+    for (const auto &p : mpm_object.pos) {
+      vertices.push_back(p.template cast<T>());
+    }
+    for (size_t t = 0; t < mpm_object.indices.size() / 3; ++t) {
+      triangles.push_back(SurfaceTriangle(
+        mpm_object.indices[t * 3 + 0],
+        mpm_object.indices[t * 3 + 1],
+        mpm_object.indices[t * 3 + 2]
+      ));
+    }
+    const TriangleSurfaceMesh<double> mesh(std::move(triangles), std::move(vertices));
+    const Rgba rgba = params_.default_color;
+    const std::string path = params_.prefix +"/mpm_object_visual";
+    meshcat_->SetTransform(path, math::RigidTransformd::Identity(), ExtractDoubleOrThrow(context.get_time()));
+    meshcat_->SetProperty(path, "modulated_opacity", 1.0);
+    meshcat_->SetObject(path, mesh, rgba);
+  }
 }
 
 template <typename T>
