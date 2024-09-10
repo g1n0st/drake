@@ -137,11 +137,21 @@ drake_cc_library(
 )
 
 drake_cc_binary(
+    name = "mpm_three_clothes",
+    srcs = [
+        "mpm_three_clothes.cc",
+    ],
+    deps = [
+        ":mpm_cloth_shared",
+        "@gflags",
+    ],
+)
+
+drake_cc_binary(
     name = "mpm_bagging",
     srcs = [
         "mpm_bagging.cc",
     ],
-    add_test_rule = 1,
     deps = [
         ":mpm_cloth_shared",
         "@gflags",
@@ -153,7 +163,6 @@ drake_cc_binary(
     srcs = [
         "mpm_cloth_folding.cc",
     ],
-    add_test_rule = 1,
     deps = [
         ":mpm_cloth_shared",
         "@gflags",
