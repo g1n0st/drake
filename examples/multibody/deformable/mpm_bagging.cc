@@ -1,7 +1,7 @@
 #include "drake/examples/multibody/deformable/mpm_cloth_shared.h"
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
-DEFINE_double(simulation_time, 1.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 5.0, "Desired duration of the simulation [s].");
 DEFINE_int32(res, 60, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-3,
@@ -230,21 +230,20 @@ int do_main() {
   plant.Finalize();
 
   /* Add a visualizer that emits LCM messages for visualization. */
-  /*geometry::DrakeVisualizerParams visualize_params;
+  geometry::DrakeVisualizerParams visualize_params;
   visualize_params.show_mpm = true;
   auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph, nullptr, visualize_params);
 
   // NOTE (changyu): MPM shortcut port shuould be explicit connected for visualization.
   builder.Connect(plant.get_output_port(
     plant.deformable_model().mpm_output_port_index()), 
-    visualizer.mpm_input_port());*/
+    visualizer.mpm_input_port());
 
   builder.Connect(builder.AddSystem<BaggingGripperController>()->get_output_port(), plant.get_desired_state_input_port(gripper_instance));
 
   auto meshcat = std::make_shared<geometry::Meshcat>();
   auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
   meshcat_params.show_mpm = true;
-  meshcat_params.publish_period = FLAGS_time_step;
   auto& meshcat_visualizer = drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
       &builder, scene_graph, meshcat, meshcat_params);
   visualization::ApplyVisualizationConfig(
