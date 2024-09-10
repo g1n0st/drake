@@ -41,6 +41,10 @@ int do_main() {
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
 
+  Sphere ball{0.08 - 1e-3};
+  const RigidTransformd X_WG_BALL(Eigen::Vector3d{0.5, 0.5, 0.5});
+  plant.RegisterVisualGeometry(plant.world_body(), X_WG_BALL, ball, "ball_visual", std::move(illustration_props));
+
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   AddCloth(&deformable_model, FLAGS_res, 0.75, -0.08);
   AddCloth(&deformable_model, FLAGS_res, 0.85, +0.08);
