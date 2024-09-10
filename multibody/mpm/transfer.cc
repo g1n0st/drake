@@ -29,6 +29,18 @@ Transfer<T>::Transfer(T dt, SparseGrid<T>* sparse_grid,
 }
 
 template <typename T>
+Transfer<T>::Transfer(T dt, SparseGrid<T>* sparse_grid,
+                      ContactParticleData<T>* contact_particles)
+    : dt_(dt),
+      sparse_grid_(sparse_grid),
+      contact_particles_(contact_particles) {
+  DRAKE_DEMAND(dt > 0);
+  DRAKE_DEMAND(sparse_grid != nullptr);
+  DRAKE_DEMAND(contact_particles != nullptr);
+  sparse_grid_->SortParticleIndices(contact_particles->x);
+}
+
+template <typename T>
 void Transfer<T>::SerialParticleToGrid() {
   const std::vector<uint64_t>& base_node_offsets =
       sparse_grid_->base_node_offsets();
@@ -549,6 +561,68 @@ void Transfer<T>::ParallelSimdGridToParticle(const Parallelism parallelize) {
                      base_node_offsets[next_p] != base_node_offsets[p];
       p = next_p;
     }
+  }
+}
+
+template <typename T>
+void Transfer<T>::ContactP2G2P() {
+  const std::vector<uint64_t>& base_node_offsets =
+      sparse_grid_->base_node_offsets();
+  const std::vector<int>& data_indices = sparse_grid_->data_indices();
+
+  Pad<GridData<T>> grid_data;
+  bool need_new_pad = true;
+  const int num_particles = contact_particles_->m.size();
+
+  /* P2G */
+  for (int p = 0; p < num_particles; ++p) {
+    const Vector3<T>& x = contact_particles_->x[data_indices[p]];
+    Vector3<T> mv = Vector3<T>::Zero();
+    for (const auto& impulse : contact_particles_->f[data_indices[p]]) {
+      mv += impulse.template cast<T>();
+    }
+
+    BsplineWeights<T> bspline(x, sparse_grid_->dx());
+    if (need_new_pad) {
+      grid_data = sparse_grid_->GetPadData(base_node_offsets[p]);
+    }
+    for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+        for (int k = 0; k < 3; ++k) {
+          const T& w = bspline.weight(i, j, k);
+          grid_data[i][j][k].v += mv * w;
+        }
+      }
+    }
+    need_new_pad = (p + 1 == num_particles) ||
+                   (base_node_offsets[p] != base_node_offsets[p + 1]);
+    if (need_new_pad) {
+      sparse_grid_->SetPadData(base_node_offsets[p], grid_data);
+    }
+  }
+
+  /* G2P */
+  for (int p = 0; p < num_particles; ++p) {
+    const Vector3<T>& x = contact_particles_->x[data_indices[p]];
+    Vector3<T>& v = contact_particles_->v[data_indices[p]];
+    v.setZero();
+    /* Write grid data to local pad. */
+    if (need_new_pad) {
+      grid_data = sparse_grid_->GetPadData(base_node_offsets[p]);
+    }
+    const BsplineWeights<T> bspline(x, sparse_grid_->dx());
+    for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+        for (int k = 0; k < 3; ++k) {
+          const Vector3<T>& vi = grid_data[i][j][k].v;
+          const T& mi = grid_data[i][j][k].m;
+          const T& w = bspline.weight(i, j, k);
+          v += w * vi / mi;
+        }
+      }
+    }
+    need_new_pad = (p + 1 == num_particles) ||
+                   (base_node_offsets[p] != base_node_offsets[p + 1]);
   }
 }
 

@@ -73,6 +73,23 @@ struct ParticleData {
 };
 
 template <typename T>
+struct ContactParticleData {
+  std::vector<double> m;                         // mass
+  std::vector<double> volume;                    // volume
+  std::vector<Vector3<T>> x;                     // positions
+  std::vector<Vector3<T>> v;                     // particle velocity
+  std::vector<std::vector<Vector3<T>>> f;        // particle contact momentum
+  std::vector<std::vector<Vector3<double>>> vr;  // rigid velocity
+  std::vector<std::vector<Vector3<double>>>
+      pr;  // position of the contact point in the rigid frame
+  std::vector<std::vector<Vector3<double>>>
+      nhat_W;                                  // contact normal in world frame
+  std::vector<std::vector<double>> phi;        // penetration depth
+  std::vector<std::vector<int>> body_indices;  // rigid body indices;
+  std::vector<std::vector<double>> mu;         // friction coefficients.
+};
+
+template <typename T>
 MassAndMomentum<T> ComputeTotalMassAndMomentum(const ParticleData<T>& particles,
                                                const T& dx) {
   MassAndMomentum<T> result;

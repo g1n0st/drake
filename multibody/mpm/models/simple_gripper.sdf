@@ -71,8 +71,8 @@
           </box>
         </geometry>
         <drake:proximity_properties>
-          <drake:mu_dynamic>15</drake:mu_dynamic>
-          <drake:mu_static>15</drake:mu_static>
+          <drake:mu_dynamic>1.0</drake:mu_dynamic>
+          <drake:mu_static>1.0</drake:mu_static>
         </drake:proximity_properties>
       </collision>
     </link>
@@ -111,8 +111,8 @@
           </box>
         </geometry>
         <drake:proximity_properties>
-          <drake:mu_dynamic>15</drake:mu_dynamic>
-          <drake:mu_static>15</drake:mu_static>
+          <drake:mu_dynamic>1.0</drake:mu_dynamic>
+          <drake:mu_static>1.0</drake:mu_static>
         </drake:proximity_properties>
       </collision>
     </link>

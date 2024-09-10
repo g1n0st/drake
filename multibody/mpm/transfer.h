@@ -33,6 +33,7 @@ class Transfer {
    and allocating memory for grid data.
    @pre sparse_grid and particles are not null. */
   Transfer(T dt, SparseGrid<T>* sparse_grid, ParticleData<T>* particles);
+  Transfer(T dt, SparseGrid<T>* sparse_grid, ContactParticleData<T>* particles);
 
   /* The transfer functions below each come in four flavors as the cross product
    of two options:
@@ -61,10 +62,13 @@ class Transfer {
   void ParallelGridToParticle(Parallelism parallelize);
   void ParallelSimdGridToParticle(Parallelism parallelize);
 
+  void ContactP2G2P(); 
+
  private:
   T dt_{0.0};
   SparseGrid<T>* sparse_grid_{};
   ParticleData<T>* particles_{};
+  ContactParticleData<T>* contact_particles_{};
   /* The D inverse matrix in computing the affine matrix. See page 42 in the MPM
    course notes referenced in the class documentation. */
   T D_inverse_{0.0};
