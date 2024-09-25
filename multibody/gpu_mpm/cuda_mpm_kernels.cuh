@@ -415,7 +415,7 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     }
 }
 
-template<typename T, int BLOCK_DIM, bool DV_TRANSFER>
+template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
 __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
@@ -479,7 +479,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         const T* vel = &velocities[idx * 3];
 
         T B[9];
-        if constexpr (!DV_TRANSFER) {
+        if constexpr (!CONTACT_TRANSFER) {
             const T* C = &affine_matrices[idx * 9];
             const T* stress = &taus[idx * 9];
             #pragma unroll
@@ -504,7 +504,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
-                    if constexpr (!DV_TRANSFER) {
+                    if constexpr (!CONTACT_TRANSFER) {
                         val[0] = mass * weight;
                         val[1] = vel[0] * val[0];
                         val[2] = vel[1] * val[0];

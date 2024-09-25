@@ -92,7 +92,7 @@ void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
         ));
     }
     CUDA_SAFE_CALL((
-        particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*DV_TRANSFER=*/false><<<
+        particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
          state->forces(), state->taus(),
@@ -202,7 +202,7 @@ void GpuMpmSolver<T>::SyncParticleStateToCpu(GpuMpmState<T> *state) const {
 }
 
 template<typename T>
-void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt, const T& scale) const {
+void GpuMpmSolver<T>::ContactImpulseToGrid(GpuMpmState<T> *state, const T& dt) const {
     size_t n_contacts = state->contact_ids_host().size();
     if (n_contacts) {
         std::vector<Vec3<T>> contact_pos;
@@ -212,7 +212,7 @@ void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt, co
             // current host state is the particle state at last time step (n).
             contact_pos.emplace_back(state->positions_host()[state->contact_ids_host()[i]]);
             contact_vol.emplace_back(state->volumes_host()[state->contact_ids_host()[i]]);
-            contact_dv.emplace_back(state->post_contact_dv_host()[i] * scale);
+            contact_dv.emplace_back(state->contact_dv_host()[i]);
         }
 
         CUDA_SAFE_CALL(cudaMemcpy(state->contact_positions(), contact_pos.data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
@@ -226,7 +226,7 @@ void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt, co
             ));
         
         CUDA_SAFE_CALL((
-            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*DV_TRANSFER=*/true><<<
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
             (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
             (n_contacts, state->contact_positions(), state->contact_velocities(), state->contact_volumes(), state->contact_affine_matrices(),
             state->forces(), state->taus(),

@@ -190,13 +190,13 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     }
   }
 
-  void UpdateContactDv(const systems::Context<T>& context, 
+  void UpdateContact(const systems::Context<T>& context, 
                        gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt,
                        const std::vector<geometry::internal::MpmParticleContactPair<T>>& mpm_contact_pairs) const {
     const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
     using GpuT = gmpm::config::GpuT;
     mpm_state->contact_ids_host().resize(mpm_contact_pairs.size());
-    mpm_state->post_contact_dv_host().resize(mpm_contact_pairs.size());
+    mpm_state->contact_dv_host().resize(mpm_contact_pairs.size());
     gmpm::ContactForceSolver<GpuT> solver(dt, 
       deformable_model_->cpu_mpm_model().config.contact_stiffness, 
       deformable_model_->cpu_mpm_model().config.contact_damping);
@@ -213,7 +213,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           );
         if (phi0 >= 0) {
           mpm_state->contact_ids_host()[i] = static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index);
-          auto &dv = mpm_state->post_contact_dv_host()[i];
+          auto &dv = mpm_state->contact_dv_host()[i];
           dv.setZero();
           const Vector3<GpuT>& particle_v = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
           const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);
@@ -281,6 +281,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           }
         }
       }
+
+      mpm_solver_.ContactImpulseToGrid(mpm_state, dt);
     }
   }
 
@@ -313,8 +315,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         if (current_frame > 0 && substep % deformable_model_->cpu_mpm_model().config.contact_query_frequency == 0) {
           CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs);
         }
-        UpdateContactDv(context, &mutable_mpm_state, ddt, mpm_contact_pairs);
-        mpm_solver_.PostContactDvToGrid(&mutable_mpm_state, ddt);
+        UpdateContact(context, &mutable_mpm_state, ddt, mpm_contact_pairs);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/true);
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
