@@ -234,44 +234,60 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       mpm_state->contact_vol_host()[i] = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index];
     }
 
+    std::vector<Vector3<GpuT>> last_dv(mpm_contact_pairs.size(), Vector3<GpuT>::Zero());
+
+    GpuT impulse_error = 1e10;
+    const GpuT kTol = 1e-7;
+    int count = 0;
+    while (impulse_error > kTol && count < 200) {
+      count++;
+      impulse_error = 0;
 #if defined(_OPENMP)
 #pragma omp parallel for num_threads(16)
 #endif
-    for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-      const Vector3<GpuT>& nhat_W = -mpm_contact_pairs[i].normal.template cast<GpuT>();
-      const GpuT phi0 = -(
-        static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
-          (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
-          mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
-        );
+      for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
+        const Vector3<GpuT>& nhat_W = -mpm_contact_pairs[i].normal.template cast<GpuT>();
+        const GpuT phi0 = -(
+          static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
+            (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
+            mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
+          );
 
-      if (phi0 >= 0) {
         const Vector3<GpuT> particle_v = mpm_state->contact_vel_host()[i];
         auto &dv = mpm_state->contact_vel_host()[i];
         dv.setZero();
-        const BodyIndex index_rigid = manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
-        const Vector3<GpuT> v_rel = particle_v - mpm_contact_pairs[i].rigid_v.template cast<GpuT>();
-        const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
-        const GpuT& mu = deformable_model_->cpu_mpm_model().config.contact_friction_mu;
-        const GpuT vn = v_rel.dot(nhat_W);
+        if (phi0 >= 0) {
+          const BodyIndex index_rigid = manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
+          const Vector3<GpuT> v_rel = particle_v - mpm_contact_pairs[i].rigid_v.template cast<GpuT>();
+          const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
+          const GpuT& mu = deformable_model_->cpu_mpm_model().config.contact_friction_mu;
+          const GpuT vn = v_rel.dot(nhat_W);
 
-        const GpuT vn_next = solver.Solve(m, vn, phi0);
+          const GpuT vn_next = solver.Solve(m, vn, phi0);
 
-        if (vn != vn_next) {
-          GpuT dvn = vn_next - vn;
-          dv += dvn * nhat_W;
+          if (vn != vn_next) {
+            GpuT dvn = vn_next - vn;
+            dv += dvn * nhat_W;
 
-          const Vector3<GpuT> vt = v_rel - vn * nhat_W;
-          const GpuT vt_norm = vt.norm();
-          /* Safely normalize the tangent vector. */
-          Vector3<GpuT> vt_hat = Vector3<GpuT>::Zero();
-          if (vt_norm > GpuT(1e-10)) {
-            vt_hat = vt / vt_norm;
+            const Vector3<GpuT> vt = v_rel - vn * nhat_W;
+            const GpuT vt_norm = vt.norm();
+            /* Safely normalize the tangent vector. */
+            Vector3<GpuT> vt_hat = Vector3<GpuT>::Zero();
+            if (vt_norm > GpuT(1e-10)) {
+              vt_hat = vt / vt_norm;
+            }
+            /* kf is the slope of the regulated friction in stiction. Larger kf
+            resolves static friction better, but is less numerically stable. */
+            const GpuT kf = GpuT(10.0);
+            dv -= std::min(dvn * mu, kf * vt_norm) * vt_hat;
           }
-          /* kf is the slope of the regulated friction in stiction. Larger kf
-          resolves static friction better, but is less numerically stable. */
-          const GpuT kf = GpuT(10.0);
-          dv -= std::min(dvn * mu, kf * vt_norm) * vt_hat;
+
+          const Vector3<GpuT> df = (dv - last_dv[i]);
+          last_dv[i] = dv;
+          // NOTE (changyu): apply the delta impulse to the grid progressively.
+          dv = df;
+
+
           /* We negate the sign of the grid node's momentum change to get
                 the impulse applied to the rigid body at the grid node. */
           const Vector3<GpuT> l_WN_W = (m * (-dv));
@@ -288,12 +304,16 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           {
             mpm_state->external_forces_host()[index_rigid].F_Bq_W_tau += h_WNBo_W;
             mpm_state->external_forces_host()[index_rigid].F_Bq_W_f += l_WN_W;
+            impulse_error += df.squaredNorm();
           }
         }
       }
+
+      impulse_error = std::sqrt(impulse_error);
+      mpm_solver_.ContactP2G2P(mpm_state, dt);
     }
 
-    mpm_solver_.ContactImpulseToGrid(mpm_state, dt);
+    std::cout << "Iteration count :" <<  count << ", impulse_error: " << impulse_error << std::endl;
   }
 
   void CalcAbstractStates(const systems::Context<T>& context,
