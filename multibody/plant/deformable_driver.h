@@ -120,8 +120,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   
   void CalcMpmContactPairs(
       const systems::Context<T>& context, gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state,
-      std::vector<geometry::internal::MpmParticleContactPair<T>>* result)
-      const {
+      std::vector<geometry::internal::MpmParticleContactPair<T>>* result) const {
     DRAKE_ASSERT(result != nullptr);
     long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     result->clear();
@@ -130,6 +129,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     
     // NOTE (changyu): make sure the pose is up-to-date at the time performing the distance query.
     query_object.FullPoseUpdate();
+    const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
 
     // loop over each particle
 #if defined(_OPENMP)
@@ -147,10 +147,33 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         if (p2geometry.distance < 0) {
           // if particle is inside rigid body, i.e. in contact
           // note: normal direction
-          // NOTE, TODO (changyu): we treat each collision pair as an individual collision particle,
+          // NOTE (changyu): we treat each collision pair as an individual collision particle,
           // i.e., if one mpm particle has multiple collision pairs, it will be treated as
           // multiple collision particles and get independent impulse dv for each constraint.
-          // Not sure if it's worked.
+          const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);
+          const BodyIndex index_rigid =
+            manager_->geometry_id_to_body_index().at(p2geometry.id_G);
+          const TreeIndex tree_index_rigid =
+              tree_topology.body_to_tree_index(index_rigid);
+          Vector3<T> rigid_v = Vector3<T>::Zero();
+          if (tree_index_rigid.is_valid()) {
+            Matrix3X<T> Jv_v_WBc_W(3, manager_->plant().num_velocities());
+            const Body<T>& rigid_body = manager_->plant().get_body(index_rigid);
+            const Frame<T>& frame_W = manager_->plant().world_frame();
+            manager_->internal_tree().CalcJacobianTranslationalVelocity(
+                context, JacobianWrtVariable::kV, rigid_body.body_frame(), frame_W,
+                mpm_state->positions_host()[p].template cast<T>(), frame_W, frame_W,
+                &Jv_v_WBc_W);
+            Matrix3X<T> J_rigid =
+                Jv_v_WBc_W.middleCols(
+                    tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+                    tree_topology.num_tree_velocities(tree_index_rigid)).template cast<T>();
+            rigid_v = J_rigid * 
+                        v.segment(tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+                                tree_topology.num_tree_velocities(tree_index_rigid))
+                                .template cast<T>();
+          }
+
           #if defined(_OPENMP)
           #pragma omp critical
           #endif
@@ -158,7 +181,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
             result->emplace_back(geometry::internal::MpmParticleContactPair<T>(
                 p, p2geometry.id_G, p2geometry.distance,
                 -p2geometry.grad_W.normalized(),
-                mpm_state->positions_host()[p].template cast<T>()));
+                mpm_state->positions_host()[p].template cast<T>(),
+                rigid_v));
           }
         }
       }
@@ -190,11 +214,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     }
   }
 
-  void UpdateContact(const systems::Context<T>& context, 
-                       gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt,
-                       const std::vector<geometry::internal::MpmParticleContactPair<T>>& mpm_contact_pairs) const {
+  void UpdateContact(gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt,
+                     const std::vector<geometry::internal::MpmParticleContactPair<T>>& mpm_contact_pairs) const {
     if (mpm_contact_pairs.size() == 0) return;
-    const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
     using GpuT = gmpm::config::GpuT;
     mpm_state->contact_pos_host().resize(mpm_contact_pairs.size());
     mpm_state->contact_vel_host().resize(mpm_contact_pairs.size());
@@ -207,42 +229,28 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 #pragma omp parallel for num_threads(16)
 #endif
     for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
+      mpm_state->contact_pos_host()[i] = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
+      mpm_state->contact_vel_host()[i] = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
+      mpm_state->contact_vol_host()[i] = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index];
+    }
+
+#if defined(_OPENMP)
+#pragma omp parallel for num_threads(16)
+#endif
+    for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
       const Vector3<GpuT>& nhat_W = -mpm_contact_pairs[i].normal.template cast<GpuT>();
       const GpuT phi0 = -(
         static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
           (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
           mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
         );
+
       if (phi0 >= 0) {
-        mpm_state->contact_pos_host()[i] = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
-        mpm_state->contact_vol_host()[i] = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index];
+        const Vector3<GpuT> particle_v = mpm_state->contact_vel_host()[i];
         auto &dv = mpm_state->contact_vel_host()[i];
         dv.setZero();
-        const Vector3<GpuT>& particle_v = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
-        const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);
-        const BodyIndex index_rigid =
-            manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
-        const TreeIndex tree_index_rigid =
-            tree_topology.body_to_tree_index(index_rigid);
-        Vector3<GpuT> rigid_v = Vector3<GpuT>::Zero();
-        if (tree_index_rigid.is_valid()) {
-          Matrix3X<T> Jv_v_WBc_W(3, manager_->plant().num_velocities());
-          const Body<T>& rigid_body = manager_->plant().get_body(index_rigid);
-          const Frame<T>& frame_W = manager_->plant().world_frame();
-          manager_->internal_tree().CalcJacobianTranslationalVelocity(
-              context, JacobianWrtVariable::kV, rigid_body.body_frame(), frame_W,
-              mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index].template cast<T>(), frame_W, frame_W,
-              &Jv_v_WBc_W);
-          Matrix3X<GpuT> J_rigid =
-              Jv_v_WBc_W.middleCols(
-                  tree_topology.tree_velocities_start_in_v(tree_index_rigid),
-                  tree_topology.num_tree_velocities(tree_index_rigid)).template cast<GpuT>();
-          rigid_v = J_rigid * 
-                      v.segment(tree_topology.tree_velocities_start_in_v(tree_index_rigid),
-                              tree_topology.num_tree_velocities(tree_index_rigid))
-                              .template cast<GpuT>();
-        }
-        const Vector3<GpuT> v_rel = particle_v - rigid_v;
+        const BodyIndex index_rigid = manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
+        const Vector3<GpuT> v_rel = particle_v - mpm_contact_pairs[i].rigid_v.template cast<GpuT>();
         const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
         const GpuT& mu = deformable_model_->cpu_mpm_model().config.contact_friction_mu;
         const GpuT vn = v_rel.dot(nhat_W);
@@ -317,7 +325,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         if (current_frame > 0 && substep % deformable_model_->cpu_mpm_model().config.contact_query_frequency == 0) {
           CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs);
         }
-        UpdateContact(context, &mutable_mpm_state, ddt, mpm_contact_pairs);
+        UpdateContact(&mutable_mpm_state, ddt, mpm_contact_pairs);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
