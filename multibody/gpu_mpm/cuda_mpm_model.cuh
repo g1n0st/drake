@@ -116,10 +116,12 @@ public:
     const std::vector<Vec3<T>>& velocities_host() const { return h_velocities_; }
     std::vector<T>& volumes_host() { return h_volumes_; }
     const std::vector<T>& volumes_host() const { return h_volumes_; }
-    std::vector<int>& contact_ids_host() { return h_contact_ids_; }
-    const std::vector<int>& contact_ids_host() const { return h_contact_ids_; }
-    std::vector<Vec3<T>>& contact_dv_host() { return h_contact_dv_; }
-    const std::vector<Vec3<T>>& contact_dv_host() const { return h_contact_dv_; }
+    std::vector<Vec3<T>>& contact_pos_host() { return h_contact_pos_; }
+    const std::vector<Vec3<T>>& contact_pos_host() const { return h_contact_pos_; }
+    std::vector<Vec3<T>>& contact_vel_host() { return h_contact_vel_; }
+    const std::vector<Vec3<T>>& contact_vel_host() const { return h_contact_vel_; }
+    std::vector<T>& contact_vol_host() { return h_contact_vol_; }
+    const std::vector<T>& contact_vol_host() const { return h_contact_vol_; }
 
     const std::vector<ExternalSpatialForce<T>>& external_forces_host() const { return h_external_forces_; }
     std::vector<ExternalSpatialForce<T>>& external_forces_host() { return h_external_forces_; }
@@ -196,9 +198,11 @@ private:
     std::vector<Vec3<T>> h_velocities_;
     std::vector<T> h_volumes_;
     std::vector<int> h_indices_;
+    
     // host ptrs for contact solving
-    std::vector<int> h_contact_ids_;
-    std::vector<Vec3<T>> h_contact_dv_;
+    std::vector<Vec3<T>> h_contact_pos_;
+    std::vector<Vec3<T>> h_contact_vel_;
+    std::vector<T> h_contact_vol_;
 
     std::vector<ExternalSpatialForce<T>> h_external_forces_;
 

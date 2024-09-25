@@ -834,7 +834,7 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
                     if constexpr (CONTACT_TRANSFER) {
-                        const T* g_m = &g_masses[target_cell_index];
+                        const T &g_m = g_masses[target_cell_index];
                         // NOTE (changyu): in contact transfer, g_momentum still stores the momentum.
                         new_v[0] += weight * (g_v[0] / g_m);
                         new_v[1] += weight * (g_v[1] / g_m);

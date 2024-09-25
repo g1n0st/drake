@@ -195,8 +195,10 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
                        const std::vector<geometry::internal::MpmParticleContactPair<T>>& mpm_contact_pairs) const {
     const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
     using GpuT = gmpm::config::GpuT;
-    mpm_state->contact_ids_host().resize(mpm_contact_pairs.size());
-    mpm_state->contact_dv_host().resize(mpm_contact_pairs.size());
+    mpm_state->contact_pos_host().resize(mpm_contact_pairs.size());
+    mpm_state->contact_vel_host().resize(mpm_contact_pairs.size());
+    mpm_state->contact_vol_host().resize(mpm_contact_pairs.size());
+
     gmpm::ContactForceSolver<GpuT> solver(dt, 
       deformable_model_->cpu_mpm_model().config.contact_stiffness, 
       deformable_model_->cpu_mpm_model().config.contact_damping);
@@ -212,8 +214,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
             mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
           );
         if (phi0 >= 0) {
-          mpm_state->contact_ids_host()[i] = static_cast<int>(mpm_contact_pairs[i].particle_in_contact_index);
-          auto &dv = mpm_state->contact_dv_host()[i];
+          mpm_state->contact_pos_host()[i] = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
+          mpm_state->contact_vol_host()[i] = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index];
+          auto &dv = mpm_state->contact_vel_host()[i];
           dv.setZero();
           const Vector3<GpuT>& particle_v = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
           const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);

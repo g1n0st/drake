@@ -27,6 +27,8 @@ public:
     void SyncParticleStateToCpu(GpuMpmState<T> *state) const;
     void Dump(const GpuMpmState<T> &state, std::string filename) const;
     void ContactImpulseToGrid(GpuMpmState<T> *state, const T& dt) const;
+    void GridToContactVel(GpuMpmState<T> *state, const T& dt) const;
+    void ContactP2G2P(GpuMpmState<T> *state, const T& dt) const;
 };
 
 }  // namespace gmpm

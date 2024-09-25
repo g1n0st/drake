@@ -194,21 +194,11 @@ void GpuMpmSolver<T>::SyncParticleStateToCpu(GpuMpmState<T> *state) const {
 
 template<typename T>
 void GpuMpmSolver<T>::ContactImpulseToGrid(GpuMpmState<T> *state, const T& dt) const {
-    size_t n_contacts = state->contact_ids_host().size();
+    size_t n_contacts = state->contact_pos_host().size();
     if (n_contacts) {
-        std::vector<Vec3<T>> contact_pos;
-        std::vector<Vec3<T>> contact_dv;
-        std::vector<T> contact_vol;
-        for (size_t i = 0; i < n_contacts; ++i) {
-            // current host state is the particle state at last time step (n).
-            contact_pos.emplace_back(state->positions_host()[state->contact_ids_host()[i]]);
-            contact_vol.emplace_back(state->volumes_host()[state->contact_ids_host()[i]]);
-            contact_dv.emplace_back(state->contact_dv_host()[i]);
-        }
-
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_positions(), contact_pos.data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_velocities(), contact_dv.data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_volumes(), contact_vol.data(), sizeof(T) * n_contacts, cudaMemcpyHostToDevice));
+        CUDA_SAFE_CALL(cudaMemcpy(state->contact_positions(), state->contact_pos_host().data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
+        CUDA_SAFE_CALL(cudaMemcpy(state->contact_velocities(), state->contact_vel_host().data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
+        CUDA_SAFE_CALL(cudaMemcpy(state->contact_volumes(), state->contact_vol_host().data(), sizeof(T) * n_contacts, cudaMemcpyHostToDevice));
 
         CUDA_SAFE_CALL((
             compute_base_cell_node_index_kernel<<<
@@ -225,6 +215,27 @@ void GpuMpmSolver<T>::ContactImpulseToGrid(GpuMpmState<T> *state, const T& dt) c
             state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
             ));
     }
+}
+
+template<typename T>
+void GpuMpmSolver<T>::GridToContactVel(GpuMpmState<T> *state, const T& dt) const {
+    size_t n_contacts = state->contact_pos_host().size();
+    if (n_contacts) {
+        CUDA_SAFE_CALL((
+            grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (n_contacts, state->contact_positions(), state->contact_velocities(), state->contact_affine_matrices(),
+            state->grid_masses(), state->grid_momentum(), dt)
+            ));
+        CUDA_SAFE_CALL(cudaDeviceSynchronize());
+        CUDA_SAFE_CALL(cudaMemcpy(state->contact_vel_host().data(), state->contact_velocities(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyDeviceToHost));
+    }
+}
+
+template<typename T>
+void GpuMpmSolver<T>::ContactP2G2P(GpuMpmState<T> *state, const T& dt) const {
+    ContactImpulseToGrid(state, dt);
+    GridToContactVel(state, dt);
 }
 
 template class GpuMpmSolver<double>;
