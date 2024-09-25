@@ -317,7 +317,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         }
         UpdateContact(context, &mutable_mpm_state, ddt, mpm_contact_pairs);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc);
-        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt, /*advect=*/true);
+        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
         substep += 1;
       }

@@ -22,7 +22,7 @@ public:
     void CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt) const;
     void ParticleToGrid(GpuMpmState<T> *state, const T& dt) const;
     void UpdateGrid(GpuMpmState<T> *state, int mpm_bc = -1) const;
-    void GridToParticle(GpuMpmState<T> *state, const T& dt, bool advect=true) const;
+    void GridToParticle(GpuMpmState<T> *state, const T& dt) const;
     void GpuSync() const;
     void SyncParticleStateToCpu(GpuMpmState<T> *state) const;
     void Dump(const GpuMpmState<T> &state, std::string filename) const;

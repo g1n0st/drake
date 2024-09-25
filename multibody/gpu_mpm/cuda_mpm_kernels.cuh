@@ -771,11 +771,12 @@ __global__ void update_grid_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool ADVECT>
+template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
 __global__ void grid_to_particle_kernel(const size_t n_particles,
     T* positions, 
     T* velocities,
     T* affine_matrices,
+    const T* g_masses,
     const T* g_momentum,
     const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -831,56 +832,69 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                     const T* g_v = &g_momentum[target_cell_index * 3];
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
-                    new_v[0] += weight * g_v[0];
-                    new_v[1] += weight * g_v[1];
-                    new_v[2] += weight * g_v[2];
-                    // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
 
-                    // printf("i=%d j=%d k=%d\n", i, j, k);
-                    // printf("weight=%.8lf\n", weight);
-                    // printf("g_v=[%.8lf   %.8lf   %.8lf]\n", g_v[0], g_v[1], g_v[2]);
-                    // printf("xip=[%.8lf   %.8lf   %.8lf]\n", xi_minus_xp[0], xi_minus_xp[1], xi_minus_xp[2]);
-                    new_C[0] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[0];
-                    new_C[1] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[1];
-                    new_C[2] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[2];
-                    new_C[3] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[0];
-                    new_C[4] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[1];
-                    new_C[5] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[2];
-                    new_C[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
-                    new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
-                    new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
+                    if constexpr (CONTACT_TRANSFER) {
+                        const T* g_m = &g_masses[target_cell_index];
+                        // NOTE (changyu): in contact transfer, g_momentum still stores the momentum.
+                        new_v[0] += weight * (g_v[0] / g_m);
+                        new_v[1] += weight * (g_v[1] / g_m);
+                        new_v[2] += weight * (g_v[2] / g_m);
+                    } else {
+                        new_v[0] += weight * g_v[0];
+                        new_v[1] += weight * g_v[1];
+                        new_v[2] += weight * g_v[2];
+                        // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
+
+                        // printf("i=%d j=%d k=%d\n", i, j, k);
+                        // printf("weight=%.8lf\n", weight);
+                        // printf("g_v=[%.8lf   %.8lf   %.8lf]\n", g_v[0], g_v[1], g_v[2]);
+                        // printf("xip=[%.8lf   %.8lf   %.8lf]\n", xi_minus_xp[0], xi_minus_xp[1], xi_minus_xp[2]);
+                        new_C[0] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[0];
+                        new_C[1] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[1];
+                        new_C[2] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[2];
+                        new_C[3] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[0];
+                        new_C[4] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[1];
+                        new_C[5] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[2];
+                        new_C[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
+                        new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
+                        new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
+                    }
                 }
             }
         }
 
-        velocities[idx * 3 + 0] = new_v[0];
-        velocities[idx * 3 + 1] = new_v[1];
-        velocities[idx * 3 + 2] = new_v[2];
+        if constexpr (CONTACT_TRANSFER) {
+            velocities[idx * 3 + 0] = new_v[0];
+            velocities[idx * 3 + 1] = new_v[1];
+            velocities[idx * 3 + 2] = new_v[2];
+        } else {
+            velocities[idx * 3 + 0] = new_v[0];
+            velocities[idx * 3 + 1] = new_v[1];
+            velocities[idx * 3 + 2] = new_v[2];
 
-        transpose<3, 3, T>(new_C, new_CT);
-        affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
-        affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
-        affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
-        affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
-        affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
-        affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
-        affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
-        affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
-        affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
+            transpose<3, 3, T>(new_C, new_CT);
+            affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
+            affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
+            affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
+            affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
+            affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
+            affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
+            affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
+            affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
+            affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
 
-        // Advection
-        if constexpr (ADVECT) {
+            // Advection
             positions[idx * 3 + 0] += new_v[0] * dt;
             positions[idx * 3 + 1] += new_v[1] * dt;
             positions[idx * 3 + 2] += new_v[2] * dt;
-        }
 
-        // printf("v=\n");
-        // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);
-        // printf("C=\n");
-        // printf("[[%.8lf   %.8lf   %.8lf] \n", new_C[0], new_C[1], new_C[2]);
-        // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
-        // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
+            // printf("v=\n");
+            // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);
+            // printf("C=\n");
+            // printf("[[%.8lf   %.8lf   %.8lf] \n", new_C[0], new_C[1], new_C[2]);
+            // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
+            // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
+        }
     }
 }
 
