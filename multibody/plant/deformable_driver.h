@@ -256,7 +256,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         const Vector3<GpuT> particle_v = mpm_state->contact_vel_host()[i];
         auto &dv = mpm_state->contact_vel_host()[i];
         if (phi0 >= 0) {
-          // const BodyIndex index_rigid = manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
           const Vector3<GpuT> v_rel = particle_v - mpm_contact_pairs[i].rigid_v.template cast<GpuT>();
           const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
           const GpuT& mu = deformable_model_->cpu_mpm_model().config.contact_friction_mu;
@@ -284,23 +283,10 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           // NOTE (changyu): apply the delta impulse to the grid progressively.
           dv = df;
 
-
-          /* We negate the sign of the grid node's momentum change to get
-                the impulse applied to the rigid body at the grid node. */
-          // const Vector3<GpuT> l_WN_W = (m * (-dv));
-          // const Vector3<GpuT> p_WN = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
-          // const Vector3<GpuT>& p_WB = mpm_state->external_forces_host()[index_rigid].p_BoBq_B;
-          // const Vector3<GpuT> p_BN_W = p_WN - p_WB;
-          /* The angular impulse applied to the rigid body at the grid node. */
-          // const Vector3<GpuT> h_WNBo_W = p_BN_W.cross(l_WN_W);
-          /* Use `F_Bq_W` to store the spatial impulse applied to the body
-            at its origin, expressed in the world frame. */
           #if defined(_OPENMP)
           #pragma omp critical
           #endif
           {
-            // mpm_state->external_forces_host()[index_rigid].F_Bq_W_tau += h_WNBo_W;
-            // mpm_state->external_forces_host()[index_rigid].F_Bq_W_f += l_WN_W;
             impulse_error += df.norm() / (old_dv.norm() + 1e-9);
           }
         }
@@ -311,6 +297,33 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     }
 
     std::cout << "Iteration count :" <<  count << ", impulse_error: " << impulse_error << std::endl;
+
+    /* Accumulate the contact impulses on the rigid bodies. */
+#if defined(_OPENMP)
+#pragma omp parallel for num_threads(16)
+#endif
+      for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
+        const BodyIndex index_rigid = manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
+        const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
+        /* We negate the sign of the grid node's momentum change to get
+              the impulse applied to the rigid body at the grid node. */
+        const Vector3<GpuT> l_WN_W = (m * (-last_dv[i]));
+        const Vector3<GpuT> p_WN = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
+        const Vector3<GpuT>& p_WB = mpm_state->external_forces_host()[index_rigid].p_BoBq_B;
+        const Vector3<GpuT> p_BN_W = p_WN - p_WB;
+        /* The angular impulse applied to the rigid body at the grid node. */
+        const Vector3<GpuT> h_WNBo_W = p_BN_W.cross(l_WN_W);
+        /* Use `F_Bq_W` to store the spatial impulse applied to the body
+          at its origin, expressed in the world frame. */
+        
+        #if defined(_OPENMP)
+        #pragma omp critical
+        #endif
+        {
+          mpm_state->external_forces_host()[index_rigid].F_Bq_W_tau += h_WNBo_W;
+          mpm_state->external_forces_host()[index_rigid].F_Bq_W_f += l_WN_W;
+        }
+      }
   }
 
   void CalcAbstractStates(const systems::Context<T>& context,
