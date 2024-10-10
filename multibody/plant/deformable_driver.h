@@ -292,11 +292,16 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         }
       }
 
-      impulse_error /= mpm_contact_pairs.size();
+      if (mpm_contact_pairs.size() > 0) {
+        impulse_error /= mpm_contact_pairs.size();
+      }
       mpm_solver_.ContactP2G2P(mpm_state, dt);
     }
 
-    std::cout << "Iteration count :" <<  count << ", impulse_error: " << impulse_error << std::endl;
+    std::cout << "Iteration count :" <<  count << ", impulse_error: " << impulse_error << " mpm_contact_pairs.size() " << mpm_contact_pairs.size() << std::endl;
+    if (std::isnan(impulse_error)) {
+      throw;
+    }
 
     /* Accumulate the contact impulses on the rigid bodies. */
 #if defined(_OPENMP)
