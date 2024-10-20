@@ -145,6 +145,8 @@ public:
     using DumpT = std::tuple<std::vector<Vec3<T>>, std::vector<int>>;
     DumpT DumpCpuState() const;
 
+    int total_contact_iteration_count = 0;
+
 private:
 
     // Particles state device ptrs

@@ -234,12 +234,24 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       mpm_state->contact_vol_host()[i] = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index];
     }
 
-    std::vector<Vector3<GpuT>> last_dv(mpm_contact_pairs.size(), Vector3<GpuT>::Zero());
+    std::vector<Vector3<GpuT>> dv_k_2(mpm_contact_pairs.size(), Vector3<GpuT>::Zero());
+    std::vector<Vector3<GpuT>> dv_k_1(mpm_contact_pairs.size(), Vector3<GpuT>::Zero());
 
     GpuT impulse_error = 1e10;
     const GpuT kTol = 1e-3;
     int count = 0;
+    GpuT w_k = GpuT(1.); // Chebyshev iteration weight
+    GpuT rho = GpuT(0.55);  // estimated spectral radius
+    GpuT gamma = GpuT(1.0); // under-relaxation coefficient
     while (impulse_error > kTol && count < 1000) {
+      // Chebyshev iteration weight update
+      if (count == 0) {
+        w_k = static_cast<GpuT>(1.);
+      } else if (count == 1) {
+        w_k = static_cast<GpuT>(2.) / (static_cast<GpuT>(2.) - rho * rho);
+      } else {
+        w_k = static_cast<GpuT>(4.) / (static_cast<GpuT>(4.) - rho * rho * w_k);
+      }
       count++;
       impulse_error = 0;
 #if defined(_OPENMP)
@@ -255,6 +267,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
         const Vector3<GpuT> particle_v = mpm_state->contact_vel_host()[i];
         auto &dv = mpm_state->contact_vel_host()[i];
+        Vector3<GpuT> dv_hat;
         if (phi0 >= 0) {
           const Vector3<GpuT> v_rel = particle_v - mpm_contact_pairs[i].rigid_v.template cast<GpuT>();
           const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
@@ -262,7 +275,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           const GpuT vn = v_rel.dot(nhat_W);
 
           const GpuT vn_next = solver.Solve(m, vn, phi0);
-          const Vector3<GpuT> old_dv = last_dv[i];
+          const Vector3<GpuT> old_dv = dv_k_1[i];
 
           if (vn != vn_next) {
             const Vector3<GpuT> vt = v_rel - vn * nhat_W;
@@ -273,13 +286,15 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
               ft.normalize();
               ft *= fn * mu;
             }
-            dv = old_dv + fn * nhat_W + ft;
+            dv_hat = old_dv + fn * nhat_W + ft;
           } else {
-            dv = old_dv;
+            dv_hat = old_dv;
           }
+          dv = w_k * (gamma * (dv_hat - dv_k_1[i]) + dv_k_1[i] - dv_k_2[i]) + dv_k_2[i];
 
           const Vector3<GpuT> df = (dv - old_dv);
-          last_dv[i] = dv;
+          dv_k_2[i] = dv_k_1[i];
+          dv_k_1[i] = dv;
           // NOTE (changyu): apply the delta impulse to the grid progressively.
           dv = df;
 
@@ -299,6 +314,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     }
 
     std::cout << "Iteration count :" <<  count << ", impulse_error: " << impulse_error << " mpm_contact_pairs.size() " << mpm_contact_pairs.size() << std::endl;
+    mpm_state->total_contact_iteration_count += count;
+    std::cout << "Total Contact Iterations:" << mpm_state->total_contact_iteration_count << std::endl;
     if (std::isnan(impulse_error)) {
       throw;
     }
@@ -312,7 +329,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
         /* We negate the sign of the grid node's momentum change to get
               the impulse applied to the rigid body at the grid node. */
-        const Vector3<GpuT> l_WN_W = (m * (-last_dv[i]));
+        const Vector3<GpuT> l_WN_W = (m * (-dv_k_1[i]));
         const Vector3<GpuT> p_WN = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
         const Vector3<GpuT>& p_WB = mpm_state->external_forces_host()[index_rigid].p_BoBq_B;
         const Vector3<GpuT> p_BN_W = p_WN - p_WB;
