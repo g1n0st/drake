@@ -25,6 +25,7 @@ struct MeshcatVisualizerParams {
     a->Visit(DRAKE_NVP(visible_by_default));
     a->Visit(DRAKE_NVP(show_hydroelastic));
     a->Visit(DRAKE_NVP(include_unspecified_accepting));
+    a->Visit(DRAKE_NVP(show_mpm));
   }
 
   /** The duration (in simulation seconds) between attempts to update poses in
@@ -88,6 +89,8 @@ struct MeshcatVisualizerParams {
    is absent then the geometry will be shown only if
    `include_unspecified_accepting` is true. */
   bool include_unspecified_accepting{true};
+
+  bool show_mpm{false};
 };
 
 }  // namespace geometry

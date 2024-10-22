@@ -15,6 +15,15 @@ namespace drake {
 namespace multibody {
 namespace gmpm {
 
+// NOTE (changyu): buffers used for aggregating substepping contact impulse to rigid bodies;
+template <typename T>
+struct ExternalSpatialForce {
+    Vec3<T> p_BoBq_B;
+    // a spatial force F from a torque 𝛕 (tau) and a force 𝐟.
+    Vec3<T> F_Bq_W_tau;
+    Vec3<T> F_Bq_W_f;
+};
+
 template <typename T>
 struct GpuMpmState {
 
@@ -107,10 +116,15 @@ public:
     const std::vector<Vec3<T>>& velocities_host() const { return h_velocities_; }
     std::vector<T>& volumes_host() { return h_volumes_; }
     const std::vector<T>& volumes_host() const { return h_volumes_; }
-    std::vector<int>& contact_ids_host() { return h_contact_ids_; }
-    const std::vector<int>& contact_ids_host() const { return h_contact_ids_; }
-    std::vector<Vec3<T>>& post_contact_dv_host() { return h_post_contact_dv_; }
-    const std::vector<Vec3<T>>& post_contact_dv_host() const { return h_post_contact_dv_; }
+    std::vector<Vec3<T>>& contact_pos_host() { return h_contact_pos_; }
+    const std::vector<Vec3<T>>& contact_pos_host() const { return h_contact_pos_; }
+    std::vector<Vec3<T>>& contact_vel_host() { return h_contact_vel_; }
+    const std::vector<Vec3<T>>& contact_vel_host() const { return h_contact_vel_; }
+    std::vector<T>& contact_vol_host() { return h_contact_vol_; }
+    const std::vector<T>& contact_vol_host() const { return h_contact_vol_; }
+
+    const std::vector<ExternalSpatialForce<T>>& external_forces_host() const { return h_external_forces_; }
+    std::vector<ExternalSpatialForce<T>>& external_forces_host() { return h_external_forces_; }
 
     void AddQRCloth(const std::vector<Vec3<T>> &pos, 
                            const std::vector<Vec3<T>> &vel,
@@ -130,6 +144,8 @@ public:
     // NOTE (changyu): sync all visualization data to CPU side.
     using DumpT = std::tuple<std::vector<Vec3<T>>, std::vector<int>>;
     DumpT DumpCpuState() const;
+
+    int total_contact_iteration_count = 0;
 
 private:
 
@@ -184,9 +200,13 @@ private:
     std::vector<Vec3<T>> h_velocities_;
     std::vector<T> h_volumes_;
     std::vector<int> h_indices_;
-    // host ptrs for post contact solving
-    std::vector<int> h_contact_ids_;
-    std::vector<Vec3<T>> h_post_contact_dv_;
+    
+    // host ptrs for contact solving
+    std::vector<Vec3<T>> h_contact_pos_;
+    std::vector<Vec3<T>> h_contact_vel_;
+    std::vector<T> h_contact_vol_;
+
+    std::vector<ExternalSpatialForce<T>> h_external_forces_;
 
     // Grid state device ptrs
 

@@ -33,9 +33,9 @@ DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
               "are: 'sap', 'lagged', and 'similar'.");
-DEFINE_double(stiffness, 10000.0, "Contact Stiffness.");
+DEFINE_double(stiffness, 1000000.0, "Contact Stiffness.");
 DEFINE_double(friction, 0.0, "Contact Friction.");
-DEFINE_double(damping, 0.0,
+DEFINE_double(damping, 1e-5,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
 
@@ -88,31 +88,33 @@ int do_main() {
    queries can be performed against deformable geometries.) The value dictates
    how fine the mesh used to represent the rigid collision geometry is. */
   ProximityProperties rigid_proximity_props;
+  ProximityProperties ground_proximity_props;
   /* Set the friction coefficient close to that of rubber against rubber. */
-  const CoulombFriction<double> surface_friction(1.15, 1.15);
+  const CoulombFriction<double> surface_friction(1.0, 1.0);
+  AddCompliantHydroelasticProperties(1.0, 2e5, &rigid_proximity_props);
+  AddRigidHydroelasticProperties(1.0, &ground_proximity_props);
   AddContactMaterial({}, {}, surface_friction, &rigid_proximity_props);
-  rigid_proximity_props.AddProperty(geometry::internal::kHydroGroup,
-                                    geometry::internal::kRezHint, 0.01);
+  AddContactMaterial({}, {}, surface_friction, &ground_proximity_props);
   IllustrationProperties illustration_props;
   illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
 
   /* Set up a ground. */
   Box ground{4, 4, 4};
-  const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2});
-  plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", rigid_proximity_props);
+  const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -2 + 0.05});
+  plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground, "ground_collision", ground_proximity_props);
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   if (FLAGS_testcase == 0) {
     Box box{0.1, 0.1, 0.2};
-    const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.11});
+    const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.16});
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
   }
   else if (FLAGS_testcase == 1) {
     for (int i = 0; i < 4; i++) {
       for (int j = 0; j < 4; j++) {
-        Capsule collision_object{0.03, 0.12};
-        const RigidTransformd X_WG_OBJ(Eigen::Vector3d{0.3 + i * 0.12, 0.3 + j * 0.12, 0.5});
+        Capsule collision_object{0.03, 0.02};
+        const RigidTransformd X_WG_OBJ(Eigen::Vector3d{0.3 + i * 0.12, 0.3 + j * 0.12, 0.1});
         plant.RegisterCollisionGeometry(plant.world_body(), X_WG_OBJ, collision_object, ("collision" + std::to_string(i) + std::to_string(j)).c_str(), rigid_proximity_props);
         plant.RegisterVisualGeometry(plant.world_body(), X_WG_OBJ, collision_object, ("collision_visual" + std::to_string(i) + std::to_string(j)).c_str(), std::move(illustration_props));
       }
@@ -131,6 +133,36 @@ int do_main() {
                                    );
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
     plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
+  }
+  else if (FLAGS_testcase == 4) {
+    const double side_length = 0.10;
+    Box box(side_length, side_length, side_length);
+    const RigidBody<double>& box1 = plant.AddRigidBody(
+        "box1", SpatialInertia<double>::SolidBoxWithDensity(
+                    2000.0, side_length, side_length, side_length));
+    plant.RegisterCollisionGeometry(box1, RigidTransformd::Identity(), box,
+                                    "box1_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(box1, RigidTransformd::Identity(), box,
+                                "box1_visual", illustration_props);
+  }
+  else if (FLAGS_testcase == 5) {
+    const double side_length = 0.10;
+    Box box(side_length, side_length, side_length);
+    const RigidBody<double>& box1 = plant.AddRigidBody(
+        "box1", SpatialInertia<double>::SolidBoxWithDensity(
+                    5000.0, side_length, side_length, side_length));
+    plant.RegisterCollisionGeometry(box1, RigidTransformd::Identity(), box,
+                                    "box1_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(box1, RigidTransformd::Identity(), box,
+                                "box1_visual", illustration_props);
+    
+    const RigidBody<double>& box2 = plant.AddRigidBody(
+        "box2", SpatialInertia<double>::SolidBoxWithDensity(
+                    5000.0, side_length, side_length, side_length));
+    plant.RegisterCollisionGeometry(box2, RigidTransformd::Identity(), box,
+                                    "box2_collision", rigid_proximity_props);
+    plant.RegisterVisualGeometry(box2, RigidTransformd::Identity(), box,
+                                "box2_visual", illustration_props);
   }
   else {
   }
@@ -154,7 +186,9 @@ int do_main() {
     std::vector<int> indices;
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx + k * 0.01, (0.5 - 0.5 * l) + j * dx + k * 0.01, FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
+        double z = FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1;
+        if (FLAGS_testcase == 5) z = 0.18;
+        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx + k * 0.01, (0.5 - 0.5 * l) + j * dx + k * 0.01, z);
         inital_vel.emplace_back(0., 0., 0.);
       }
     }
@@ -182,7 +216,6 @@ int do_main() {
   mpm_config.contact_stiffness = FLAGS_stiffness;
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
-  mpm_config.use_predicted_contact = false;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   /* All rigid and deformable models have been added. Finalize the plant. */
@@ -200,6 +233,19 @@ int do_main() {
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
+
+  if (FLAGS_testcase == 4) {
+    const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.5, 0.5, 0.11});
+    const multibody::RigidBody<double>& box1 = plant.GetBodyByName("box1");
+    auto& plant_context =
+      plant.GetMyMutableContextFromRoot(diagram_context.get());
+    plant.SetFreeBodyPose(&plant_context, box1, X_WG_BOX);
+  }
+  if (FLAGS_testcase == 5) {
+    auto& plant_context = plant.GetMyMutableContextFromRoot(diagram_context.get());
+    plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box1"), RigidTransformd(Eigen::Vector3d{0.5, 0.5, 0.11}));
+    plant.SetFreeBodyPose(&plant_context, plant.GetBodyByName("box2"), RigidTransformd(Eigen::Vector3d{0.5, 0.5, 0.26}));
+  }
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));

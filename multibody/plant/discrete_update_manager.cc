@@ -735,9 +735,6 @@ void DiscreteUpdateManager<T>::CalcDiscreteContactPairs(
     if (deformable_driver_ != nullptr &&
         deformable_driver_->num_deformable_bodies() > 0) {
       deformable_driver_->AppendDiscreteContactPairs(context, result);
-    } else if (deformable_driver_ != nullptr &&
-               deformable_driver_->ExistsMpmBody()) {
-      deformable_driver_->AppendDiscreteContactPairsMpm(context, result);
     }
   }
 }

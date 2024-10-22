@@ -490,7 +490,7 @@ inline __host__ __device__ void givens_QR(const T *A, T *Q, T *R) {
             }
 
             #pragma unroll
-            for (int jj = 0; jj < m; ++jj) {
+            for (int jj = 0; jj < n; ++jj) {
                 T tau1 = Q[rowi * n + jj];
                 T tau2 = Q[rowk * n + jj];
                 Q[rowi * n + jj] = c * tau1 - s * tau2;

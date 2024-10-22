@@ -70,25 +70,31 @@ namespace config {
 
 	// material parameters
 	template<class T> constexpr T YOUNGS_MODULUS;
-	template<> constexpr float YOUNGS_MODULUS<float> = 400.f;
-	template<> constexpr double YOUNGS_MODULUS<double> = 400.;
+	template<> constexpr float YOUNGS_MODULUS<float> = 400000.f;
+	template<> constexpr double YOUNGS_MODULUS<double> = 400000.;
 
 	template<class T> constexpr T POISSON_RATIO;
 	template<> constexpr float POISSON_RATIO<float> = .3f;
 	template<> constexpr double POISSON_RATIO<double> = .3;
 
 	template<class T> constexpr T DENSITY;
-	template<> constexpr float DENSITY<float> = 2.f;
-	template<> constexpr double DENSITY<double> = 2.;
+	template<> constexpr float DENSITY<float> = 2000.f;
+	template<> constexpr double DENSITY<double> = 2000.;
 
 	template<class T> constexpr T GAMMA;
 	template<> constexpr float GAMMA<float> = 0.f;
 	template<> constexpr double GAMMA<double> = 0.;
 
+	// NOTE (changyu):
+	// for tshirt/cloth folding demo, K=100000
+	// for bagging demo, K=400000
 	template<class T> constexpr T K;
-	template<> constexpr float K<float> = 100.f;
-	template<> constexpr double K<double> = 100.;
+	template<> constexpr float K<float> = 100000.f;
+	template<> constexpr double K<double> = 100000.;
 
+	// NOTE (changyu):
+	// for tshirt/cloth folding demo, V=0.8
+	// for bagging demo, K=0.2
 	template<class T> constexpr T V;
 	template<> constexpr float V<float> = .8f;
 	template<> constexpr double V<double> = .8;
@@ -97,9 +103,12 @@ namespace config {
 	template<> constexpr float c_F<float> = .0f;
 	template<> constexpr double c_F<double> = .0;
 
+	// NOTE (changyu):
+	// for three-clothes demo, SDF_FRICTION=0.3
+	// for other demos, SDF_FRICTION=1.0
 	template<class T> constexpr T SDF_FRICTION;
-	template<> constexpr float SDF_FRICTION<float> = .0f;
-	template<> constexpr double SDF_FRICTION<double> = .0;
+	template<> constexpr float SDF_FRICTION<float> = 0.3f;
+	template<> constexpr double SDF_FRICTION<double> = 0.3;
 
 	// Lame parameters
 	template<class T> constexpr T MU = YOUNGS_MODULUS<T> / (T(2.) * (T(1.) + POISSON_RATIO<T>));

@@ -92,7 +92,7 @@ void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
         ));
     }
     CUDA_SAFE_CALL((
-        particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*DV_TRANSFER=*/false><<<
+        particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
          state->forces(), state->taus(),
@@ -102,7 +102,7 @@ void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
 }
 
 template<typename T>
-void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state) const {
+void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state, int mpm_bc) const {
     // NOTE (changyu): we gather the grid block that are really touched
     CUDA_SAFE_CALL(cudaMemset(state->grid_touched_cnt(), 0, sizeof(uint32_t)));
     CUDA_SAFE_CALL((
@@ -113,30 +113,48 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state) const {
 
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
     const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
-    CUDA_SAFE_CALL((
-        update_grid_kernel<<<
-        (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum())
-        ));
-}
 
-template<typename T>
-void GpuMpmSolver<T>::GridToParticle(GpuMpmState<T> *state, const T& dt, bool advect) const {
-    if (advect) {
+    if (mpm_bc == 0) {
         CUDA_SAFE_CALL((
-            grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*ADVECT=*/true><<<
-            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
-            state->grid_momentum(), dt)
+            update_grid_kernel<T, 0><<<
+            (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum())
+            ));
+    } else if (mpm_bc == 1) {
+        CUDA_SAFE_CALL((
+            update_grid_kernel<T, 1><<<
+            (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum())
+            ));
+    } else if (mpm_bc == 2) {
+        CUDA_SAFE_CALL((
+            update_grid_kernel<T, 2><<<
+            (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum())
+            ));
+    } else if (mpm_bc == 3) {
+        CUDA_SAFE_CALL((
+            update_grid_kernel<T, 3><<<
+            (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum())
             ));
     } else {
         CUDA_SAFE_CALL((
-            grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*ADVECT=*/false><<<
-            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
-            state->grid_momentum(), dt)
+            update_grid_kernel<T, -1><<<
+            (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum())
             ));
     }
+}
+
+template<typename T>
+void GpuMpmSolver<T>::GridToParticle(GpuMpmState<T> *state, const T& dt) const {
+    CUDA_SAFE_CALL((
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false><<<
+        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
+         state->grid_masses(), state->grid_momentum(), dt)
+        ));
 }
 
 template<typename T>
@@ -175,29 +193,12 @@ void GpuMpmSolver<T>::SyncParticleStateToCpu(GpuMpmState<T> *state) const {
 }
 
 template<typename T>
-void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt, const T& scale) const {
-    size_t n_contacts = state->contact_ids_host().size();
+void GpuMpmSolver<T>::ContactImpulseToGrid(GpuMpmState<T> *state, const T& dt) const {
+    size_t n_contacts = state->contact_pos_host().size();
     if (n_contacts) {
-        // TODO,FIXME (changyu): when sort=True in rebuild mapping stage,
-        // the order of particles should be further treated here.
-        this->GpuSync();
-        CUDA_SAFE_CALL(cudaMemcpy(state->positions_host().data(), 
-                                  state->current_positions(), 
-                                  sizeof(Vec3<T>) * state->n_particles(), 
-                                  cudaMemcpyDeviceToHost));
-        std::vector<Vec3<T>> contact_pos;
-        std::vector<Vec3<T>> contact_dv;
-        std::vector<T> contact_vol;
-        for (size_t i = 0; i < n_contacts; ++i) {
-            // current host state is the particle state at last time step (n).
-            contact_pos.emplace_back(state->positions_host()[state->contact_ids_host()[i]]);
-            contact_vol.emplace_back(state->volumes_host()[state->contact_ids_host()[i]]);
-            contact_dv.emplace_back(state->post_contact_dv_host()[i] * scale);
-        }
-
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_positions(), contact_pos.data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_velocities(), contact_dv.data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_volumes(), contact_vol.data(), sizeof(T) * n_contacts, cudaMemcpyHostToDevice));
+        CUDA_SAFE_CALL(cudaMemcpy(state->contact_positions(), state->contact_pos_host().data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
+        CUDA_SAFE_CALL(cudaMemcpy(state->contact_velocities(), state->contact_vel_host().data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
+        CUDA_SAFE_CALL(cudaMemcpy(state->contact_volumes(), state->contact_vol_host().data(), sizeof(T) * n_contacts, cudaMemcpyHostToDevice));
 
         CUDA_SAFE_CALL((
             compute_base_cell_node_index_kernel<<<
@@ -206,7 +207,7 @@ void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt, co
             ));
         
         CUDA_SAFE_CALL((
-            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*DV_TRANSFER=*/true><<<
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
             (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
             (n_contacts, state->contact_positions(), state->contact_velocities(), state->contact_volumes(), state->contact_affine_matrices(),
             state->forces(), state->taus(),
@@ -214,6 +215,27 @@ void GpuMpmSolver<T>::PostContactDvToGrid(GpuMpmState<T> *state, const T& dt, co
             state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
             ));
     }
+}
+
+template<typename T>
+void GpuMpmSolver<T>::GridToContactVel(GpuMpmState<T> *state, const T& dt) const {
+    size_t n_contacts = state->contact_pos_host().size();
+    if (n_contacts) {
+        CUDA_SAFE_CALL((
+            grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (n_contacts, state->contact_positions(), state->contact_velocities(), state->contact_affine_matrices(),
+            state->grid_masses(), state->grid_momentum(), dt)
+            ));
+        CUDA_SAFE_CALL(cudaDeviceSynchronize());
+        CUDA_SAFE_CALL(cudaMemcpy(state->contact_vel_host().data(), state->contact_velocities(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyDeviceToHost));
+    }
+}
+
+template<typename T>
+void GpuMpmSolver<T>::ContactP2G2P(GpuMpmState<T> *state, const T& dt) const {
+    ContactImpulseToGrid(state, dt);
+    GridToContactVel(state, dt);
 }
 
 template class GpuMpmSolver<double>;

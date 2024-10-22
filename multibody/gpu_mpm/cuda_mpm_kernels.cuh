@@ -53,13 +53,14 @@ __global__ void initialize_fem_state_kernel(
         inverse2(Dm, &Dm_inverses[idx * 4]);
 
         T *F = &deformation_gradients[idx * 9];
-        F[0] = T(1.); F[1] = T(0.); F[2] = T(0.);
-        F[3] = T(0.); F[4] = T(1.); F[5] = T(0.);
-        F[6] = T(0.); F[7] = T(0.); F[8] = T(1.);
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            F[i] = Q[i];
+        }
 
         T D0xD1[3];
         cross_product3(D0, D1, D0xD1);
-        T volume_4 = norm<3>(D0xD1) / T(8.);
+        T volume_4 = norm<3>(D0xD1) / T(8.) * config::G_DX<T>;
 
         volumes[idx] += volume_4;
         atomicAdd(&volumes[v0], volume_4);
@@ -212,16 +213,16 @@ __global__ void calc_fem_state_and_force_kernel(
         // Eq.4 in Jiang et.al 2017, dE_p, β(x̂) = (∇x̂)p dE,n_p, β
         // but we could reuse traditional MPM deformation gradient updated as:
         // F̂E_p(x̂) = (∇x̂)p FE,n_p
-        ctF[0] = (T(1.0) + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
-        ctF[1] = (T(1.0) + dt * C[0]) * F[1] + dt * C[1] * F[4] + dt * C[2] * F[7];
+        ctF[0] = F[0];
+        ctF[1] = F[1];
         ctF[2] = (T(1.0) + dt * C[0]) * F[2] + dt * C[1] * F[5] + dt * C[2] * F[8];
 
-        ctF[3] = dt * C[3] * F[0] + (T(1.0) + dt * C[4]) * F[3] + dt * C[5] * F[6];
-        ctF[4] = dt * C[3] * F[1] + (T(1.0) + dt * C[4]) * F[4] + dt * C[5] * F[7];
+        ctF[3] = F[3];
+        ctF[4] = F[4];
         ctF[5] = dt * C[3] * F[2] + (T(1.0) + dt * C[4]) * F[5] + dt * C[5] * F[8];
 
-        ctF[6] = dt * C[6] * F[0] + dt * C[7] * F[3] + (T(1.0) + dt * C[8]) * F[6];
-        ctF[7] = dt * C[6] * F[1] + dt * C[7] * F[4] + (T(1.0) + dt * C[8]) * F[7];
+        ctF[6] = F[6];
+        ctF[7] = F[7];
         ctF[8] = dt * C[6] * F[2] + dt * C[7] * F[5] + (T(1.0) + dt * C[8]) * F[8];
 
         project_strain(ctF);
@@ -270,7 +271,9 @@ __global__ void calc_fem_state_and_force_kernel(
             T(-1.), T(0.), T(1.)
         };
         T grad_N[6];
-        matmul<2, 2, 3, T>(Dm_inverse, grad_N_hat, grad_N);
+        T Dm_inverse_T[4];
+        transpose<2, 2, T>(Dm_inverse, Dm_inverse_T);
+        matmul<2, 2, 3, T>(Dm_inverse_T, grad_N_hat, grad_N);
         T VP_local_c01[6] = { 
             VP_local[0], VP_local[1],
             VP_local[3], VP_local[4],
@@ -412,7 +415,7 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     }
 }
 
-template<typename T, int BLOCK_DIM, bool DV_TRANSFER>
+template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
 __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
@@ -476,7 +479,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         const T* vel = &velocities[idx * 3];
 
         T B[9];
-        if constexpr (!DV_TRANSFER) {
+        if constexpr (!CONTACT_TRANSFER) {
             const T* C = &affine_matrices[idx * 9];
             const T* stress = &taus[idx * 9];
             #pragma unroll
@@ -501,7 +504,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
-                    if constexpr (!DV_TRANSFER) {
+                    if constexpr (!CONTACT_TRANSFER) {
                         val[0] = mass * weight;
                         val[1] = vel[0] * val[0];
                         val[2] = vel[1] * val[0];
@@ -517,16 +520,10 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                         val[2] += force[1] * dt * weight;
                         val[3] += force[2] * dt * weight;
                     } else {
-                        // NOTE (changyu):
-                        // 2. is the mass scaling factor from Xuan Li's paper Sec.4.4
-                        //  It is a common observation that, under constant gravity acceleration and using a first-order scheme, objects
-                        // fall faster with larger time step sizes. This mismatch contributes to the penetrations of MPM particles into FEM bodies.
-                        // . The principle behind this mechanism is to slightly increase the contact force, 
-                        // repelling MPM solids further away from FEM solids.
                         val[0] = 0;
-                        val[1] = vel[0] * mass * T(2.) * weight;
-                        val[2] = vel[1] * mass * T(2.) * weight;
-                        val[3] = vel[2] * mass * T(2.) * weight;
+                        val[1] = vel[0] * mass * T(1.) * weight;
+                        val[2] = vel[1] * mass * T(1.) * weight;
+                        val[3] = vel[2] * mass * T(1.) * weight;
                     }
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
@@ -613,7 +610,7 @@ __global__ void clean_grid_kernel(
     }
 }
 
-template<typename T>
+template<typename T, int MPM_BOUNDARY_CONDITION=-1>
 __global__ void update_grid_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
@@ -640,77 +637,29 @@ __global__ void update_grid_kernel(
             if (xyz.z < boundary_condition && g_vel[2] < 0) g_vel[2] = 0;
             if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[2] > 0) g_vel[2] = 0;
 
-            // TODO, NOTE (changyu): ad-hoc hack for a sphere sdf
             {
                 T pos[3] = {
                     (xyz.x + T(.5)) * config::G_DX<T>,
                     (xyz.y + T(.5)) * config::G_DX<T>,
                     (xyz.z + T(.5)) * config::G_DX<T>
                 };
-
-#define MPM_BOUNDARY_CONDITION 2
-#if MPM_BOUNDARY_CONDITION == 0               
-                const T sphere_radius = T(0.08);
-                const T sphere_pos[3] = { T(0.5), T(0.5), T(0.5) };
-                const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
-                const bool fixed = false;
-
-                T dist = distance<3>(pos, sphere_pos) - sphere_radius;
-                T normal[3] = { 
-                    (pos[0] - sphere_pos[0]),
-                    (pos[1] - sphere_pos[1]),
-                    (pos[2] - sphere_pos[2])
-                };
-                normalize<3, T>(normal);
-
+                bool fixed = false;
                 bool inside = false;
-                T dotnv = T(0.);
-                T diff_vel[3] = { T(0.), T(0.), T(0.) };
-                if (dist < T(0.)) {
-                    diff_vel[0] = sphere_vel[0] - g_vel[0];
-                    diff_vel[1] = sphere_vel[1] - g_vel[1];
-                    diff_vel[2] = sphere_vel[2] - g_vel[2];
-                    dotnv = dot<3>(normal, diff_vel);
-                    if (dotnv > T(0.) || fixed) {
-                        inside = true;
-                    }
-                }
+                T dist = T(0);
+                T diff_vel[3] = { T(0), T(0), T(0) };
+                T normal[3] = { T(0), T(0), T(0) };
+                T dotnv = T(0);
 
-#elif MPM_BOUNDARY_CONDITION == 1
-                const T sphere_radius = T(0.04);
-                const T sphere_pos1[3] = { T(0.25), T(0.25), T(0.75) };
-                const T sphere_pos2[3] = { T(0.75), T(0.25), T(0.75) };
-                const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
-                const bool fixed = true;
+                if constexpr (MPM_BOUNDARY_CONDITION == 0) {
+                    const T sphere_radius = T(0.08);
+                    const T sphere_pos[3] = { T(0.5), T(0.5), T(0.5) };
+                    const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
 
-                T dist = distance<3>(pos, sphere_pos1) - sphere_radius;
-                T normal[3] = { 
-                    (pos[0] - sphere_pos1[0]),
-                    (pos[1] - sphere_pos1[1]),
-                    (pos[2] - sphere_pos1[2])
-                };
-                normalize<3, T>(normal);
-
-                bool inside = false;
-                T dotnv = T(0.);
-                T diff_vel[3] = { T(0.), T(0.), T(0.) };
-                if (dist < T(0.)) {
-                    diff_vel[0] = sphere_vel[0] - g_vel[0];
-                    diff_vel[1] = sphere_vel[1] - g_vel[1];
-                    diff_vel[2] = sphere_vel[2] - g_vel[2];
-                    dotnv = dot<3>(normal, diff_vel);
-                    if (dotnv > T(0.) || fixed) {
-                        inside = true;
-                    }
-                }
-                else {
-                    dist = distance<3>(pos, sphere_pos2) - sphere_radius;
-                    normal[0] = (pos[0] - sphere_pos2[0]);
-                    normal[1] = (pos[1] - sphere_pos2[1]);
-                    normal[2] = (pos[2] - sphere_pos2[2]);
+                    dist = distance<3>(pos, sphere_pos) - sphere_radius;
+                    normal[0] = (pos[0] - sphere_pos[0]);
+                    normal[1] = (pos[1] - sphere_pos[1]);
+                    normal[2] = (pos[2] - sphere_pos[2]);
                     normalize<3, T>(normal);
-
-                    dotnv = T(0.);
                     if (dist < T(0.)) {
                         diff_vel[0] = sphere_vel[0] - g_vel[0];
                         diff_vel[1] = sphere_vel[1] - g_vel[1];
@@ -721,13 +670,88 @@ __global__ void update_grid_kernel(
                         }
                     }
                 }
-#elif MPM_BOUNDARY_CONDITION == 2
-                const bool fixed = false;
-                const bool inside = false;
-                T dotnv = T(0.);
-                T diff_vel[3] = {T(0.), T(0.), T(0.)};
-                T normal[3] = {T(0.), T(0.), T(0.)};
-#endif
+
+                else if constexpr (MPM_BOUNDARY_CONDITION == 1) {
+                    const T sphere_radius = T(0.04);
+                    const T sphere_pos1[3] = { T(0.38), T(0.38), T(0.75) };
+                    const T sphere_pos2[3] = { T(0.38), T(0.62), T(0.75) };
+                    const T sphere_vel[3] = { T(0.), T(0.), T(0.) };
+                    fixed = true;
+
+                    dist = distance<3>(pos, sphere_pos1) - sphere_radius;
+                    normal[0] = (pos[0] - sphere_pos1[0]);
+                    normal[1] = (pos[1] - sphere_pos1[1]);
+                    normal[2] = (pos[2] - sphere_pos1[2]);
+                    normalize<3, T>(normal);
+
+                    if (dist < T(0.)) {
+                        diff_vel[0] = sphere_vel[0] - g_vel[0];
+                        diff_vel[1] = sphere_vel[1] - g_vel[1];
+                        diff_vel[2] = sphere_vel[2] - g_vel[2];
+                        dotnv = dot<3>(normal, diff_vel);
+                        if (dotnv > T(0.) || fixed) {
+                            inside = true;
+                        }
+                    }
+                    else {
+                        dist = distance<3>(pos, sphere_pos2) - sphere_radius;
+                        normal[0] = (pos[0] - sphere_pos2[0]);
+                        normal[1] = (pos[1] - sphere_pos2[1]);
+                        normal[2] = (pos[2] - sphere_pos2[2]);
+                        normalize<3, T>(normal);
+
+                        dotnv = T(0.);
+                        if (dist < T(0.)) {
+                            diff_vel[0] = sphere_vel[0] - g_vel[0];
+                            diff_vel[1] = sphere_vel[1] - g_vel[1];
+                            diff_vel[2] = sphere_vel[2] - g_vel[2];
+                            dotnv = dot<3>(normal, diff_vel);
+                            if (dotnv > T(0.) || fixed) {
+                                inside = true;
+                            }
+                        }
+                    }
+                }
+
+                // z-axis=0.1 used for cloth/tshirt folding demos
+                else if constexpr (MPM_BOUNDARY_CONDITION == 2) {
+                    normal[0] = T(0.);
+                    normal[1] = T(0.);
+                    normal[2] = T(1.);
+                    dist = pos[2] - T(0.11);
+                    if (dist < 0) {
+                        inside = true;
+                        diff_vel[0] = -g_vel[0];
+                        diff_vel[1] = -g_vel[1];
+                        diff_vel[2] = -g_vel[2];
+                        dotnv = dot<3>(diff_vel, normal);
+                    }
+                }
+
+                // four-corner suspension used for bagging demo
+                else if constexpr (MPM_BOUNDARY_CONDITION == 3) {
+                    fixed = true;
+                    const T sphere_radius = T(0.02);
+                    const T span[2] = {T(0.3), T(0.7)};
+
+                    for (int _ = 0; _ < 4; ++_) {
+                        const T sphere_pos[3] = {span[_%2], span[_/2], 0.5};
+                        dist = distance<3>(pos, sphere_pos) - sphere_radius;
+                        normal[0] = (pos[0] - sphere_pos[0]);
+                        normal[1] = (pos[1] - sphere_pos[1]);
+                        normal[2] = (pos[2] - sphere_pos[2]);
+                        normalize<3, T>(normal);
+
+                        if (dist < T(0.)) {
+                            diff_vel[0] = -g_vel[0];
+                            diff_vel[1] = -g_vel[1];
+                            diff_vel[2] = -g_vel[2];
+                            dotnv = dot<3>(normal, diff_vel);
+                            inside = true;
+                            break;
+                        }
+                    }
+                }
 
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
                 if (inside) {
@@ -747,11 +771,12 @@ __global__ void update_grid_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool ADVECT>
+template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
 __global__ void grid_to_particle_kernel(const size_t n_particles,
     T* positions, 
     T* velocities,
     T* affine_matrices,
+    const T* g_masses,
     const T* g_momentum,
     const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -807,56 +832,71 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                     const T* g_v = &g_momentum[target_cell_index * 3];
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
-                    new_v[0] += weight * g_v[0];
-                    new_v[1] += weight * g_v[1];
-                    new_v[2] += weight * g_v[2];
-                    // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
 
-                    // printf("i=%d j=%d k=%d\n", i, j, k);
-                    // printf("weight=%.8lf\n", weight);
-                    // printf("g_v=[%.8lf   %.8lf   %.8lf]\n", g_v[0], g_v[1], g_v[2]);
-                    // printf("xip=[%.8lf   %.8lf   %.8lf]\n", xi_minus_xp[0], xi_minus_xp[1], xi_minus_xp[2]);
-                    new_C[0] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[0];
-                    new_C[1] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[1];
-                    new_C[2] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[2];
-                    new_C[3] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[0];
-                    new_C[4] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[1];
-                    new_C[5] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[2];
-                    new_C[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
-                    new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
-                    new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
+                    if constexpr (CONTACT_TRANSFER) {
+                        const T &g_m = g_masses[target_cell_index];
+                        if (g_m > T(1e-7)) {
+                            // NOTE (changyu): in contact transfer, g_momentum still stores the momentum.
+                            new_v[0] += weight * (g_v[0] / g_m);
+                            new_v[1] += weight * (g_v[1] / g_m);
+                            new_v[2] += weight * (g_v[2] / g_m);
+                        }
+                    } else {
+                        new_v[0] += weight * g_v[0];
+                        new_v[1] += weight * g_v[1];
+                        new_v[2] += weight * g_v[2];
+                        // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
+
+                        // printf("i=%d j=%d k=%d\n", i, j, k);
+                        // printf("weight=%.8lf\n", weight);
+                        // printf("g_v=[%.8lf   %.8lf   %.8lf]\n", g_v[0], g_v[1], g_v[2]);
+                        // printf("xip=[%.8lf   %.8lf   %.8lf]\n", xi_minus_xp[0], xi_minus_xp[1], xi_minus_xp[2]);
+                        new_C[0] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[0];
+                        new_C[1] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[1];
+                        new_C[2] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[2];
+                        new_C[3] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[0];
+                        new_C[4] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[1];
+                        new_C[5] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[2];
+                        new_C[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
+                        new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
+                        new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
+                    }
                 }
             }
         }
 
-        velocities[idx * 3 + 0] = new_v[0];
-        velocities[idx * 3 + 1] = new_v[1];
-        velocities[idx * 3 + 2] = new_v[2];
+        if constexpr (CONTACT_TRANSFER) {
+            velocities[idx * 3 + 0] = new_v[0];
+            velocities[idx * 3 + 1] = new_v[1];
+            velocities[idx * 3 + 2] = new_v[2];
+        } else {
+            velocities[idx * 3 + 0] = new_v[0];
+            velocities[idx * 3 + 1] = new_v[1];
+            velocities[idx * 3 + 2] = new_v[2];
 
-        transpose<3, 3, T>(new_C, new_CT);
-        affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
-        affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
-        affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
-        affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
-        affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
-        affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
-        affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
-        affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
-        affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
+            transpose<3, 3, T>(new_C, new_CT);
+            affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
+            affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
+            affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
+            affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
+            affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
+            affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
+            affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
+            affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
+            affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
 
-        // Advection
-        if constexpr (ADVECT) {
+            // Advection
             positions[idx * 3 + 0] += new_v[0] * dt;
             positions[idx * 3 + 1] += new_v[1] * dt;
             positions[idx * 3 + 2] += new_v[2] * dt;
-        }
 
-        // printf("v=\n");
-        // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);
-        // printf("C=\n");
-        // printf("[[%.8lf   %.8lf   %.8lf] \n", new_C[0], new_C[1], new_C[2]);
-        // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
-        // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
+            // printf("v=\n");
+            // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);
+            // printf("C=\n");
+            // printf("[[%.8lf   %.8lf   %.8lf] \n", new_C[0], new_C[1], new_C[2]);
+            // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
+            // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
+        }
     }
 }
 

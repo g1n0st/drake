@@ -40,7 +40,7 @@ struct MpmParticleContactPair {
    T penetration_distance{};
    Vector3<T> normal{};
    Vector3<T> particle_in_contact_position{};
-
+   Vector3<T> rigid_v{};
 };
 
 }  // namespace internal
