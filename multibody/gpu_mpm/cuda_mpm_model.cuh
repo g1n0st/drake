@@ -133,6 +133,7 @@ public:
     T* contact_normal() { return d_contact_normal_; }
     const T* contact_rigid_v() const { return d_contact_rigid_v_; }
     T* contact_rigid_v() { return d_contact_rigid_v_; }
+    size_t num_contacts() const { return num_contacts_; }
 
     const std::vector<ExternalSpatialForce<T>>& external_forces_host() const { return h_external_forces_; }
     std::vector<ExternalSpatialForce<T>>& external_forces_host() { return h_external_forces_; }
@@ -205,7 +206,7 @@ private:
 
     // contact pairs device ptr
     size_t contact_buffer_size = 0;
-    size_t num_contacts = 0;
+    size_t num_contacts_ = 0;
     uint32_t* d_contact_mpm_id_ = nullptr;
     T* d_contact_pos_ = nullptr;
     T* d_contact_dist_ = nullptr;

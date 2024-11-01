@@ -92,7 +92,7 @@ void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
         ));
     }
     CUDA_SAFE_CALL((
-        particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false><<<
+        particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
          state->forces(), state->taus(),
@@ -207,12 +207,10 @@ void GpuMpmSolver<T>::ContactImpulseToGrid(GpuMpmState<T> *state, const T& dt) c
             ));
         
         CUDA_SAFE_CALL((
-            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+            contact_particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
             (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (n_contacts, state->contact_positions(), state->contact_velocities(), state->contact_volumes(), state->contact_affine_matrices(),
-            state->forces(), state->taus(),
-            state->contact_sort_keys(),
-            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            (n_contacts, state->contact_positions(), state->contact_velocities(), state->contact_volumes(),
+            state->contact_sort_keys(), state->grid_touched_flags(), state->grid_momentum(), dt)
             ));
     }
 }
@@ -271,6 +269,12 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const std::vector<
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_normal(), contact_normal.data(), sizeof(T) * 3 * contact_pairs.size(), cudaMemcpyHostToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_rigid_v(), contact_rigid_v.data(), sizeof(T) * 3 * contact_pairs.size(), cudaMemcpyHostToDevice));
     this->GpuSync();
+}
+
+template<typename T>
+void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
+    if (!state->num_contacts()) return;
+
 }
 
 template class GpuMpmSolver<config::GpuT>;

@@ -214,7 +214,7 @@ GpuMpmState<T>::DumpT GpuMpmState<T>::DumpCpuState() const {
 
 template<typename T>
 void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
-    this->num_contacts = num_contacts;
+    this->num_contacts_ = num_contacts;
     if (num_contacts > contact_buffer_size) {
         contact_buffer_size = num_contacts;
         if (d_contact_mpm_id_) {

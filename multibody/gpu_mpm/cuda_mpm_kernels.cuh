@@ -415,7 +415,7 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     }
 }
 
-template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
+template<typename T, int BLOCK_DIM>
 __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
@@ -479,13 +479,11 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         const T* vel = &velocities[idx * 3];
 
         T B[9];
-        if constexpr (!CONTACT_TRANSFER) {
-            const T* C = &affine_matrices[idx * 9];
-            const T* stress = &taus[idx * 9];
-            #pragma unroll
-            for (int i = 0; i < 9; ++i) {
-                B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
-            }
+        const T* C = &affine_matrices[idx * 9];
+        const T* stress = &taus[idx * 9];
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
         }
 
         T val[4];
@@ -504,27 +502,20 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
-                    if constexpr (!CONTACT_TRANSFER) {
-                        val[0] = mass * weight;
-                        val[1] = vel[0] * val[0];
-                        val[2] = vel[1] * val[0];
-                        val[3] = vel[2] * val[0];
-                        // apply gravity
-                        val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
+                    val[0] = mass * weight;
+                    val[1] = vel[0] * val[0];
+                    val[2] = vel[1] * val[0];
+                    val[3] = vel[2] * val[0];
+                    // apply gravity
+                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
 
-                        val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
-                        val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
-                        val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
-                        const T* force = &forces[idx * 3];
-                        val[1] += force[0] * dt * weight;
-                        val[2] += force[1] * dt * weight;
-                        val[3] += force[2] * dt * weight;
-                    } else {
-                        val[0] = 0;
-                        val[1] = vel[0] * mass * T(1.) * weight;
-                        val[2] = vel[1] * mass * T(1.) * weight;
-                        val[3] = vel[2] * mass * T(1.) * weight;
-                    }
+                    val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
+                    val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
+                    val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
+                    const T* force = &forces[idx * 3];
+                    val[1] += force[0] * dt * weight;
+                    val[2] += force[1] * dt * weight;
+                    val[3] += force[2] * dt * weight;
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[4]; 
@@ -896,6 +887,108 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             // printf("[[%.8lf   %.8lf   %.8lf] \n", new_C[0], new_C[1], new_C[2]);
             // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
             // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
+        }
+    }
+}
+
+template<typename T, int BLOCK_DIM>
+__global__ void contact_particle_to_grid_kernel(const size_t n_particles,
+    const T* positions, 
+    const T* velocities,
+    const T* volumes,
+    const uint32_t* grid_index,
+    uint32_t* g_touched_flags,
+    T* g_momentum,
+    const T dt) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    // In [Fei et.al 2021],
+    // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
+    // (instead of registers), although none of them is shared between threads. 
+    // This choice increases performance, particularly when the number of threads is large (§6.2.5).
+    __shared__ T weights[BLOCK_DIM][3][3];
+
+    int laneid = threadIdx.x & 0x1f;
+    int cellid = -1;
+    bool boundary;
+    if (idx < n_particles) {
+        cellid = grid_index[idx];
+        boundary = (laneid == 0) || cellid != grid_index[idx - 1];
+    }
+    else {
+        boundary = true;
+    }
+    uint32_t mark = __ballot_sync(0xFFFFFFFF, boundary); // a bit-mask 
+    mark = __brev(mark);
+    unsigned int interval = min(__clz(mark << (laneid + 1)), 31 - laneid);
+    mark = interval;
+    #pragma unroll
+    for (int iter = 1; iter & 0x1f; iter <<= 1) {
+        int tmp = __shfl_down_sync(0xFFFFFFFF, mark, iter);
+        mark = tmp > mark ? tmp : mark; /*if (tmp > mark) mark = tmp;*/
+    }
+    mark = __shfl_sync(0xFFFFFFFF, mark, 0);
+
+    if (idx < n_particles) {
+        uint32_t base[3] = {
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+        };
+        T fx[3] = {
+            positions[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+        };
+        // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            weights[threadIdx.x][0][i] = T(0.5) * (T(1.5) - fx[i]) * (T(1.5) - fx[i]);
+            weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
+            weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
+        }
+
+        const T mass = volumes[idx] * config::DENSITY<T>;
+        const T* vel = &velocities[idx * 3];
+
+        T val[3];
+
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            #pragma unroll
+            for (int j = 0; j < 3; ++j) {
+                #pragma unroll
+                for (int k = 0; k < 3; ++k) {
+                    T xi_minus_xp[3] = {
+                        (i - fx[0]) * config::G_DX<T>,
+                        (j - fx[1]) * config::G_DX<T>,
+                        (k - fx[2]) * config::G_DX<T>
+                    };
+
+                    T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
+                    val[0] = vel[0] * mass * T(1.) * weight;
+                    val[1] = vel[1] * mass * T(1.) * weight;
+                    val[2] = vel[2] * mass * T(1.) * weight;
+
+                    for (int iter = 1; iter <= mark; iter <<= 1) {
+                        T tmp[3]; 
+                        #pragma unroll
+                        for (int ii = 0; ii < 3; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
+                        if (interval >= iter) {
+                            #pragma unroll
+                            for (int ii = 0; ii < 3; ++ii) val[ii] += tmp[ii];
+                        }
+                    }
+
+                    if (boundary) {
+                        const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                        const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
+                        g_touched_flags[target_grid_index] = 1;
+                        atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[0]);
+                        atomicAdd(&(g_momentum[target_cell_index * 3 + 1]), val[1]);
+                        atomicAdd(&(g_momentum[target_cell_index * 3 + 2]), val[2]);
+                    }
+                }
+            }
         }
     }
 }

@@ -31,6 +31,7 @@ public:
     void GridToContactVel(GpuMpmState<T> *state, const T& dt) const;
     void ContactP2G2P(GpuMpmState<T> *state, const T& dt) const;
     void CopyContactPairs(GpuMpmState<T> *state, const std::vector<MpmParticleContactPair<T>> &contact_pairs) const;
+    void UpdateContact(GpuMpmState<T> *state, const T& dt) const;
 };
 
 }  // namespace gmpm
