@@ -22,7 +22,6 @@
 
 // NOTE (changyu): GPU MPM solver header files
 #include "drake/multibody/contact_solvers/contact_solver_results.h"
-#include "drake/geometry/query_results/mpm_particle_contact_pair.h"
 #include "multibody/gpu_mpm/cuda_mpm_solver.cuh"
 
 namespace drake {
@@ -120,7 +119,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   
   void CalcMpmContactPairs(
       const systems::Context<T>& context, gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state,
-      std::vector<geometry::internal::MpmParticleContactPair<T>>* result) const {
+      std::vector<gmpm::MpmParticleContactPair<gmpm::config::GpuT>>* result) const {
+    using GpuT = gmpm::config::GpuT;
     DRAKE_ASSERT(result != nullptr);
     long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     result->clear();
@@ -178,11 +178,11 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           #pragma omp critical
           #endif
           {
-            result->emplace_back(geometry::internal::MpmParticleContactPair<T>(
-                p, p2geometry.id_G, p2geometry.distance,
-                -p2geometry.grad_W.normalized(),
-                mpm_state->positions_host()[p].template cast<T>(),
-                rigid_v));
+            result->emplace_back(gmpm::MpmParticleContactPair<GpuT>(
+                p, p2geometry.id_G.get_value(), GpuT(p2geometry.distance),
+                -p2geometry.grad_W.normalized().template cast<GpuT>(),
+                mpm_state->positions_host()[p],
+                rigid_v.template cast<GpuT>()));
           }
         }
       }
@@ -215,7 +215,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   }
 
   void UpdateContact(gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt,
-                     const std::vector<geometry::internal::MpmParticleContactPair<T>>& mpm_contact_pairs) const {
+                     const std::vector<gmpm::MpmParticleContactPair<gmpm::config::GpuT>>& mpm_contact_pairs) const {
     if (mpm_contact_pairs.size() == 0) return;
     using GpuT = gmpm::config::GpuT;
     mpm_state->contact_pos_host().resize(mpm_contact_pairs.size());
@@ -317,7 +317,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       int substep = 0;
       long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       InitalizeExternalContactForces(context, &mutable_mpm_state);
-      std::vector<geometry::internal::MpmParticleContactPair<T>> mpm_contact_pairs;
+      std::vector<gmpm::MpmParticleContactPair<GpuT>> mpm_contact_pairs;
 
       while (dt_left > 0) {
         GpuT ddt = std::min(dt_left, substep_dt);
@@ -328,6 +328,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         // NOTE (changyu): update contact information at each substep for weak coupling scheme
         if (current_frame > 0 && substep % deformable_model_->cpu_mpm_model().config.contact_query_frequency == 0) {
           CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs);
+          mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
         }
         UpdateContact(&mutable_mpm_state, ddt, mpm_contact_pairs);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc);

@@ -6,6 +6,7 @@
 #include <cuda_runtime.h>
 
 #include "multibody/gpu_mpm/settings.h"
+#include "multibody/gpu_mpm/cpu_mpm_model.h"
 #include "multibody/gpu_mpm/cuda_mpm_model.cuh"
 
 namespace drake {
@@ -29,6 +30,7 @@ public:
     void ContactImpulseToGrid(GpuMpmState<T> *state, const T& dt) const;
     void GridToContactVel(GpuMpmState<T> *state, const T& dt) const;
     void ContactP2G2P(GpuMpmState<T> *state, const T& dt) const;
+    void CopyContactPairs(GpuMpmState<T> *state, const std::vector<MpmParticleContactPair<T>> &contact_pairs) const;
 };
 
 }  // namespace gmpm

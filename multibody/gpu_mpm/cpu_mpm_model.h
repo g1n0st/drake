@@ -99,6 +99,38 @@ class ContactForceSolver {
   T d_;
 };
 
+// NOTE (changyu): from Zeshun's code.
+/* Stores all info about mpm particles that are in contact with rigid bodies (defined to be 
+particles that fall within rigid bodies).
+
+                  Mpm Particles (endowed with an ordering)
+
+            
+            `1    `2    `3    `4
+            
+                             ---------
+            `5    `6    `7   |*8
+                             |      Rigid body with id B
+      ----------             |
+            *9 |  `10   `11  |*12
+               |             ---------
+               |
+Rigid body with id A
+
+*: particles in contact
+`: particles not in contact
+ */
+
+template <typename T>
+struct MpmParticleContactPair {
+   size_t particle_in_contact_index{};
+   int64_t non_mpm_id{};
+   T penetration_distance{};
+   Vec3<T> normal{};
+   Vec3<T> particle_in_contact_position{};
+   Vec3<T> rigid_v{};
+};
+
 }  // namespace gmpm
 }  // namespace multibody
 }  // namespace drake

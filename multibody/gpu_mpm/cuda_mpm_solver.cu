@@ -238,8 +238,42 @@ void GpuMpmSolver<T>::ContactP2G2P(GpuMpmState<T> *state, const T& dt) const {
     GridToContactVel(state, dt);
 }
 
-template class GpuMpmSolver<double>;
-template class GpuMpmSolver<float>;
+template<typename T>
+void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const std::vector<MpmParticleContactPair<T>> &contact_pairs) const {
+    state->ReallocateContacts(contact_pairs.size());
+    if (contact_pairs.size() == 0) return;
+    std::vector<uint32_t> contact_mpm_id;
+    std::vector<T> contact_pos;
+    std::vector<T> contact_dist;
+    std::vector<T> contact_normal;
+    std::vector<T> contact_rigid_v;
+    contact_mpm_id.reserve(contact_pairs.size());
+    contact_pos.reserve(contact_pairs.size());
+    contact_dist.reserve(contact_pairs.size());
+    contact_normal.reserve(contact_pairs.size());
+    contact_rigid_v.reserve(contact_pairs.size());
+    for (const auto &cp: contact_pairs) {
+        contact_mpm_id.push_back(cp.particle_in_contact_index);
+        contact_pos.push_back(cp.particle_in_contact_position[0]);
+        contact_pos.push_back(cp.particle_in_contact_position[1]);
+        contact_pos.push_back(cp.particle_in_contact_position[2]);
+        contact_dist.push_back(cp.penetration_distance);
+        contact_normal.push_back(cp.normal[0]);
+        contact_normal.push_back(cp.normal[1]);
+        contact_normal.push_back(cp.normal[2]);
+        contact_rigid_v.push_back(cp.rigid_v[0]);
+        contact_rigid_v.push_back(cp.rigid_v[1]);
+        contact_rigid_v.push_back(cp.rigid_v[2]);
+    }
+    CUDA_SAFE_CALL(cudaMemcpy(state->contact_mpm_id(), contact_mpm_id.data(), sizeof(uint32_t) * contact_pairs.size(), cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(state->contact_pos(), contact_pos.data(), sizeof(T) * 3 * contact_pairs.size(), cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(state->contact_dist(), contact_dist.data(), sizeof(T) * contact_pairs.size(), cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(state->contact_normal(), contact_normal.data(), sizeof(T) * 3 * contact_pairs.size(), cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(state->contact_rigid_v(), contact_rigid_v.data(), sizeof(T) * 3 * contact_pairs.size(), cudaMemcpyHostToDevice));
+    this->GpuSync();
+}
+
+template class GpuMpmSolver<config::GpuT>;
 
 }  // namespace gmpm
 }  // namespace multibody

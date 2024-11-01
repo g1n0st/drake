@@ -166,31 +166,27 @@ void GpuMpmState<T>::Destroy() {
     CUDA_SAFE_CALL(cudaFree(sort_buffer_));
     sort_buffer_ = nullptr;
     sort_buffer_size_ = 0;
-}
 
-template<typename T>
-void GpuMpmState<T>::BackUpState() {
-    // NOTE (changyu): backup fem state,
-    CUDA_SAFE_CALL(cudaMemcpy(backup_deformation_gradients(), deformation_gradients(), sizeof(Mat3<T>) * n_faces_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(backup_positions(), current_positions(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(backup_velocities(), current_velocities(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(backup_volumes(), current_volumes(), sizeof(T) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(backup_affine_matrices(), current_affine_matrices(), sizeof(Mat3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(backup_pids(), current_pids(), sizeof(int) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(backup_sort_keys(), current_sort_keys(), sizeof(uint32_t) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(backup_sort_ids(), current_sort_ids(), sizeof(uint32_t) * n_particles_, cudaMemcpyDeviceToDevice));
-}
-
-template<typename T>
-void GpuMpmState<T>::RestoreStateFromBackup() {
-    CUDA_SAFE_CALL(cudaMemcpy(deformation_gradients(), backup_deformation_gradients(), sizeof(Mat3<T>) * n_faces_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(current_positions(), backup_positions(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(current_velocities(), backup_velocities(), sizeof(Vec3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(current_volumes(), backup_volumes(), sizeof(T) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(current_affine_matrices(), backup_affine_matrices(), sizeof(Mat3<T>) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(current_pids(), backup_pids(), sizeof(int) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(current_sort_keys(), backup_sort_keys(), sizeof(uint32_t) * n_particles_, cudaMemcpyDeviceToDevice));
-    CUDA_SAFE_CALL(cudaMemcpy(current_sort_ids(), backup_sort_ids(), sizeof(uint32_t) * n_particles_, cudaMemcpyDeviceToDevice));
+    if (d_contact_mpm_id_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_mpm_id_));
+        d_contact_mpm_id_ = nullptr;
+    }
+    if (d_contact_pos_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_pos_));
+        d_contact_pos_ = nullptr;
+    }
+    if (d_contact_dist_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_dist_));
+        d_contact_dist_ = nullptr;
+    }
+    if (d_contact_normal_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_normal_));
+        d_contact_normal_ = nullptr;
+    }
+    if (d_contact_rigid_v_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_rigid_v_));
+        d_contact_rigid_v_ = nullptr;
+    }
 }
 
 template<typename T>
@@ -216,8 +212,35 @@ GpuMpmState<T>::DumpT GpuMpmState<T>::DumpCpuState() const {
     return std::make_tuple(export_pos, export_indices);
 }
 
-template class GpuMpmState<double>;
-template class GpuMpmState<float>;
+template<typename T>
+void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
+    this->num_contacts = num_contacts;
+    if (num_contacts > contact_buffer_size) {
+        contact_buffer_size = num_contacts;
+        if (d_contact_mpm_id_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_mpm_id_));
+        }
+        if (d_contact_pos_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_pos_));
+        }
+        if (d_contact_dist_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_dist_));
+        }
+        if (d_contact_normal_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_normal_));
+        }
+        if (d_contact_rigid_v_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_rigid_v_));
+        }
+        cudaMalloc(&d_contact_mpm_id_, sizeof(uint32_t) * contact_buffer_size);
+        cudaMalloc(&d_contact_pos_, sizeof(T) * 3 * contact_buffer_size);
+        cudaMalloc(&d_contact_dist_, sizeof(T) * contact_buffer_size);
+        cudaMalloc(&d_contact_normal_, sizeof(T) * 3 * contact_buffer_size);
+        cudaMalloc(&d_contact_rigid_v_, sizeof(T) * 3 * contact_buffer_size);
+    }
+}
+
+template class GpuMpmState<config::GpuT>;
 
 }  // namespace gmpm
 }  // namespace multibody

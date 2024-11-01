@@ -123,6 +123,17 @@ public:
     std::vector<T>& contact_vol_host() { return h_contact_vol_; }
     const std::vector<T>& contact_vol_host() const { return h_contact_vol_; }
 
+    const uint32_t* contact_mpm_id() const { return d_contact_mpm_id_; }
+    uint32_t* contact_mpm_id() { return d_contact_mpm_id_; }
+    const T* contact_pos() const { return d_contact_pos_; }
+    T* contact_pos() { return d_contact_pos_; }
+    const T* contact_dist() const { return d_contact_dist_; }
+    T* contact_dist() { return d_contact_dist_; }
+    const T* contact_normal() const { return d_contact_normal_; }
+    T* contact_normal() { return d_contact_normal_; }
+    const T* contact_rigid_v() const { return d_contact_rigid_v_; }
+    T* contact_rigid_v() { return d_contact_rigid_v_; }
+
     const std::vector<ExternalSpatialForce<T>>& external_forces_host() const { return h_external_forces_; }
     std::vector<ExternalSpatialForce<T>>& external_forces_host() { return h_external_forces_; }
 
@@ -138,12 +149,13 @@ public:
     void Destroy();
 
     void SwitchCurrentState() { current_particle_buffer_id_ ^= 1; }
-    void BackUpState();
-    void RestoreStateFromBackup();
 
     // NOTE (changyu): sync all visualization data to CPU side.
     using DumpT = std::tuple<std::vector<Vec3<T>>, std::vector<int>>;
     DumpT DumpCpuState() const;
+
+    // NOTE (changyu): allocate contact pairs buffer based on given number of contacts
+    void ReallocateContacts(size_t num_contacts);
 
     int total_contact_iteration_count = 0;
 
@@ -190,6 +202,15 @@ private:
     //    we cannot reuse it as the backup state,
     //    since it's already reserved for the collision state.
     std::array<ParticleBuffer, 3> particle_buffer_;
+
+    // contact pairs device ptr
+    size_t contact_buffer_size = 0;
+    size_t num_contacts = 0;
+    uint32_t* d_contact_mpm_id_ = nullptr;
+    T* d_contact_pos_ = nullptr;
+    T* d_contact_dist_ = nullptr;
+    T* d_contact_normal_ = nullptr;
+    T* d_contact_rigid_v_ = nullptr;
 
     size_t sort_buffer_size_ = 0;
     static constexpr size_t backup_buffer_id = 2;
