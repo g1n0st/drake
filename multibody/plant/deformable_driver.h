@@ -240,18 +240,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     GpuT impulse_error = 1e10;
     const GpuT kTol = 1e-3;
     int count = 0;
-    GpuT w_k = GpuT(1.); // Chebyshev iteration weight
-    GpuT rho = GpuT(0.55);  // estimated spectral radius
-    GpuT gamma = GpuT(1.0); // under-relaxation coefficient
-    while (impulse_error > kTol && count < 1000) {
-      // Chebyshev iteration weight update
-      if (count == 0) {
-        w_k = static_cast<GpuT>(1.);
-      } else if (count == 1) {
-        w_k = static_cast<GpuT>(2.) / (static_cast<GpuT>(2.) - rho * rho);
-      } else {
-        w_k = static_cast<GpuT>(4.) / (static_cast<GpuT>(4.) - rho * rho * w_k);
-      }
+    while (impulse_error > kTol && count < 1) {
       count++;
       impulse_error = 0;
 #if defined(_OPENMP)
@@ -267,7 +256,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
         const Vector3<GpuT> particle_v = mpm_state->contact_vel_host()[i];
         auto &dv = mpm_state->contact_vel_host()[i];
-        Vector3<GpuT> dv_hat;
         if (phi0 >= 0) {
           const Vector3<GpuT> v_rel = particle_v - mpm_contact_pairs[i].rigid_v.template cast<GpuT>();
           const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
@@ -286,14 +274,12 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
               ft.normalize();
               ft *= fn * mu;
             }
-            dv_hat = old_dv + fn * nhat_W + ft;
+            dv = old_dv + fn * nhat_W + ft;
           } else {
-            dv_hat = old_dv;
+            dv = old_dv;
           }
-          dv = w_k * (gamma * (dv_hat - dv_k_1[i]) + dv_k_1[i] - dv_k_2[i]) + dv_k_2[i];
 
           const Vector3<GpuT> df = (dv - old_dv);
-          dv_k_2[i] = dv_k_1[i];
           dv_k_1[i] = dv;
           // NOTE (changyu): apply the delta impulse to the grid progressively.
           dv = df;
@@ -312,40 +298,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       }
       mpm_solver_.ContactP2G2P(mpm_state, dt);
     }
-
-    std::cout << "Iteration count :" <<  count << ", impulse_error: " << impulse_error << " mpm_contact_pairs.size() " << mpm_contact_pairs.size() << std::endl;
-    mpm_state->total_contact_iteration_count += count;
-    std::cout << "Total Contact Iterations:" << mpm_state->total_contact_iteration_count << std::endl;
-    if (std::isnan(impulse_error)) {
-      throw;
-    }
-
-    /* Accumulate the contact impulses on the rigid bodies. */
-#if defined(_OPENMP)
-#pragma omp parallel for num_threads(16)
-#endif
-      for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-        const BodyIndex index_rigid = manager_->geometry_id_to_body_index().at(mpm_contact_pairs[i].non_mpm_id);
-        const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
-        /* We negate the sign of the grid node's momentum change to get
-              the impulse applied to the rigid body at the grid node. */
-        const Vector3<GpuT> l_WN_W = (m * (-dv_k_1[i]));
-        const Vector3<GpuT> p_WN = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
-        const Vector3<GpuT>& p_WB = mpm_state->external_forces_host()[index_rigid].p_BoBq_B;
-        const Vector3<GpuT> p_BN_W = p_WN - p_WB;
-        /* The angular impulse applied to the rigid body at the grid node. */
-        const Vector3<GpuT> h_WNBo_W = p_BN_W.cross(l_WN_W);
-        /* Use `F_Bq_W` to store the spatial impulse applied to the body
-          at its origin, expressed in the world frame. */
-        
-        #if defined(_OPENMP)
-        #pragma omp critical
-        #endif
-        {
-          mpm_state->external_forces_host()[index_rigid].F_Bq_W_tau += h_WNBo_W;
-          mpm_state->external_forces_host()[index_rigid].F_Bq_W_f += l_WN_W;
-        }
-      }
   }
 
   void CalcAbstractStates(const systems::Context<T>& context,
