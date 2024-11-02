@@ -1035,11 +1035,14 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         T v_hat = min(phi0 / dt, T(1.) / damping);
         if (vn > v_hat) vn_next = vn;
         else {
-            T a = stiffness * damping * dt * dt;
-            T b = -mass - (stiffness * dt * (dt + damping * phi0));
-            T c = stiffness * dt * phi0 + mass * vn;
-            T discriminant = b * b - T(4.0) * a * c;
-            vn_next = (-b - std::sqrt(discriminant)) / (T(2.0) * a);
+            vn_next = vn;
+            for (int _ = 0; _ < 10; ++_) {
+                T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * vn_next);
+                T hess = d2lndvn2 - mass;
+                T dlndvn = stiffness * dt * (phi0 - dt * vn_next) * (T(1.) - damping * vn_next);
+                T grad = dlndvn - mass * (vn_next - vn);
+                vn_next -= grad / hess;
+            }
         }
 
         T* last_dv = &contact_last_dv[idx * 3];
