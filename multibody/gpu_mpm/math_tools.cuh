@@ -101,7 +101,7 @@ inline __host__ __device__ void cross_product3(const T* v1, const T* v2, T* resu
 }
 
 template <int n, class T>
-inline __host__ __device__ void outer_product(T* a, T* b, T* ab)
+inline __host__ __device__ void outer_product(const T* a, const T* b, T* ab)
 {
     #pragma unroll
     for (int i = 0; i < n; ++i)
@@ -119,7 +119,7 @@ inline __host__ __device__ T determinant3(const T* m)
 }
 
 template <class T>
-inline __host__ __device__ void inverse3(T* m, T* m_inv)
+inline __host__ __device__ void inverse3(const T* m, T* m_inv)
 {
     T det_inv = 1. / determinant3(m);
     m_inv[0 * 3 + 0] = (m[1 * 3 + 1] * m[2 * 3 + 2] - m[1 * 3 + 2] * m[2 * 3 + 1]) * det_inv;
