@@ -892,14 +892,35 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
 }
 
 template<typename T, int BLOCK_DIM>
+__global__ void initialize_contact_velocities(const size_t n_contacts,
+    T* contact_vel,
+    const uint32_t* contact_mpm_id,
+    const T* velocities0) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < n_contacts) {
+        #pragma unroll
+        for (int i = 0; i < 3; i++) {
+            contact_vel[idx * 3 + i] = velocities0[contact_mpm_id[idx] * 3 + i];
+        }
+    }
+}
+
+template<typename T, int BLOCK_DIM>
 __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
-    const T* positions, 
-    const T* velocities,
+    const T* contact_pos,
+    T* contact_vel,
     const T* volumes,
+    const uint32_t* contact_mpm_id,
+    const T* contact_dist,
+    const T* contact_normal,
+    const T* contact_rigid_v,
     const uint32_t* grid_index,
     uint32_t* g_touched_flags,
     T* g_momentum,
-    const T dt) {
+    const T dt,
+    const T friction_mu,
+    const T stiffness,
+    const T damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -930,14 +951,14 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+            static_cast<uint32_t>(contact_pos[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(contact_pos[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(contact_pos[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
         };
         T fx[3] = {
-            positions[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
-            positions[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
-            positions[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+            contact_pos[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
+            contact_pos[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
+            contact_pos[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         #pragma unroll
@@ -947,10 +968,99 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
-        const T mass = volumes[idx] * config::DENSITY<T>;
-        const T* vel = &velocities[idx * 3];
+        const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        const T* particle_v = &contact_vel[idx * 3];
 
         T val[3];
+        T dv[3] = {T(0), T(0), T(0)};
+
+        T nhat_W[3] = {-contact_normal[idx * 3 + 0], -contact_normal[idx * 3 + 1], -contact_normal[idx * 3 + 2]};
+        // TODO (changyu): const GpuT phi0 = -(
+        // static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
+        //     (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
+        //     mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
+        //   );
+        T phi0 = -contact_dist[idx];
+        if (phi0 < 0) {
+            printf("IMPOSSIBLE!!!\n");
+        }
+
+        T v_rel[3] = {
+            particle_v[0] - contact_rigid_v[idx * 3 + 0],
+            particle_v[1] - contact_rigid_v[idx * 3 + 1],
+            particle_v[2] - contact_rigid_v[idx * 3 + 2]
+        };
+
+        T vn_next;
+        const T vn = dot<3>(v_rel, nhat_W);
+
+        /* Solves the contact problem for a single particle against a rigid body
+            assuming the rigid body has infinite mass and inertia.
+
+            Let phi be the penetration distance (positive when penetration occurs) and vn
+            be the relative velocity of the particle with respect to the rigid body in the
+            normal direction (vn>0 when separting). Then we have phi_dot = -vn.
+
+            In the normal direction, the contact force is modeled as a linear elastic system
+            with Hunt-Crossley dissipation.
+
+            f = k * phi_+ * (1 + d * phi_dot)_+
+
+            where phi_+ = max(0, phi)
+
+            The momentum balance in the normal direction becomes
+
+            m(vn_next - vn) = k * dt * (phi0 - dt * vn_next)_+ * (1 - d * vn_next)_+
+
+            where we used the fact that phi = phi0 - dt * vn_next. This is a quadratic
+            equation in vn_next, and we solve it to get the next velocity vn_next.
+
+            The quadratic equation is ax^2 + bx + c = 0, where
+
+            a = k * d * dt^2
+            b = -m - (k * dt * (dt + d * phi0))
+            c = k * dt * phi0 + m * vn
+
+            After solving for vn_next, we check if the friction force lies in the friction
+            cone, if not, we project the velocity back into the friction cone. */
+
+        T v_hat = min(phi0 / dt, T(1.) / damping);
+        if (vn > v_hat) vn_next = vn;
+        else {
+            T a = stiffness * damping * dt * dt;
+            T b = -mass - (stiffness * dt * (dt + damping * phi0));
+            T c = stiffness * dt * phi0 + mass * vn;
+            T discriminant = b * b - T(4.0) * a * c;
+            vn_next = (-b - std::sqrt(discriminant)) / (T(2.0) * a);
+        }
+
+        const T old_dv[3] = {0, 0, 0}; // TODO (changyu): replace it
+        if (vn != vn_next) {
+            const T vt[3] = {
+                v_rel[0] - vn * nhat_W[0],
+                v_rel[1] - vn * nhat_W[1],
+                v_rel[2] - vn * nhat_W[2]
+            };
+            T dvn = vn_next - vn;
+            T fn = dvn;
+            T ft[3] = {-vt[0], -vt[1], -vt[2]};
+            if (norm<3>(ft) > fn * friction_mu) {
+                normalize<3>(ft);
+                #pragma unroll
+                for (int i = 0; i < 3; ++i) {
+                    ft[i] *= fn * friction_mu;
+                }
+            }
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) {
+                dv[i] = old_dv[i] + fn * nhat_W[i] + ft[i];
+            }
+        } else {
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) {
+                dv[i] = old_dv[i];
+            }
+        }
 
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
@@ -965,9 +1075,9 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
                     };
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
-                    val[0] = vel[0] * mass * T(1.) * weight;
-                    val[1] = vel[1] * mass * T(1.) * weight;
-                    val[2] = vel[2] * mass * T(1.) * weight;
+                    val[0] = dv[0] * mass * T(1.) * weight;
+                    val[1] = dv[1] * mass * T(1.) * weight;
+                    val[2] = dv[2] * mass * T(1.) * weight;
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[3]; 

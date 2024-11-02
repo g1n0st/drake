@@ -214,92 +214,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     }
   }
 
-  void UpdateContact(gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, const gmpm::config::GpuT &dt,
-                     const std::vector<gmpm::MpmParticleContactPair<gmpm::config::GpuT>>& mpm_contact_pairs) const {
-    if (mpm_contact_pairs.size() == 0) return;
-    using GpuT = gmpm::config::GpuT;
-    mpm_state->contact_pos_host().resize(mpm_contact_pairs.size());
-    mpm_state->contact_vel_host().resize(mpm_contact_pairs.size());
-    mpm_state->contact_vol_host().resize(mpm_contact_pairs.size());
-
-    gmpm::ContactForceSolver<GpuT> solver(dt, 
-      deformable_model_->cpu_mpm_model().config.contact_stiffness, 
-      deformable_model_->cpu_mpm_model().config.contact_damping);
-#if defined(_OPENMP)
-#pragma omp parallel for num_threads(16)
-#endif
-    for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-      mpm_state->contact_pos_host()[i] = mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index];
-      mpm_state->contact_vel_host()[i] = mpm_state->velocities_host()[mpm_contact_pairs[i].particle_in_contact_index];
-      mpm_state->contact_vol_host()[i] = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index];
-    }
-
-    std::vector<Vector3<GpuT>> dv_k_2(mpm_contact_pairs.size(), Vector3<GpuT>::Zero());
-    std::vector<Vector3<GpuT>> dv_k_1(mpm_contact_pairs.size(), Vector3<GpuT>::Zero());
-
-    GpuT impulse_error = 1e10;
-    const GpuT kTol = 1e-3;
-    int count = 0;
-    while (impulse_error > kTol && count < 1) {
-      count++;
-      impulse_error = 0;
-#if defined(_OPENMP)
-#pragma omp parallel for num_threads(16)
-#endif
-      for (size_t i = 0; i < mpm_contact_pairs.size(); ++i) {
-        const Vector3<GpuT>& nhat_W = -mpm_contact_pairs[i].normal.template cast<GpuT>();
-        const GpuT phi0 = -(
-          static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
-            (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
-            mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
-          );
-
-        const Vector3<GpuT> particle_v = mpm_state->contact_vel_host()[i];
-        auto &dv = mpm_state->contact_vel_host()[i];
-        if (phi0 >= 0) {
-          const Vector3<GpuT> v_rel = particle_v - mpm_contact_pairs[i].rigid_v.template cast<GpuT>();
-          const GpuT m = mpm_state->volumes_host()[mpm_contact_pairs[i].particle_in_contact_index] * gmpm::config::DENSITY<T>;
-          const GpuT& mu = deformable_model_->cpu_mpm_model().config.contact_friction_mu;
-          const GpuT vn = v_rel.dot(nhat_W);
-
-          const GpuT vn_next = solver.Solve(m, vn, phi0);
-          const Vector3<GpuT> old_dv = dv_k_1[i];
-
-          if (vn != vn_next) {
-            const Vector3<GpuT> vt = v_rel - vn * nhat_W;
-            GpuT dvn = vn_next - vn;
-            GpuT fn = dvn;
-            Vector3<GpuT> ft = -vt;
-            if (ft.norm() > fn * mu) {
-              ft.normalize();
-              ft *= fn * mu;
-            }
-            dv = old_dv + fn * nhat_W + ft;
-          } else {
-            dv = old_dv;
-          }
-
-          const Vector3<GpuT> df = (dv - old_dv);
-          dv_k_1[i] = dv;
-          // NOTE (changyu): apply the delta impulse to the grid progressively.
-          dv = df;
-
-          #if defined(_OPENMP)
-          #pragma omp critical
-          #endif
-          {
-            impulse_error += df.norm() / (old_dv.norm() + 1e-9);
-          }
-        }
-      }
-
-      if (mpm_contact_pairs.size() > 0) {
-        impulse_error /= mpm_contact_pairs.size();
-      }
-      mpm_solver_.ContactP2G2P(mpm_state, dt);
-    }
-  }
-
   void CalcAbstractStates(const systems::Context<T>& context,
                           systems::State<T>* update) const {
     if (deformable_model_->ExistsMpmModel()) {
@@ -326,11 +240,12 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
         mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
         // NOTE (changyu): update contact information at each substep for weak coupling scheme
-        if (current_frame > 0 && substep % deformable_model_->cpu_mpm_model().config.contact_query_frequency == 0) {
-          CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs);
-          mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
-        }
-        UpdateContact(&mutable_mpm_state, ddt, mpm_contact_pairs);
+        CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs);
+        mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
+        mpm_solver_.UpdateContact(&mutable_mpm_state, ddt, 
+          deformable_model_->cpu_mpm_model().config.contact_friction_mu,
+          deformable_model_->cpu_mpm_model().config.contact_stiffness, 
+          deformable_model_->cpu_mpm_model().config.contact_damping);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);

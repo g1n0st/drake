@@ -36,7 +36,6 @@ template<typename T>
 void GpuMpmState<T>::Finalize() {
     h_positions_.resize(n_particles_);
     h_velocities_.resize(n_particles_);
-    h_volumes_.resize(n_particles_);
 
     // NOTE (changyu): at the initial state, position/velocity is organized as [n_faces | n_verts].
     std::move_backward(h_positions_.begin(), h_positions_.begin() + h_positions_.size() - n_faces_, h_positions_.end());
@@ -46,7 +45,7 @@ void GpuMpmState<T>::Finalize() {
     }
 
     // device particle buffer allocation for reorder data
-    for (uint32_t i = 0; i < 3; ++i) {
+    for (uint32_t i = 0; i < 2; ++i) {
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_positions, sizeof(Vec3<T>) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_velocities, sizeof(Vec3<T>) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_volumes, sizeof(T) * n_particles_));
@@ -89,7 +88,6 @@ void GpuMpmState<T>::Finalize() {
 
     // element-based data
     CUDA_SAFE_CALL(cudaMalloc(&d_deformation_gradients_, sizeof(Mat3<T>) * n_faces_));
-    CUDA_SAFE_CALL(cudaMalloc(&d_backup_deformation_gradients_, sizeof(Mat3<T>) * n_faces_));
     CUDA_SAFE_CALL(cudaMalloc(&d_Dm_inverses_, sizeof(Mat2<T>) * n_faces_));
     CUDA_SAFE_CALL(cudaMalloc(&d_indices_, sizeof(int) * n_faces_ * 3));
     CUDA_SAFE_CALL(cudaMemcpy(d_indices_, h_indices_.data(), sizeof(int) * n_faces_ * 3, cudaMemcpyHostToDevice));
@@ -117,7 +115,7 @@ void GpuMpmState<T>::Finalize() {
 
 template<typename T>
 void GpuMpmState<T>::Destroy() {
-    for (uint32_t i = 0; i < 3; ++i) {
+    for (uint32_t i = 0; i < 2; ++i) {
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_positions));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_velocities));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_volumes));
@@ -141,14 +139,12 @@ void GpuMpmState<T>::Destroy() {
     CUDA_SAFE_CALL(cudaFree(d_taus_));
     CUDA_SAFE_CALL(cudaFree(d_index_mappings_));
     CUDA_SAFE_CALL(cudaFree(d_deformation_gradients_));
-    CUDA_SAFE_CALL(cudaFree(d_backup_deformation_gradients_));
     CUDA_SAFE_CALL(cudaFree(d_Dm_inverses_));
     CUDA_SAFE_CALL(cudaFree(d_indices_));
     d_forces_ = nullptr;
     d_taus_ = nullptr;
     d_index_mappings_ = nullptr;
     d_deformation_gradients_ = nullptr;
-    d_backup_deformation_gradients_ = nullptr;
     d_Dm_inverses_ = nullptr;
     d_indices_ = nullptr;
 
@@ -175,6 +171,10 @@ void GpuMpmState<T>::Destroy() {
         CUDA_SAFE_CALL(cudaFree(d_contact_pos_));
         d_contact_pos_ = nullptr;
     }
+    if (d_contact_vel_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_vel_));
+        d_contact_vel_ = nullptr;
+    }
     if (d_contact_dist_) {
         CUDA_SAFE_CALL(cudaFree(d_contact_dist_));
         d_contact_dist_ = nullptr;
@@ -186,6 +186,14 @@ void GpuMpmState<T>::Destroy() {
     if (d_contact_rigid_v_) {
         CUDA_SAFE_CALL(cudaFree(d_contact_rigid_v_));
         d_contact_rigid_v_ = nullptr;
+    }
+    if (d_contact_sort_keys_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_sort_keys_));
+        d_contact_sort_keys_ = nullptr;
+    }
+    if (d_contact_sort_ids_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_sort_ids_));
+        d_contact_sort_keys_ = nullptr;
     }
 }
 
@@ -223,6 +231,9 @@ void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
         if (d_contact_pos_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_pos_));
         }
+        if (d_contact_vel_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_vel_));
+        }
         if (d_contact_dist_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_dist_));
         }
@@ -232,11 +243,20 @@ void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
         if (d_contact_rigid_v_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_rigid_v_));
         }
+        if (d_contact_sort_keys_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_sort_keys_));
+        }
+        if (d_contact_sort_ids_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_sort_ids_));
+        }
         cudaMalloc(&d_contact_mpm_id_, sizeof(uint32_t) * contact_buffer_size);
         cudaMalloc(&d_contact_pos_, sizeof(T) * 3 * contact_buffer_size);
+        cudaMalloc(&d_contact_vel_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_dist_, sizeof(T) * contact_buffer_size);
         cudaMalloc(&d_contact_normal_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_rigid_v_, sizeof(T) * 3 * contact_buffer_size);
+        cudaMalloc(&d_contact_sort_keys_, sizeof(uint32_t) * contact_buffer_size);
+        cudaMalloc(&d_contact_sort_ids_, sizeof(uint32_t) * contact_buffer_size);
     }
 }
 

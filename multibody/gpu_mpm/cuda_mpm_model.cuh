@@ -59,30 +59,12 @@ public:
     uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
     uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
 
-    T* backup_positions() { return particle_buffer_[backup_buffer_id].d_positions; }
-    T* backup_velocities() { return particle_buffer_[backup_buffer_id].d_velocities; }
-    T* backup_volumes() { return particle_buffer_[backup_buffer_id].d_volumes; }
-    T* backup_affine_matrices() { return particle_buffer_[backup_buffer_id].d_affine_matrices; }
-    int* backup_pids() { return particle_buffer_[backup_buffer_id].d_pids; }
-    uint32_t* backup_sort_keys() { return particle_buffer_[backup_buffer_id].d_sort_keys; }
-    uint32_t* backup_sort_ids() { return particle_buffer_[backup_buffer_id].d_sort_ids; }
-
-    // NOTE (changyu): next state data is only meaningful at BuildReturnMapping stage,
-    // we can reuse these buffers to splat particle contact dv to the grid.
-    T* contact_positions() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_positions; }
-    T* contact_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
-    T* contact_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
-    T* contact_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
-    uint32_t* contact_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
-    uint32_t* contact_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
-
     T* forces() { return d_forces_; }
     const T* forces() const { return d_forces_; }
     T* taus() { return d_taus_; }
     const T* taus() const { return d_taus_; }
     T* deformation_gradients() { return d_deformation_gradients_; }
     const T* deformation_gradients() const { return d_deformation_gradients_; }
-    T* backup_deformation_gradients() { return d_backup_deformation_gradients_; }
     T* Dm_inverses() { return d_Dm_inverses_; }
     const T* Dm_inverses() const { return d_Dm_inverses_; }
     int* indices() { return d_indices_; }
@@ -112,27 +94,21 @@ public:
 
     std::vector<Vec3<T>>& positions_host() { return h_positions_; }
     const std::vector<Vec3<T>>& positions_host() const { return h_positions_; }
-    std::vector<Vec3<T>>& velocities_host() { return h_velocities_; }
-    const std::vector<Vec3<T>>& velocities_host() const { return h_velocities_; }
-    std::vector<T>& volumes_host() { return h_volumes_; }
-    const std::vector<T>& volumes_host() const { return h_volumes_; }
-    std::vector<Vec3<T>>& contact_pos_host() { return h_contact_pos_; }
-    const std::vector<Vec3<T>>& contact_pos_host() const { return h_contact_pos_; }
-    std::vector<Vec3<T>>& contact_vel_host() { return h_contact_vel_; }
-    const std::vector<Vec3<T>>& contact_vel_host() const { return h_contact_vel_; }
-    std::vector<T>& contact_vol_host() { return h_contact_vol_; }
-    const std::vector<T>& contact_vol_host() const { return h_contact_vol_; }
 
     const uint32_t* contact_mpm_id() const { return d_contact_mpm_id_; }
     uint32_t* contact_mpm_id() { return d_contact_mpm_id_; }
     const T* contact_pos() const { return d_contact_pos_; }
     T* contact_pos() { return d_contact_pos_; }
+    const T* contact_vel() const { return d_contact_vel_; }
+    T* contact_vel() { return d_contact_vel_; }
     const T* contact_dist() const { return d_contact_dist_; }
     T* contact_dist() { return d_contact_dist_; }
     const T* contact_normal() const { return d_contact_normal_; }
     T* contact_normal() { return d_contact_normal_; }
     const T* contact_rigid_v() const { return d_contact_rigid_v_; }
     T* contact_rigid_v() { return d_contact_rigid_v_; }
+    uint32_t* contact_sort_keys() { return d_contact_sort_keys_; }
+    uint32_t* contact_sort_ids() { return d_contact_sort_ids_; }
     size_t num_contacts() const { return num_contacts_; }
 
     const std::vector<ExternalSpatialForce<T>>& external_forces_host() const { return h_external_forces_; }
@@ -149,7 +125,7 @@ public:
     // NOTE (changyu): free GPU MPM state, all gpu memory free should be done here.
     void Destroy();
 
-    void SwitchCurrentState() { current_particle_buffer_id_ ^= 1; }
+    void SwitchCurrentState() { assert(false); current_particle_buffer_id_ ^= 1; }
 
     // NOTE (changyu): sync all visualization data to CPU side.
     using DumpT = std::tuple<std::vector<Vec3<T>>, std::vector<int>>;
@@ -180,8 +156,6 @@ private:
     T* d_Dm_inverses_ = nullptr; // size: n_faces NO sort
 
     T* d_deformation_gradients_ = nullptr; // size: n_faces NO sort
-    // NOTE (changyu): backup state used for substepping.
-    T* d_backup_deformation_gradients_ = nullptr; // size: n_faces NO sort
     
     struct ParticleBuffer {
         T* d_positions = nullptr;   // size: n_faces + n_verts
@@ -197,36 +171,29 @@ private:
     
     uint32_t current_particle_buffer_id_ = 0;
     // NOTE (changyu): 
-    //    particle_buffer_[0/1] is used for switch between current state and next state,
-    //    particle buffer [2] is used for the backup state.
-    //    Note that while one of buffer[0/1] will not be used after sorting in a timestep,
-    //    we cannot reuse it as the backup state,
-    //    since it's already reserved for the collision state.
-    std::array<ParticleBuffer, 3> particle_buffer_;
+    //    particle_buffer_[0/1] is used for switch between current state and next state.
+    std::array<ParticleBuffer, 2> particle_buffer_;
 
     // contact pairs device ptr
     size_t contact_buffer_size = 0;
     size_t num_contacts_ = 0;
     uint32_t* d_contact_mpm_id_ = nullptr;
+    uint32_t* d_contact_sort_keys_ = nullptr;
+    uint32_t* d_contact_sort_ids_ = nullptr;
     T* d_contact_pos_ = nullptr;
+    T* d_contact_vel_ = nullptr;
     T* d_contact_dist_ = nullptr;
     T* d_contact_normal_ = nullptr;
     T* d_contact_rigid_v_ = nullptr;
+    
 
     size_t sort_buffer_size_ = 0;
-    static constexpr size_t backup_buffer_id = 2;
     unsigned int* sort_buffer_ = nullptr;
 
     // Particles state host ptrs
     std::vector<Vec3<T>> h_positions_;
     std::vector<Vec3<T>> h_velocities_;
-    std::vector<T> h_volumes_;
     std::vector<int> h_indices_;
-    
-    // host ptrs for contact solving
-    std::vector<Vec3<T>> h_contact_pos_;
-    std::vector<Vec3<T>> h_contact_vel_;
-    std::vector<T> h_contact_vol_;
 
     std::vector<ExternalSpatialForce<T>> h_external_forces_;
 

@@ -179,61 +179,12 @@ void GpuMpmSolver<T>::Dump(const GpuMpmState<T> &state, std::string filename) co
     obj.close();
 }
 
-// NOTE (changyu): this method is used to synchroize all mpm particle states to CPU and get `MpmParticleContactPair`
-// at the beginning of the time step, which will be used for the stage 2 SAP solver.
+// NOTE (changyu): this method is used to synchroize mpm position states to CPU and get `MpmParticleContactPair`
 template<typename T>
 void GpuMpmSolver<T>::SyncParticleStateToCpu(GpuMpmState<T> *state) const {
     this->GpuSync();
     state->positions_host().resize(state->n_particles());
-    state->velocities_host().resize(state->n_particles());
-    state->volumes_host().resize(state->n_particles());
     CUDA_SAFE_CALL(cudaMemcpy(state->positions_host().data(), state->current_positions(), sizeof(Vec3<T>) * state->n_particles(), cudaMemcpyDeviceToHost));
-    CUDA_SAFE_CALL(cudaMemcpy(state->velocities_host().data(), state->current_velocities(), sizeof(Vec3<T>) * state->n_particles(), cudaMemcpyDeviceToHost));
-    CUDA_SAFE_CALL(cudaMemcpy(state->volumes_host().data(), state->current_volumes(), sizeof(T) * state->n_particles(), cudaMemcpyDeviceToHost));
-}
-
-template<typename T>
-void GpuMpmSolver<T>::ContactImpulseToGrid(GpuMpmState<T> *state, const T& dt) const {
-    size_t n_contacts = state->contact_pos_host().size();
-    if (n_contacts) {
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_positions(), state->contact_pos_host().data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_velocities(), state->contact_vel_host().data(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyHostToDevice));
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_volumes(), state->contact_vol_host().data(), sizeof(T) * n_contacts, cudaMemcpyHostToDevice));
-
-        CUDA_SAFE_CALL((
-            compute_base_cell_node_index_kernel<<<
-            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (n_contacts, state->contact_positions(), state->contact_sort_keys(), state->contact_sort_ids())
-            ));
-        
-        CUDA_SAFE_CALL((
-            contact_particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
-            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (n_contacts, state->contact_positions(), state->contact_velocities(), state->contact_volumes(),
-            state->contact_sort_keys(), state->grid_touched_flags(), state->grid_momentum(), dt)
-            ));
-    }
-}
-
-template<typename T>
-void GpuMpmSolver<T>::GridToContactVel(GpuMpmState<T> *state, const T& dt) const {
-    size_t n_contacts = state->contact_pos_host().size();
-    if (n_contacts) {
-        CUDA_SAFE_CALL((
-            grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
-            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (n_contacts, state->contact_positions(), state->contact_velocities(), state->contact_affine_matrices(),
-            state->grid_masses(), state->grid_momentum(), dt)
-            ));
-        CUDA_SAFE_CALL(cudaDeviceSynchronize());
-        CUDA_SAFE_CALL(cudaMemcpy(state->contact_vel_host().data(), state->contact_velocities(), sizeof(Vec3<T>) * n_contacts, cudaMemcpyDeviceToHost));
-    }
-}
-
-template<typename T>
-void GpuMpmSolver<T>::ContactP2G2P(GpuMpmState<T> *state, const T& dt) const {
-    ContactImpulseToGrid(state, dt);
-    GridToContactVel(state, dt);
 }
 
 template<typename T>
@@ -269,12 +220,38 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const std::vector<
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_normal(), contact_normal.data(), sizeof(T) * 3 * contact_pairs.size(), cudaMemcpyHostToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_rigid_v(), contact_rigid_v.data(), sizeof(T) * 3 * contact_pairs.size(), cudaMemcpyHostToDevice));
     this->GpuSync();
+    CUDA_SAFE_CALL((
+        initialize_contact_velocities<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
+        (contact_pairs.size() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (contact_pairs.size(), state->contact_vel(), state->contact_mpm_id(), state->current_velocities())
+        ));
+    this->GpuSync();
 }
 
 template<typename T>
-void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
-    if (!state->num_contacts()) return;
-
+void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T& friction_mu, const T& stiffness, const T& damping) const {
+    const auto &n_contacts = state->num_contacts();
+    if (!n_contacts) return;
+    CUDA_SAFE_CALL((
+        compute_base_cell_node_index_kernel<<<
+        (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
+        ));
+    
+    CUDA_SAFE_CALL((
+        contact_particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
+        (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (n_contacts, state->contact_pos(), state->contact_vel(), state->current_volumes(),
+        state->contact_mpm_id(), state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
+        state->contact_sort_keys(), state->grid_touched_flags(), state->grid_momentum(), dt, friction_mu, stiffness, damping)
+        ));
+    CUDA_SAFE_CALL((
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+        (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
+        state->grid_masses(), state->grid_momentum(), dt)
+        ));
+    CUDA_SAFE_CALL(cudaDeviceSynchronize());
 }
 
 template class GpuMpmSolver<config::GpuT>;
