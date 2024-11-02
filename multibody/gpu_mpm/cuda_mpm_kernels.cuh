@@ -915,12 +915,14 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     const T* contact_normal,
     const T* contact_rigid_v,
     const uint32_t* grid_index,
+    T* contact_last_dv,
     uint32_t* g_touched_flags,
     T* g_momentum,
     const T dt,
     const T friction_mu,
     const T stiffness,
-    const T damping) {
+    const T damping,
+    T* impulse_error) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -1034,7 +1036,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             vn_next = (-b - std::sqrt(discriminant)) / (T(2.0) * a);
         }
 
-        const T old_dv[3] = {0, 0, 0}; // TODO (changyu): replace it
+        T* last_dv = &contact_last_dv[idx * 3];
         if (vn != vn_next) {
             const T vt[3] = {
                 v_rel[0] - vn * nhat_W[0],
@@ -1053,14 +1055,26 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             }
             #pragma unroll
             for (int i = 0; i < 3; ++i) {
-                dv[i] = old_dv[i] + fn * nhat_W[i] + ft[i];
+                dv[i] = last_dv[i] + fn * nhat_W[i] + ft[i];
             }
         } else {
             #pragma unroll
             for (int i = 0; i < 3; ++i) {
-                dv[i] = old_dv[i];
+                dv[i] = last_dv[i];
             }
         }
+
+        T df[3];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            df[i] = dv[i] - last_dv[i];
+        }
+        atomicAdd(impulse_error, norm<3>(df) / (norm<3>(last_dv) + T(1e-9)));
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            last_dv[i] = dv[i];
+        }
+
 
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
@@ -1075,9 +1089,9 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
                     };
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
-                    val[0] = dv[0] * mass * T(1.) * weight;
-                    val[1] = dv[1] * mass * T(1.) * weight;
-                    val[2] = dv[2] * mass * T(1.) * weight;
+                    val[0] = df[0] * mass * T(1.) * weight;
+                    val[1] = df[1] * mass * T(1.) * weight;
+                    val[2] = df[2] * mass * T(1.) * weight;
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[3]; 

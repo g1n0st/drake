@@ -8,7 +8,7 @@
 
 #include <eigen3/Eigen/Dense>
 
-#define DEBUG 1
+#define DEBUG 0
 
 inline void cuda_error_throw() {
 #if DEBUG
