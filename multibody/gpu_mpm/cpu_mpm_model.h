@@ -70,13 +70,42 @@ Rigid body with id A
  */
 
 template <typename T>
-struct MpmParticleContactPair {
-   size_t particle_in_contact_index{};
-   int64_t non_mpm_id{};
-   T penetration_distance{};
-   Vec3<T> normal{};
-   Vec3<T> particle_in_contact_position{};
-   Vec3<T> rigid_v{};
+struct MpmParticleContactPairs {
+   std::vector<uint32_t> particle_in_contact_index;
+   std::vector<int64_t> non_mpm_id;
+   std::vector<T> penetration_distance;
+   std::vector<Vec3<T>> normal;
+   std::vector<Vec3<T>> particle_in_contact_position;
+   std::vector<Vec3<T>> rigid_v;
+
+   void clear() {
+        particle_in_contact_index.clear();
+        non_mpm_id.clear();
+        penetration_distance.clear();
+        normal.clear();
+        particle_in_contact_position.clear();
+        rigid_v.clear();
+   }
+
+   void push_back(
+    uint32_t particle_in_contact_index_,
+    int64_t non_mpm_id_,
+    T penetration_distance_,
+    Vec3<T> normal_,
+    Vec3<T> particle_in_contact_position_,
+    Vec3<T> rigid_v_
+    ) {
+        particle_in_contact_index.push_back(particle_in_contact_index_);
+        non_mpm_id.push_back(non_mpm_id_);
+        penetration_distance.push_back(penetration_distance_);
+        normal.push_back(normal_);
+        particle_in_contact_position.push_back(particle_in_contact_position_);
+        rigid_v.push_back(rigid_v_);
+   }
+
+   size_t size() const {
+      return non_mpm_id.size();
+   }
 };
 
 }  // namespace gmpm

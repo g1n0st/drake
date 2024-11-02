@@ -119,7 +119,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   
   void CalcMpmContactPairs(
       const systems::Context<T>& context, gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state,
-      std::vector<gmpm::MpmParticleContactPair<gmpm::config::GpuT>>* result) const {
+      gmpm::MpmParticleContactPairs<gmpm::config::GpuT>* result) const {
     using GpuT = gmpm::config::GpuT;
     DRAKE_ASSERT(result != nullptr);
     long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -178,11 +178,11 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           #pragma omp critical
           #endif
           {
-            result->emplace_back(gmpm::MpmParticleContactPair<GpuT>(
-                p, p2geometry.id_G.get_value(), GpuT(p2geometry.distance),
+            result->push_back(
+                uint32_t(p), p2geometry.id_G.get_value(), GpuT(p2geometry.distance),
                 -p2geometry.grad_W.normalized().template cast<GpuT>(),
                 mpm_state->positions_host()[p],
-                rigid_v.template cast<GpuT>()));
+                rigid_v.template cast<GpuT>());
           }
         }
       }
@@ -231,7 +231,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       int substep = 0;
       long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
       InitalizeExternalContactForces(context, &mutable_mpm_state);
-      std::vector<gmpm::MpmParticleContactPair<GpuT>> mpm_contact_pairs;
+      gmpm::MpmParticleContactPairs<GpuT> mpm_contact_pairs;
 
       while (dt_left > 0) {
         GpuT ddt = std::min(dt_left, substep_dt);
