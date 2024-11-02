@@ -236,6 +236,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       while (dt_left > 0) {
         GpuT ddt = std::min(dt_left, substep_dt);
         dt_left -= ddt;
+        mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
         mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
         mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
@@ -248,7 +249,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           deformable_model_->cpu_mpm_model().config.contact_damping);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
-        mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
         substep += 1;
       }
       FinalizeExternalContactForces(&mutable_mpm_state, dt);
