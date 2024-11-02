@@ -993,9 +993,15 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             particle_v[2] - contact_rigid_v[idx * 3 + 2]
         };
 
-        T vn_next;
-        const T vn = dot<3>(v_rel, nhat_W);
+        constexpr int kZAxis = 2;
+        T R_WC[9], R_CW[9]; // for each contact pair, Ji = R_CWp * wip
+        make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
+        transpose<3, 3, T>(R_WC, R_CW);
+        T local_v[3];
+        matmul<3, 3, 1, T>(R_WC, v_rel, local_v);
 
+        T vn_next;
+        const T vn = local_v[2];
         /* Solves the contact problem for a single particle against a rigid body
             assuming the rigid body has infinite mass and inertia.
 

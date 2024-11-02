@@ -596,6 +596,47 @@ inline __host__ __device__ void svd2x2(const T *A, T *U, T *sigma, T *V) {
     sigma[3] = s2;
 }
 
+template <typename T>
+inline __host__ __device__ void make_from_one_unit_vector(const T u_A[3], int axis_index, T* J) {
+    if (axis_index < 0 || axis_index > 2) {
+        assert(false);
+    }
+
+    int i = 0;
+    if (fabs(u_A[1]) < fabs(u_A[i])) i = 1;
+    if (fabs(u_A[2]) < fabs(u_A[i])) i = 2;
+    
+    const int j = (i + 1) % 3;
+    const int k = (j + 1) % 3;
+
+    T mag_a_x_u = sqrt(1. - u_A[i] * u_A[i]);
+    T r = T(1.) / mag_a_x_u;
+    T s = -r * u_A[i];
+
+    J[axis_index * 3 + 0] = u_A[0];
+    J[axis_index * 3 + 1] = u_A[1];
+    J[axis_index * 3 + 2] = u_A[2];
+
+    T v[3] = {0., 0., 0.};
+    v[j] = -r * u_A[k];
+    v[k] = r * u_A[j];
+
+    int v_index = (axis_index + 1) % 3;
+    J[v_index * 3 + i] = 0;
+    J[v_index * 3 + j] = v[j];
+    J[v_index * 3 + k] = v[k];
+
+    T w[3];
+    w[i] = mag_a_x_u;
+    w[j] = s * u_A[j];
+    w[k] = s * u_A[k];
+
+    int w_index = (axis_index + 2) % 3;
+    J[w_index * 3 + 0] = w[0];
+    J[w_index * 3 + 1] = w[1];
+    J[w_index * 3 + 2] = w[2];
+}
+
 
 template<int n, int m, typename T>
 __device__ __host__
