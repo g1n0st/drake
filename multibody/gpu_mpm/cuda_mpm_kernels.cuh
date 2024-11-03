@@ -1055,7 +1055,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
                     T(1.) - P_ts_hat[0], -P_ts_hat[1],
                     -P_ts_hat[2], T(1.) - P_ts_hat[3]
                 };
-                const T d2ltdvt2_coeff = friction_mu * yn0 / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
+                const T d2ltdvt2_coeff = -friction_mu * yn0 / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
                 const T d2ltdvt2[4] = {
                     d2ltdvt2_coeff * P_perp_ts_hat[0],
                     d2ltdvt2_coeff * P_perp_ts_hat[1],
@@ -1077,7 +1077,9 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
                 inverse3(Hess, Hess_Inv);
                 T Dir[3];
                 matmul<3, 3, 1, T>(Hess_Inv, Grad, Dir);
-                for (int i = 0; i < 3; ++i) Dir[i] = -Grad[i];
+                
+                // NOTE(changyu): enable it to test gradient descent
+                // for (int i = 0; i < 3; ++i) Dir[i] = -Grad[i];
                 
                 // stop criterion
                 if (norm<3>(Dir) < 1e-3) break;
