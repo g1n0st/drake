@@ -226,8 +226,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             ));
         
         CUDA_SAFE_CALL((
-            contact_particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
-            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            contact_particle_to_grid_kernel<T, 32><<<
+            (n_contacts + 32 - 1) / 32, 32>>>
             (n_contacts, state->contact_pos(), state->contact_vel(), state->current_volumes(),
             state->contact_mpm_id(), state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
             state->contact_sort_keys(), state->contact_last_dv(), state->grid_touched_flags(), state->grid_momentum(), dt, friction_mu, stiffness, damping, impulse_error_d)
