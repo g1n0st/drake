@@ -212,6 +212,17 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
 
+    const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
+    const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
+    if (touched_cells_cnt > 0) {
+        CUDA_SAFE_CALL((
+            clean_grid_contact_kernel<<<
+            (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (touched_cells_cnt, state->grid_touched_ids(), 
+            state->grid_Hess(), state->grid_Grad(), state->grid_Dir(), state->grid_alpha())
+            ));
+    }
+
     CUDA_SAFE_CALL((
         compute_base_cell_node_index_kernel<<<
         (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
@@ -223,24 +234,24 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     T impulse_error = 1e10;
     T *impulse_error_d;
     CUDA_SAFE_CALL(cudaMalloc(&impulse_error_d, sizeof(T)));
-    while (impulse_error > kTol && count < 1000) {
+    while (impulse_error > kTol && count < 1) {
         CUDA_SAFE_CALL(cudaMemset(impulse_error_d, 0, sizeof(T)));
-        CUDA_SAFE_CALL((
-            contact_particle_to_grid_kernel<T, 32><<<
-            (n_contacts + 32 - 1) / 32, 32>>>
-            (n_contacts, state->contact_pos(), state->contact_vel(), state->current_volumes(),
-            state->contact_mpm_id(), state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
-            state->contact_sort_keys(), state->contact_last_dv(), state->grid_touched_flags(), state->grid_momentum(), dt, friction_mu, stiffness, damping, impulse_error_d)
-            ));
-        CUDA_SAFE_CALL((
-            grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
-            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
-            state->grid_masses(), state->grid_momentum(), dt)
-            ));
-        CUDA_SAFE_CALL(cudaDeviceSynchronize());
-        CUDA_SAFE_CALL(cudaMemcpy(&impulse_error, impulse_error_d, sizeof(T), cudaMemcpyDeviceToHost));
-        impulse_error /= n_contacts;
+        // CUDA_SAFE_CALL((
+        //     contact_particle_to_grid_kernel<T, 32><<<
+        //     (n_contacts + 32 - 1) / 32, 32>>>
+        //     (n_contacts, state->contact_pos(), state->contact_vel(), state->current_volumes(),
+        //     state->contact_mpm_id(), state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
+        //     state->contact_sort_keys(), state->contact_last_dv(), state->grid_touched_flags(), state->grid_momentum(), dt, friction_mu, stiffness, damping, impulse_error_d)
+        //     ));
+        // CUDA_SAFE_CALL((
+        //     grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+        //     (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        //     (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
+        //     state->grid_masses(), state->grid_momentum(), dt)
+        //     ));
+        // CUDA_SAFE_CALL(cudaDeviceSynchronize());
+        // CUDA_SAFE_CALL(cudaMemcpy(&impulse_error, impulse_error_d, sizeof(T), cudaMemcpyDeviceToHost));
+        // impulse_error /= n_contacts;
         count += 1;
     }
     std::cout << "Iteration count :" <<  count << ", impulse_error: " << impulse_error << " n_contacts " << n_contacts << std::endl;

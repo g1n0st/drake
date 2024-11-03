@@ -601,6 +601,30 @@ __global__ void clean_grid_kernel(
     }
 }
 
+template<typename T>
+__global__ void clean_grid_contact_kernel(
+    const uint32_t touched_cells_cnt,
+    const uint32_t* g_touched_ids,
+    T* g_Hess,
+    T* g_Grad,
+    T* g_Dir,
+    T* g_alpha) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        g_alpha[cell_idx] = T(1.);
+        g_Grad[cell_idx * 3 + 0] = 0;
+        g_Grad[cell_idx * 3 + 1] = 0;
+        g_Grad[cell_idx * 3 + 2] = 0;
+        g_Dir[cell_idx * 3 + 0] = 0;
+        g_Dir[cell_idx * 3 + 1] = 0;
+        g_Dir[cell_idx * 3 + 2] = 0;
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) g_Hess[cell_idx * 9 + i] = 0;
+    }
+}
+
 template<typename T, int MPM_BOUNDARY_CONDITION=-1>
 __global__ void update_grid_kernel(
     const uint32_t touched_cells_cnt,
