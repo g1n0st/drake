@@ -1153,7 +1153,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
 #endif
         T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
         #pragma unroll
-        for (int ii = 0; ii < 12; ++ii) val[ii] *= weight;
+        for (int ii = 0; ii < 12; ++ii) val[ii] *= mass * weight;
 
         for (int iter = 1; iter <= mark; iter <<= 1) {
             T tmp[12]; 
