@@ -235,13 +235,25 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaMalloc(&impulse_error_d, sizeof(T)));
     while (impulse_error > kTol && count < 1) {
         CUDA_SAFE_CALL(cudaMemset(impulse_error_d, 0, sizeof(T)));
-        CUDA_SAFE_CALL((
-            contact_particle_to_grid_kernel<T, 32><<<
-            (n_contacts + 32 - 1) / 32, 32>>>
-            (n_contacts, state->contact_pos(), state->contact_vel(), state->current_volumes(),
-            state->contact_mpm_id(), state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
-            state->contact_sort_keys(), state->grid_touched_flags(), state->grid_momentum(), dt, friction_mu, stiffness, damping)
-            ));
+        for (uint32_t color_mask = 0U; color_mask < 27U; ++color_mask) {
+            CUDA_SAFE_CALL((
+                contact_particle_to_grid_kernel<T, 32><<<
+                (n_contacts + 32 - 1) / 32, 32>>>
+                (n_contacts, 
+                state->contact_pos(), 
+                state->contact_vel(), 
+                state->current_velocities(),
+                state->current_volumes(),
+                state->contact_mpm_id(), 
+                state->contact_dist(), 
+                state->contact_normal(), 
+                state->contact_rigid_v(),
+                state->contact_sort_keys(), 
+                state->grid_Hess(),
+                state->grid_Grad(),
+                dt, friction_mu, stiffness, damping, color_mask)
+                ));
+        }
         // CUDA_SAFE_CALL((
         //     grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
         //     (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>

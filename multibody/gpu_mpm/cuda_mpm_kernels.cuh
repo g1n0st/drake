@@ -929,22 +929,40 @@ __global__ void initialize_contact_velocities(const size_t n_contacts,
     }
 }
 
+template<typename UINT>
+__device__ __host__ inline UINT get_color_mask(UINT i, UINT j, UINT k) {
+    return (i % 3U) * 9U + (j % 3U) * 3U + (k % 3U);
+}
+
+template<typename UINT>
+__device__ __host__ inline void get_color_coordinates(UINT x, UINT y, UINT z, UINT color_mask, UINT &i, UINT &j, UINT &k) {
+    UINT i_offset = color_mask / 9U;
+    UINT j_offset = (color_mask % 9U) / 3U;
+    UINT k_offset = color_mask % 3U;
+
+    i = ((3U + i_offset) - (x % 3U)) % 3U;
+    j = ((3U + j_offset) - (y % 3U)) % 3U;
+    k = ((3U + k_offset) - (z % 3U)) % 3U;
+}
+
 template<typename T, int BLOCK_DIM>
 __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     const T* contact_pos,
-    T* contact_vel,
+    const T* contact_vel,
+    const T* velocities,
     const T* volumes,
     const uint32_t* contact_mpm_id,
     const T* contact_dist,
     const T* contact_normal,
     const T* contact_rigid_v,
     const uint32_t* grid_index,
-    uint32_t* g_touched_flags,
-    T* g_momentum,
+    T* g_Hess,
+    T* g_Grad,
     const T dt,
     const T friction_mu,
     const T stiffness,
-    const T damping) {
+    const T damping,
+    const uint32_t g_color_mask) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -993,10 +1011,8 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         }
 
         const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        const T* particle_v0 = &velocities[contact_mpm_id[idx] * 3];
         const T* particle_v = &contact_vel[idx * 3];
-
-        T val[3];
-        T dv[3] = {T(0), T(0), T(0)};
 
         T nhat_W[3] = {-contact_normal[idx * 3 + 0], -contact_normal[idx * 3 + 1], -contact_normal[idx * 3 + 2]};
         // TODO (changyu): const GpuT phi0 = -(
@@ -1009,6 +1025,11 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             printf("IMPOSSIBLE!!!\n");
         }
 
+        T v0_rel[3] = {
+            particle_v0[0] - contact_rigid_v[idx * 3 + 0],
+            particle_v0[1] - contact_rigid_v[idx * 3 + 1],
+            particle_v0[2] - contact_rigid_v[idx * 3 + 2]
+        };
         T v_rel[3] = {
             particle_v[0] - contact_rigid_v[idx * 3 + 0],
             particle_v[1] - contact_rigid_v[idx * 3 + 1],
@@ -1019,10 +1040,13 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         T R_WC[9], R_CW[9]; // for each contact pair, Ji = R_CWp * wip
         make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
         transpose<3, 3, T>(R_WC, R_CW);
-        T v0[3];
-        matmul<3, 3, 1, T>(R_WC, v_rel, v0);
 
-        T v_next[3] = {v0[0], v0[1], v0[2]};
+        T v0[3], v_next[3]; // in the contact local coordinate
+        matmul<3, 3, 1, T>(R_WC, v0_rel, v0);
+        matmul<3, 3, 1, T>(R_WC, v_rel, v_next);
+
+        T C_Hess[9], C_Grad[3]; // hess and grad in the contact local coordinate
+
         /* Solves the contact problem for a single particle against a rigid body
             assuming the rigid body has infinite mass and inertia.
 
@@ -1055,147 +1079,91 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
 
         T v_hat = min(phi0 / dt, T(1.) / damping); // Eq. 
         if (v0[kZAxis] > v_hat) {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) C_Hess[i] = 0;
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) C_Grad[i] = 0;
         }
         else {
-            // printf("v0(%d) %.4f %.4f %.4f\n", idx, v0[0], v0[1], v0[2]);
             const T epsv = T(1e-3);
-            for (int _ = 0; _ < 100; ++_) {
-                // normal component
-                const T yn = stiffness * dt * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
-                const T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
+            
+            // normal component
+            const T yn = stiffness * dt * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
+            const T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
 
-                // frictional component
-                // For a physical model of compliance for which γn is only a function of vn
-                const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
-                const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + epsv * epsv);
-                const T ts_hat[2] = {v_next[0] / ts_coeff, v_next[1] / ts_coeff}; // Eq. 18
+            // frictional component
+            // For a physical model of compliance for which γn is only a function of vn
+            const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
+            const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + epsv * epsv);
+            const T ts_hat[2] = {v_next[0] / ts_coeff, v_next[1] / ts_coeff}; // Eq. 18
 
-                const T yt[2] = {-friction_mu * yn0 * ts_hat[0], -friction_mu * yn0 * ts_hat[1]}; // Eq. 33
-                T P_ts_hat[4];
-                outer_product<2, T>(ts_hat, ts_hat, P_ts_hat);
-                const T P_perp_ts_hat[4] = {
-                    T(1.) - P_ts_hat[0], -P_ts_hat[1],
-                    -P_ts_hat[2], T(1.) - P_ts_hat[3]
-                };
-                const T d2ltdvt2_coeff = -friction_mu * yn0 / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
-                const T d2ltdvt2[4] = {
-                    d2ltdvt2_coeff * P_perp_ts_hat[0],
-                    d2ltdvt2_coeff * P_perp_ts_hat[1],
-                    d2ltdvt2_coeff * P_perp_ts_hat[2],
-                    d2ltdvt2_coeff * P_perp_ts_hat[3]
-                };
+            const T yt[2] = {-friction_mu * yn0 * ts_hat[0], -friction_mu * yn0 * ts_hat[1]}; // Eq. 33
+            T P_ts_hat[4];
+            outer_product<2, T>(ts_hat, ts_hat, P_ts_hat);
+            const T P_perp_ts_hat[4] = {
+                T(1.) - P_ts_hat[0], -P_ts_hat[1],
+                -P_ts_hat[2], T(1.) - P_ts_hat[3]
+            };
+            const T d2ltdvt2_coeff = -friction_mu * yn0 / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
+            const T d2ltdvt2[4] = {
+                d2ltdvt2_coeff * P_perp_ts_hat[0],
+                d2ltdvt2_coeff * P_perp_ts_hat[1],
+                d2ltdvt2_coeff * P_perp_ts_hat[2],
+                d2ltdvt2_coeff * P_perp_ts_hat[3]
+            };
 
-                const T Hess[9] = {
-                    d2ltdvt2[0] - mass, d2ltdvt2[1], T(0.),
-                    d2ltdvt2[2], d2ltdvt2[3] - mass, T(0.),
-                    T(0.),       T(0.),       d2lndvn2 - mass
-                };
-                const T Grad[3] = {
-                    yt[0] - mass * (v_next[0] - v0[0]),
-                    yt[1] - mass * (v_next[1] - v0[1]),
-                    yn    - mass * (v_next[2] - v0[2])
-                };
-                T Hess_Inv[9];
-                inverse3(Hess, Hess_Inv);
-                T Dir[3];
-                matmul<3, 3, 1, T>(Hess_Inv, Grad, Dir);
-                
-                // NOTE(changyu): enable it to test gradient descent
-                // for (int i = 0; i < 3; ++i) Dir[i] = -Grad[i];
-                
-                // stop criterion
-                if (norm<3>(Dir) < 1e-3) break;
+            C_Hess[0] = d2ltdvt2[0];
+            C_Hess[1] = d2ltdvt2[1];
+            C_Hess[2] = T(0.);
 
-                // line search
-                auto l = [&](const T* v) {
-                    const T lt = friction_mu * yn0 * (sqrt(v[0] * v[0] + v[1] * v[1] + epsv * epsv) - epsv); // Eq. 33
-                    const T f0 = stiffness * phi0;
-                    const T vn = min(v_hat, v[kZAxis]); // Eq. 16
-                    const T ln_a = stiffness * damping * dt * dt;
-                    const T ln_b = -(stiffness * dt * (dt + damping * phi0));
-                    const T ln_c = stiffness * dt * phi0;
-                    const T ln = -(T(1. / 3.) * ln_a * vn * vn * vn + T(1. / 2.) * ln_b * vn * vn + ln_c * vn); // Eq.7
-                    /*
-                    const T delta_f = dt * stiffness * vn;
-                    const T ln = -dt * (
-                        vn * (f0 + T(0.5) * delta_f)
-                        - damping * vn * vn * T(0.5) * (f0 + T(2.) / T(3.) * delta_f)
-                    ); // Eq. 15, This form is numerically more stable.
-                    */
-                    const T v_v0[3] = {
-                        v[0] - v0[0],
-                        v[1] - v0[1],
-                        v[2] - v0[2]
-                    };
-                    const T vMv = T(0.5) * mass * norm_sqr<3, T>(v_v0);
-                    return lt + ln + vMv;
-                };
-                T alpha = T(1.);
-                T E0 = l(v_next);
-                while (alpha > 1e-5) {
-                    T v_next_trial[3] = {
-                        v_next[0] - alpha * Dir[0],
-                        v_next[1] - alpha * Dir[1],
-                        v_next[2] - alpha * Dir[2]
-                    };
-                    T E1 = l(v_next_trial);
-                    if (E1 <= E0) {
-                        break;
-                    } else {
-                        alpha *= (0.5);
-                    }
-                }
-                if (alpha < 1e-4) {
-                    printf("Tiny Alpha!!!!!!!!!!!\n");
-                }
-                v_next[0] -= alpha * Dir[0];
-                v_next[1] -= alpha * Dir[1];
-                v_next[2] -= alpha * Dir[2];
-                // printf("Alpha(%d)=%.4f E0=%.8lf E1=%.8lf\n", idx, alpha, E0, l(v_next));
-            }
+            C_Hess[3] = d2ltdvt2[2];
+            C_Hess[4] = d2ltdvt2[3];
+            C_Hess[5] = T(0.);
+
+            C_Hess[6] = T(0.);
+            C_Hess[7] = T(0.);
+            C_Hess[8] = d2lndvn2;
+
+            C_Grad[0] = yt[0];
+            C_Grad[1] = yt[1];
+            C_Grad[2] = yn;
         }
+        
+        T val[12]; // buffer for both W_Hess & W_Grad
+        // hess and grad in the world local coordinate
+        T* W_Hess = &val[0];
+        T* W_Grad = &val[9];
+        T tmp[9];
+        matmul<3, 3, 1, T>(R_WC, C_Grad, W_Grad); // J^T yamma
+        matmul<3, 3, 3, T>(R_WC, C_Hess, tmp);
+        matmul<3, 3, 3, T>(tmp, R_CW, W_Hess); // J^T G J
 
         T d_impulse_local[3] = {v_next[0] - v0[0], v_next[1] - v0[1], v_next[2] - v0[2]};
         T d_impulse[3];
         matmul<3, 3, 1, T>(R_CW, d_impulse_local, d_impulse);
-        // printf("d_impulse(%d) %.4f %.4f %.4f\n", idx, d_impulse[0], d_impulse[1], d_impulse[2]);
-
+        
+        uint32_t i, j, k;
+        get_color_coordinates(base[0], base[1], base[2], g_color_mask, i, j, k);
+        T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
         #pragma unroll
-        for (int i = 0; i < 3; ++i) {
+        for (int ii = 0; ii < 12; ++ii) val[ii] *= weight;
+
+        for (int iter = 1; iter <= mark; iter <<= 1) {
+            T tmp[12]; 
             #pragma unroll
-            for (int j = 0; j < 3; ++j) {
+            for (int ii = 0; ii < 12; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
+            if (interval >= iter) {
                 #pragma unroll
-                for (int k = 0; k < 3; ++k) {
-                    T xi_minus_xp[3] = {
-                        (i - fx[0]) * config::G_DX<T>,
-                        (j - fx[1]) * config::G_DX<T>,
-                        (k - fx[2]) * config::G_DX<T>
-                    };
-
-                    T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
-                    val[0] = d_impulse[0] * mass * T(1.) * weight;
-                    val[1] = d_impulse[1] * mass * T(1.) * weight;
-                    val[2] = d_impulse[2] * mass * T(1.) * weight;
-
-                    for (int iter = 1; iter <= mark; iter <<= 1) {
-                        T tmp[3]; 
-                        #pragma unroll
-                        for (int ii = 0; ii < 3; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
-                        if (interval >= iter) {
-                            #pragma unroll
-                            for (int ii = 0; ii < 3; ++ii) val[ii] += tmp[ii];
-                        }
-                    }
-
-                    if (boundary) {
-                        const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-                        const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
-                        // atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[0]);
-                        // atomicAdd(&(g_momentum[target_cell_index * 3 + 1]), val[1]);
-                        // atomicAdd(&(g_momentum[target_cell_index * 3 + 2]), val[2]);
-                    }
-                }
+                for (int ii = 0; ii < 12; ++ii) val[ii] += tmp[ii];
             }
+        }
+
+        if (boundary) {
+            const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+            #pragma unroll
+            for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), W_Hess[ii]);
+            #pragma unroll
+            for (int ii = 0; ii < 3; ++ii) atomicAdd(&(g_Grad[target_cell_index * 3 + ii]), W_Grad[ii]);
         }
     }
 }
