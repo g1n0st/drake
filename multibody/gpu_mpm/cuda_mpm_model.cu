@@ -102,6 +102,11 @@ void GpuMpmState<T>::Finalize() {
     CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_touched_cnt, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMemset(grid_buffer_.d_g_touched_cnt, 0, sizeof(uint32_t)));
 
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Hess_, config::G_GRID_VOLUME * sizeof(Mat3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Grad_, config::G_GRID_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Dir_, config::G_GRID_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_alpha_, config::G_GRID_VOLUME * sizeof(T)));
+
     radix_sort(this->next_sort_keys(), this->current_sort_keys(), this->next_sort_ids(), this->current_sort_ids(), sort_buffer_, sort_buffer_size_, static_cast<unsigned int>(n_particles_));
     CUDA_SAFE_CALL(cudaMalloc(&sort_buffer_, sizeof(unsigned int) * sort_buffer_size_));
 
@@ -158,6 +163,15 @@ void GpuMpmState<T>::Destroy() {
     grid_buffer_.d_g_touched_flags = nullptr;
     grid_buffer_.d_g_touched_ids = nullptr;
     grid_buffer_.d_g_touched_cnt = nullptr;
+
+    CUDA_SAFE_CALL(cudaFree(d_g_Hess_));
+    CUDA_SAFE_CALL(cudaFree(d_g_Grad_));
+    CUDA_SAFE_CALL(cudaFree(d_g_Dir_));
+    CUDA_SAFE_CALL(cudaFree(d_g_alpha_));
+    d_g_Hess_ = nullptr;
+    d_g_Grad_ = nullptr;
+    d_g_Dir_ = nullptr;
+    d_g_alpha_ = nullptr;
 
     CUDA_SAFE_CALL(cudaFree(sort_buffer_));
     sort_buffer_ = nullptr;
