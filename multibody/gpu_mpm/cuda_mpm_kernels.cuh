@@ -1035,9 +1035,9 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         if (v0[kZAxis] > v_hat) {
         }
         else {
-            printf("v0(%d) %.4f %.4f %.4f\n", idx, v0[0], v0[1], v0[2]);
-            const T epsv = T(1.);
-            for (int _ = 0; _ < 30; ++_) {
+            // printf("v0(%d) %.4f %.4f %.4f\n", idx, v0[0], v0[1], v0[2]);
+            const T epsv = T(1e-3);
+            for (int _ = 0; _ < 100; ++_) {
                 // normal component
                 const T yn = stiffness * dt * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
                 const T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
@@ -1077,7 +1077,10 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
                 inverse3(Hess, Hess_Inv);
                 T Dir[3];
                 matmul<3, 3, 1, T>(Hess_Inv, Grad, Dir);
-                // for (int i = 0; i < 3; ++i) Dir[i] = -Grad[i];
+                for (int i = 0; i < 3; ++i) Dir[i] = -Grad[i];
+                
+                // stop criterion
+                if (norm<3>(Dir) < 1e-3) break;
 
                 // line search
                 auto l = [&](const T* v) {
@@ -1124,7 +1127,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
                 v_next[0] -= alpha * Dir[0];
                 v_next[1] -= alpha * Dir[1];
                 v_next[2] -= alpha * Dir[2];
-                printf("Alpha(%d)=%.4f E0=%.8lf E1=%.8lf\n", idx, alpha, E0, l(v_next));
+                // printf("Alpha(%d)=%.4f E0=%.8lf E1=%.8lf\n", idx, alpha, E0, l(v_next));
             }
         }
 
@@ -1132,7 +1135,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         T d_impulse_local[3] = {v_next[0] - v0[0], v_next[1] - v0[1], v_next[2] - v0[2]};
         T d_impulse[3];
         matmul<3, 3, 1, T>(R_CW, d_impulse_local, d_impulse);
-        printf("d_impulse(%d) %.4f %.4f %.4f\n", idx, d_impulse[0], d_impulse[1], d_impulse[2]);
+        // printf("d_impulse(%d) %.4f %.4f %.4f\n", idx, d_impulse[0], d_impulse[1], d_impulse[2]);
 
         atomicAdd(impulse_error, norm<3>(d_impulse) / (norm<3>(last_dv) + T(1e-9)));
         #pragma unroll
