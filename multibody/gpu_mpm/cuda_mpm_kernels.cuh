@@ -939,14 +939,12 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     const T* contact_normal,
     const T* contact_rigid_v,
     const uint32_t* grid_index,
-    T* contact_last_dv,
     uint32_t* g_touched_flags,
     T* g_momentum,
     const T dt,
     const T friction_mu,
     const T stiffness,
-    const T damping,
-    T* impulse_error) {
+    const T damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -1157,18 +1155,10 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             }
         }
 
-        T* last_dv = &contact_last_dv[idx * 3];
         T d_impulse_local[3] = {v_next[0] - v0[0], v_next[1] - v0[1], v_next[2] - v0[2]};
         T d_impulse[3];
         matmul<3, 3, 1, T>(R_CW, d_impulse_local, d_impulse);
         // printf("d_impulse(%d) %.4f %.4f %.4f\n", idx, d_impulse[0], d_impulse[1], d_impulse[2]);
-
-        atomicAdd(impulse_error, norm<3>(d_impulse) / (norm<3>(last_dv) + T(1e-9)));
-        #pragma unroll
-        for (int i = 0; i < 3; ++i) {
-            last_dv[i] += d_impulse[i];
-        }
-
 
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
@@ -1200,10 +1190,9 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
                     if (boundary) {
                         const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
                         const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
-                        g_touched_flags[target_grid_index] = 1;
-                        atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[0]);
-                        atomicAdd(&(g_momentum[target_cell_index * 3 + 1]), val[1]);
-                        atomicAdd(&(g_momentum[target_cell_index * 3 + 2]), val[2]);
+                        // atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[0]);
+                        // atomicAdd(&(g_momentum[target_cell_index * 3 + 1]), val[1]);
+                        // atomicAdd(&(g_momentum[target_cell_index * 3 + 2]), val[2]);
                     }
                 }
             }
