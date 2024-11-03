@@ -120,6 +120,11 @@ namespace config {
 	template<class T> constexpr T GRAVITY;
 	template<> constexpr float GRAVITY<float> = -9.8f;
 	template<> constexpr double GRAVITY<double> = -9.8;
+
+	// coordinate descent newton solve tolerance
+	template<class T> constexpr T kTol;
+	template<> constexpr float kTol<float> = 1e-3;
+	template<> constexpr double kTol<double> = 1e-3;
 };
 
 }  // namespace gmpm

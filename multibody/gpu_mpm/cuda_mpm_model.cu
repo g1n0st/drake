@@ -106,6 +106,7 @@ void GpuMpmState<T>::Finalize() {
     CUDA_SAFE_CALL(cudaMalloc(&d_g_Grad_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_Dir_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_alpha_, config::G_DOMAIN_VOLUME * sizeof(T)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_v_star_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
 
     radix_sort(this->next_sort_keys(), this->current_sort_keys(), this->next_sort_ids(), this->current_sort_ids(), sort_buffer_, sort_buffer_size_, static_cast<unsigned int>(n_particles_));
     CUDA_SAFE_CALL(cudaMalloc(&sort_buffer_, sizeof(unsigned int) * sort_buffer_size_));
@@ -168,10 +169,12 @@ void GpuMpmState<T>::Destroy() {
     CUDA_SAFE_CALL(cudaFree(d_g_Grad_));
     CUDA_SAFE_CALL(cudaFree(d_g_Dir_));
     CUDA_SAFE_CALL(cudaFree(d_g_alpha_));
+    CUDA_SAFE_CALL(cudaFree(d_g_v_star_));
     d_g_Hess_ = nullptr;
     d_g_Grad_ = nullptr;
     d_g_Dir_ = nullptr;
     d_g_alpha_ = nullptr;
+    d_g_v_star_ = nullptr;
 
     CUDA_SAFE_CALL(cudaFree(sort_buffer_));
     sort_buffer_ = nullptr;

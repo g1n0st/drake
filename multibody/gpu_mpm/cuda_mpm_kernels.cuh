@@ -630,7 +630,8 @@ __global__ void update_grid_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
     T* g_masses,
-    T* g_momentum) {
+    T* g_momentum,
+    T* g_v_star) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
@@ -782,6 +783,10 @@ __global__ void update_grid_kernel(
                     }
                 }
             }
+
+            g_v_star[cell_idx * 3 + 0] = g_vel[0];
+            g_v_star[cell_idx * 3 + 1] = g_vel[1];
+            g_v_star[cell_idx * 3 + 2] = g_vel[2];
         }
     }
 }
@@ -851,10 +856,9 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                     if constexpr (CONTACT_TRANSFER) {
                         const T &g_m = g_masses[target_cell_index];
                         if (g_m > T(1e-7)) {
-                            // NOTE (changyu): in contact transfer, g_momentum still stores the momentum.
-                            new_v[0] += weight * (g_v[0] / g_m);
-                            new_v[1] += weight * (g_v[1] / g_m);
-                            new_v[2] += weight * (g_v[2] / g_m);
+                            new_v[0] += weight * g_v[0];
+                            new_v[1] += weight * g_v[1];
+                            new_v[2] += weight * g_v[2];
                         }
                     } else {
                         new_v[0] += weight * g_v[0];
@@ -1021,9 +1025,11 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         //     mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
         //   );
         T phi0 = -contact_dist[idx];
+#ifdef DEBUG
         if (phi0 < 0) {
             printf("IMPOSSIBLE!!!\n");
         }
+#endif
 
         T v0_rel[3] = {
             particle_v0[0] - contact_rigid_v[idx * 3 + 0],
@@ -1082,10 +1088,10 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             #pragma unroll
             for (int i = 0; i < 9; ++i) C_Hess[i] = 0;
             #pragma unroll
-            for (int i = 0; i < 9; ++i) C_Grad[i] = 0;
+            for (int i = 0; i < 3; ++i) C_Grad[i] = 0;
         }
         else {
-            const T epsv = T(1e-3);
+            const T epsv = T(1.);
             
             // normal component
             const T yn = stiffness * dt * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
@@ -1138,12 +1144,13 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         matmul<3, 3, 3, T>(R_WC, C_Hess, tmp);
         matmul<3, 3, 3, T>(tmp, R_CW, W_Hess); // J^T G J
 
-        T d_impulse_local[3] = {v_next[0] - v0[0], v_next[1] - v0[1], v_next[2] - v0[2]};
-        T d_impulse[3];
-        matmul<3, 3, 1, T>(R_CW, d_impulse_local, d_impulse);
-        
         uint32_t i, j, k;
         get_color_coordinates(base[0], base[1], base[2], g_color_mask, i, j, k);
+#ifdef DEBUG
+        if (get_color_mask(base[0] + i, base[1] + j, base[2] + k) != g_color_mask) {
+            printf("ERROR NOT SAME COLOR!!!!!!!!!");
+        }
+#endif
         T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
         #pragma unroll
         for (int ii = 0; ii < 12; ++ii) val[ii] *= weight;
@@ -1164,6 +1171,56 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), W_Hess[ii]);
             #pragma unroll
             for (int ii = 0; ii < 3; ++ii) atomicAdd(&(g_Grad[target_cell_index * 3 + ii]), W_Grad[ii]);
+        }
+    }
+}
+
+template<typename T>
+__global__ void update_grid_contact_coordinate_descent_kernel(
+    const uint32_t touched_cells_cnt,
+    uint32_t* g_touched_ids,
+    const T* g_masses,
+    const T* g_v_star,
+    T* g_Hess,
+    T* g_Grad,
+    T* g_momentum,
+    T* g_Dir,
+    T* max_dir_norm,
+    const uint32_t g_color_mask) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        uint3 xyz = inverse_cell_index(cell_idx);
+        if (g_masses[cell_idx] > T(0.) && 
+            get_color_mask(xyz.x, xyz.y, xyz.x) == g_color_mask &&
+            (norm<9>(&g_Hess[cell_idx * 9]) > 0. || norm<3>(&g_Hess[cell_idx * 3]) > 0.)) {
+            T* g_vel = &g_momentum[cell_idx * 3];
+            T mass = g_masses[cell_idx];
+            T* local_Hess = &g_Hess[cell_idx * 9];
+            T* local_Grad = &g_Grad[cell_idx * 3];
+            T* local_Dir = &g_Dir[cell_idx * 3]; // TODO (changyu): used for future line search
+            local_Hess[0] -= mass;
+            local_Hess[4] -= mass;
+            local_Hess[8] -= mass;
+            local_Grad[0] -= mass * (g_vel[0] - g_v_star[cell_idx * 3 + 0]);
+            local_Grad[1] -= mass * (g_vel[1] - g_v_star[cell_idx * 3 + 1]);
+            local_Grad[2] -= mass * (g_vel[2] - g_v_star[cell_idx * 3 + 2]);
+            T Hess_Inv[9];
+            inverse3(local_Hess, Hess_Inv);
+            matmul<3, 3, 1, T>(Hess_Inv, local_Grad, local_Dir);
+
+            // stop criterion
+            atomicAdd(max_dir_norm, norm<3>(local_Dir));
+            printf("color(%u), idx=%d, det(Hess)=%.10f, Dir=%.5f %.5f %.5f v_star=%.5f %.5f %.5f\n", 
+                g_color_mask, cell_idx, determinant3(local_Hess), local_Dir[0], local_Dir[1], local_Dir[2],
+                g_v_star[cell_idx * 3 + 0], g_v_star[cell_idx * 3 + 1], g_v_star[cell_idx * 3 + 2]);
+            if (norm<3>(local_Dir) >= config::kTol<T>) {
+                const T alpha = T(1.); // should be safeguarded by line search
+                g_vel[0] -= alpha * local_Dir[0];
+                g_vel[1] -= alpha * local_Dir[1];
+                g_vel[2] -= alpha * local_Dir[2];
+            }
         }
     }
 }

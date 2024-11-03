@@ -93,6 +93,7 @@ public:
     T* grid_Grad() { return d_g_Grad_; }
     T* grid_Dir() { return d_g_Dir_; }
     T* grid_alpha() { return d_g_alpha_; }
+    T* grid_v_star() { return d_g_v_star_; }
 
     unsigned int* sort_buffer() { return sort_buffer_; };
     size_t& sort_buffer_size() { return sort_buffer_size_; }
@@ -219,6 +220,7 @@ private:
     T* d_g_Grad_ = nullptr;
     T* d_g_Dir_  = nullptr;
     T* d_g_alpha_ = nullptr;
+    T* d_g_v_star_ = nullptr;
 };
 
 }  // namespace gmpm
