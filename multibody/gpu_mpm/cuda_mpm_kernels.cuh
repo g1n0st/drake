@@ -585,7 +585,7 @@ __global__ void gather_touched_grid_kernel(
 template<typename T>
 __global__ void clean_grid_kernel(
     const uint32_t touched_cells_cnt,
-    uint32_t* g_touched_ids,
+    const uint32_t* g_touched_ids,
     uint32_t* g_touched_flags,
     T* g_masses,
     T* g_momentum) {
