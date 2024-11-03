@@ -211,6 +211,12 @@ template<typename T>
 void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T& friction_mu, const T& stiffness, const T& damping) const {
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
+
+    CUDA_SAFE_CALL((
+        compute_base_cell_node_index_kernel<<<
+        (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
+        ));
     
     const T kTol = 1e-3;
     int count = 0;
@@ -219,12 +225,6 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaMalloc(&impulse_error_d, sizeof(T)));
     while (impulse_error > kTol && count < 1000) {
         CUDA_SAFE_CALL(cudaMemset(impulse_error_d, 0, sizeof(T)));
-        CUDA_SAFE_CALL((
-            compute_base_cell_node_index_kernel<<<
-            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
-            ));
-        
         CUDA_SAFE_CALL((
             contact_particle_to_grid_kernel<T, 32><<<
             (n_contacts + 32 - 1) / 32, 32>>>
