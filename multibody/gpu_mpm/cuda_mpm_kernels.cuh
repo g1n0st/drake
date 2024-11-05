@@ -1201,7 +1201,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
         uint3 xyz = inverse_cell_index(cell_idx);
         if (g_masses[cell_idx] > T(0.) && 
             get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask &&
-            (norm<9>(&g_Hess[cell_idx * 9]) > 0. || norm<3>(&g_Grad[cell_idx * 3]) > 0.)) {
+            (norm<9>(&g_Hess[cell_idx * 9]) > 1e-7 || norm<3>(&g_Grad[cell_idx * 3]) > 1e-7)) {
             T* g_vel = &g_momentum[cell_idx * 3];
             T mass = g_masses[cell_idx];
             T* local_Hess = &g_Hess[cell_idx * 9];
@@ -1387,9 +1387,9 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
         };
 
         T weight = weights[threadIdx.x][ii][0] * weights[threadIdx.x][jj][1] * weights[threadIdx.x][kk][2];
-        atomicAdd(&g_E1[color_index], mass * l(new_v_local));
+        atomicAdd(&g_E1[color_index], l(new_v_local));
         if constexpr(EVAL_E0) {
-            atomicAdd(&g_E0[color_index], mass * l(old_v_local));
+            atomicAdd(&g_E0[color_index], l(old_v_local));
         }
     }
 }
@@ -1432,7 +1432,6 @@ __global__ void update_grid_contact_alpha_kernel(
             };
             T E0 = g_E0[cell_idx] + T(0.5) * mass * norm_sqr<3>(old_v_rel);
             T E1 = g_E1[cell_idx] + T(0.5) * mass * norm_sqr<3>(new_v_rel);
-            // printf("color=%u E0=%.7f E1=%.7f\n", g_color_mask, E0, E1);
             if (E1 <= E0) {
                 g_vel[0] -= alpha * Dir[0];
                 g_vel[1] -= alpha * Dir[1];
@@ -1443,7 +1442,7 @@ __global__ void update_grid_contact_alpha_kernel(
                 g_alpha[cell_idx] *= T(0.5);
                 g_E1[cell_idx] = T(0.);
                 if (g_alpha[cell_idx] < 1e-4) {
-                    printf("Tiny Alpha!!!!!!!!!!!\n");
+                    printf("Tiny Alpha!!!!!!!!!!! color=%u idx=%u E0=%.10f E1=%.10f\n", g_color_mask, cell_idx, E0, E1);
                     g_vel[0] -= alpha * Dir[0];
                     g_vel[1] -= alpha * Dir[1];
                     g_vel[2] -= alpha * Dir[2];
