@@ -1201,7 +1201,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
         uint3 xyz = inverse_cell_index(cell_idx);
         if (g_masses[cell_idx] > T(0.) && 
             get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask &&
-            (norm<9>(&g_Hess[cell_idx * 9]) > 0. || norm<3>(&g_Hess[cell_idx * 3]) > 0.)) {
+            (norm<9>(&g_Hess[cell_idx * 9]) > 0. || norm<3>(&g_Grad[cell_idx * 3]) > 0.)) {
             T* g_vel = &g_momentum[cell_idx * 3];
             T mass = g_masses[cell_idx];
             T* local_Hess = &g_Hess[cell_idx * 9];
