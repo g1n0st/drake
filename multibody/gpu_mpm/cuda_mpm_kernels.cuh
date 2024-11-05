@@ -1403,7 +1403,7 @@ __global__ void update_grid_contact_alpha_kernel(
     const T* g_Dir,
     T* g_alpha,
     const T* g_E0,
-    const T* g_E1,
+    T* g_E1,
     uint32_t* solved_grid_DoFs,
     const uint32_t g_color_mask) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -1440,6 +1440,7 @@ __global__ void update_grid_contact_alpha_kernel(
                 atomicAdd(solved_grid_DoFs, 1U);
             } else {
                 g_alpha[cell_idx] *= T(0.5);
+                g_E1[cell_idx] = T(0.);
                 if (g_alpha[cell_idx] < 1e-4) {
                     printf("Tiny Alpha!!!!!!!!!!!\n");
                     g_vel[0] -= alpha * Dir[0];
