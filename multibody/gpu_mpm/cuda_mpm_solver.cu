@@ -224,15 +224,22 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     int count = 0;
     T max_dir_norm = 1e10;
     T *max_dir_norm_d;
+    uint32_t total_grid_DoFs = 0;
+    uint32_t *total_grid_DoFs_d = 0;
+    uint32_t solved_grid_DoFs = 0;
+    uint32_t *solved_grid_DoFs_d = 0;
     CUDA_SAFE_CALL(cudaMalloc(&max_dir_norm_d, sizeof(T)));
-    while (max_dir_norm > gmpm::config::kTol<T> && count < 100) {
+    CUDA_SAFE_CALL(cudaMalloc(&total_grid_DoFs_d, sizeof(uint32_t)));
+    CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
+    while (max_dir_norm > gmpm::config::kTol<T> && count < 1) {
         CUDA_SAFE_CALL(cudaMemset(max_dir_norm_d, 0, sizeof(T)));
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((
                 clean_grid_contact_kernel<<<
                 (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                 (touched_cells_cnt, state->grid_touched_ids(), 
-                state->grid_Hess(), state->grid_Grad(), state->grid_Dir(), state->grid_alpha())
+                state->grid_Hess(), state->grid_Grad(), state->grid_Dir(), 
+                state->grid_alpha(), state->grid_E0(), state->grid_E1())
                 ));
         }
         for (uint32_t color_mask = 0U; color_mask < 27U; ++color_mask) {
@@ -253,13 +260,53 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 state->grid_Grad(),
                 dt, friction_mu, stiffness, damping, color_mask)
                 ));
+            CUDA_SAFE_CALL(cudaMemset(total_grid_DoFs_d, 0, sizeof(uint32_t)));
+            CUDA_SAFE_CALL(cudaMemset(solved_grid_DoFs_d, 0, sizeof(uint32_t)));
             CUDA_SAFE_CALL((
                 update_grid_contact_coordinate_descent_kernel<<<
                 (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                 (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
-                state->grid_v_star(), state->grid_Hess(), state->grid_Grad(), state->grid_momentum(), state->grid_Dir(), 
-                max_dir_norm_d, color_mask)
+                state->grid_v_star(), state->grid_Hess(), state->grid_Grad(), state->grid_momentum(), state->grid_Dir(),
+                state->grid_alpha(), state->grid_E0(), state->grid_E1(),
+                max_dir_norm_d, total_grid_DoFs_d, color_mask)
                 ));
+            CUDA_SAFE_CALL(cudaDeviceSynchronize());
+            CUDA_SAFE_CALL(cudaMemcpy(&total_grid_DoFs, total_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            printf("color(%u) total_grid_DoFs=%u\n", color_mask, total_grid_DoFs);
+            
+            // line search
+            while (solved_grid_DoFs < total_grid_DoFs) {
+                CUDA_SAFE_CALL((
+                    grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/true><<<
+                    (n_contacts + 32 - 1) / 32, 32>>>
+                    (n_contacts, 
+                    state->contact_pos(), 
+                    state->contact_vel(), 
+                    state->current_velocities(),
+                    state->current_volumes(),
+                    state->contact_mpm_id(), 
+                    state->contact_dist(), 
+                    state->contact_normal(), 
+                    state->contact_rigid_v(),
+                    state->grid_momentum(),
+                    state->grid_Dir(),
+                    state->grid_alpha(),
+                    state->grid_E0(),
+                    state->grid_E1(),
+                    dt, friction_mu, stiffness, damping, color_mask)
+                    ));
+                CUDA_SAFE_CALL((
+                    update_grid_contact_alpha_kernel<<<
+                    (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                    (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
+                    state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
+                    state->grid_alpha(), state->grid_E0(), state->grid_E1(),
+                    solved_grid_DoFs_d, color_mask)
+                    ));
+                CUDA_SAFE_CALL(cudaDeviceSynchronize());
+                CUDA_SAFE_CALL(cudaMemcpy(&solved_grid_DoFs, solved_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+            }
+            
             CUDA_SAFE_CALL((
                 grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
                 (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
@@ -274,6 +321,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         // throw;
     }
     std::cout << "Iteration count :" <<  count << ", tol: " << max_dir_norm << " n_contacts " << n_contacts << std::endl;
+    CUDA_SAFE_CALL(cudaFree(max_dir_norm_d));
+    CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
+    CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
 }
 
 template class GpuMpmSolver<config::GpuT>;

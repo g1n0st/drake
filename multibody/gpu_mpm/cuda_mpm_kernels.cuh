@@ -608,12 +608,14 @@ __global__ void clean_grid_contact_kernel(
     T* g_Hess,
     T* g_Grad,
     T* g_Dir,
-    T* g_alpha) {
+    T* g_alpha,
+    T* g_E0,
+    T* g_E1) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
-        g_alpha[cell_idx] = T(1.);
+        g_alpha[cell_idx] = T(-1.);
         g_Grad[cell_idx * 3 + 0] = 0;
         g_Grad[cell_idx * 3 + 1] = 0;
         g_Grad[cell_idx * 3 + 2] = 0;
@@ -622,6 +624,8 @@ __global__ void clean_grid_contact_kernel(
         g_Dir[cell_idx * 3 + 2] = 0;
         #pragma unroll
         for (int i = 0; i < 9; ++i) g_Hess[cell_idx * 9 + i] = 0;
+        g_E0[cell_idx] = 0;
+        g_E1[cell_idx] = 0;
     }
 }
 
@@ -1091,8 +1095,6 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             for (int i = 0; i < 3; ++i) C_Grad[i] = 0;
         }
         else {
-            const T epsv = T(1.);
-            
             // normal component
             const T yn = stiffness * dt * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
             const T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
@@ -1100,7 +1102,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             // frictional component
             // For a physical model of compliance for which γn is only a function of vn
             const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
-            const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + epsv * epsv);
+            const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + config::epsv<T> * config::epsv<T>);
             const T ts_hat[2] = {v_next[0] / ts_coeff, v_next[1] / ts_coeff}; // Eq. 18
 
             const T yt[2] = {-friction_mu * yn0 * ts_hat[0], -friction_mu * yn0 * ts_hat[1]}; // Eq. 33
@@ -1186,7 +1188,11 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
     T* g_Grad,
     T* g_momentum,
     T* g_Dir,
+    T* g_alpha,
+    T* g_E0,
+    T* g_E1,
     T* max_dir_norm,
+    uint32_t* total_grid_DoFs,
     const uint32_t g_color_mask) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
@@ -1200,7 +1206,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
             T mass = g_masses[cell_idx];
             T* local_Hess = &g_Hess[cell_idx * 9];
             T* local_Grad = &g_Grad[cell_idx * 3];
-            T* local_Dir = &g_Dir[cell_idx * 3]; // TODO (changyu): used for future line search
+            T* local_Dir = &g_Dir[cell_idx * 3];
             local_Hess[0] -= mass;
             local_Hess[4] -= mass;
             local_Hess[8] -= mass;
@@ -1213,14 +1219,231 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
 
             // stop criterion
             atomicAdd(max_dir_norm, norm<3>(local_Dir));
-            /*printf("color(%u), idx=%d, det(Hess)=%.10f, Dir=%.5f %.5f %.5f v_star=%.5f %.5f %.5f\n", 
-                g_color_mask, cell_idx, determinant3(local_Hess), local_Dir[0], local_Dir[1], local_Dir[2],
-                g_v_star[cell_idx * 3 + 0], g_v_star[cell_idx * 3 + 1], g_v_star[cell_idx * 3 + 2]);*/
+            atomicAdd(total_grid_DoFs, 1U);
             if (norm<3>(local_Dir) >= config::kTol<T>) {
                 const T alpha = T(1.); // should be safeguarded by line search
                 g_vel[0] -= alpha * local_Dir[0];
                 g_vel[1] -= alpha * local_Dir[1];
                 g_vel[2] -= alpha * local_Dir[2];
+            }
+
+            /*printf("color(%u), idx=%d, det(Hess)=%.10f, Dir=%.5f %.5f %.5f v_star=%.5f %.5f %.5f\n", 
+                g_color_mask, cell_idx, determinant3(local_Hess), local_Dir[0], local_Dir[1], local_Dir[2],
+                g_v_star[cell_idx * 3 + 0], g_v_star[cell_idx * 3 + 1], g_v_star[cell_idx * 3 + 2]);*/
+            g_alpha[cell_idx] = T(1.);
+            g_E0[cell_idx] = T(0);
+            g_E1[cell_idx] = T(0);
+        }
+    }
+}
+
+template<typename T, int BLOCK_DIM, bool EVAL_E0>
+__global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles,
+    const T* contact_pos,
+    const T* contact_vel,
+    const T* velocities,
+    const T* volumes,
+    const uint32_t* contact_mpm_id,
+    const T* contact_dist,
+    const T* contact_normal,
+    const T* contact_rigid_v,
+    const T* g_velocities,
+    const T* g_Dir,
+    const T* g_alpha,
+    T* g_E0,
+    T* g_E1,
+    const T dt,
+    const T friction_mu,
+    const T stiffness,
+    const T damping,
+    const uint32_t g_color_mask) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    // In [Fei et.al 2021],
+    // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
+    // (instead of registers), although none of them is shared between threads. 
+    // This choice increases performance, particularly when the number of threads is large (§6.2.5).
+    __shared__ T weights[BLOCK_DIM][3][3];
+
+    if (idx < n_particles) {
+        uint32_t base[3] = {
+            static_cast<uint32_t>(contact_pos[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(contact_pos[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(contact_pos[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+        };
+        T fx[3] = {
+            contact_pos[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
+            contact_pos[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
+            contact_pos[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+        };
+        // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            weights[threadIdx.x][0][i] = T(0.5) * (T(1.5) - fx[i]) * (T(1.5) - fx[i]);
+            weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
+            weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
+        }
+
+        T old_v[3] = {0, 0, 0};
+        T new_v[3] = {0, 0, 0};
+
+        uint32_t ii, jj, kk;
+        get_color_coordinates(base[0], base[1], base[2], g_color_mask, ii, jj, kk);
+        const uint32_t color_index = cell_index(base[0] + ii, base[1] + jj, base[2] + kk);
+        if (g_alpha[color_index] < 0.) { // NOTE (changyu): use g_alpha[color_index] < 0 to indicate this DoF is solved
+            return;
+        }
+
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            #pragma unroll
+            for (int j = 0; j < 3; ++j) {
+                #pragma unroll
+                for (int k = 0; k < 3; ++k) {
+                    T xi_minus_xp[3] = {
+                        (i - fx[0]),
+                        (j - fx[1]),
+                        (k - fx[2])
+                    };
+
+                    const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                    T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
+
+                    if (get_color_mask(base[0] + i, base[1] + j, base[2] + k) == g_color_mask) {
+                        const T* g_v = &g_velocities[target_cell_index * 3];
+                        const T* g_D = &g_Dir[target_cell_index * 3];
+                        const T alpha = g_alpha[target_cell_index];
+                        old_v[0] += weight * g_v[0];
+                        old_v[1] += weight * g_v[1];
+                        old_v[2] += weight * g_v[2];
+                        new_v[0] += weight * (g_v[0] - alpha * g_Dir[0]);
+                        new_v[1] += weight * (g_v[1] - alpha * g_Dir[0]);
+                        new_v[2] += weight * (g_v[2] - alpha * g_Dir[0]);
+                    } else {
+                        const T* g_v = &g_velocities[target_cell_index * 3];
+                        const T* g_D = &g_Dir[target_cell_index * 3];
+                        old_v[0] += weight * g_v[0];
+                        old_v[1] += weight * g_v[1];
+                        old_v[2] += weight * g_v[2];
+                        new_v[0] += weight * g_v[0];
+                        new_v[1] += weight * g_v[1];
+                        new_v[2] += weight * g_v[2];
+                    }
+                }
+            }
+        }
+
+        const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        const T* particle_v0 = &velocities[contact_mpm_id[idx] * 3];
+
+        T nhat_W[3] = {-contact_normal[idx * 3 + 0], -contact_normal[idx * 3 + 1], -contact_normal[idx * 3 + 2]};
+        T phi0 = -contact_dist[idx];
+#ifdef DEBUG
+        if (phi0 < 0) {
+            printf("IMPOSSIBLE!!!\n");
+        }
+#endif
+
+        T v0_rel[3] = {
+            particle_v0[0] - contact_rigid_v[idx * 3 + 0],
+            particle_v0[1] - contact_rigid_v[idx * 3 + 1],
+            particle_v0[2] - contact_rigid_v[idx * 3 + 2]
+        };
+        T v_old_rel[3] = {
+            old_v[0] - contact_rigid_v[idx * 3 + 0],
+            old_v[1] - contact_rigid_v[idx * 3 + 1],
+            old_v[2] - contact_rigid_v[idx * 3 + 2]
+        };
+
+        T v_new_rel[3] = {
+            new_v[0] - contact_rigid_v[idx * 3 + 0],
+            new_v[1] - contact_rigid_v[idx * 3 + 1],
+            new_v[2] - contact_rigid_v[idx * 3 + 2]
+        };
+
+        constexpr int kZAxis = 2;
+        T R_WC[9], R_CW[9]; // for each contact pair, Ji = R_CWp * wip
+        make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
+        transpose<3, 3, T>(R_WC, R_CW);
+
+        T v0[3], old_v_local[3], new_v_local[3]; // in the contact local coordinate
+        matmul<3, 3, 1, T>(R_WC, v0_rel, v0);
+        matmul<3, 3, 1, T>(R_WC, v_old_rel, old_v_local);
+        matmul<3, 3, 1, T>(R_WC, v_new_rel, new_v_local);
+        T v_hat = min(phi0 / dt, T(1.) / damping); // Eq. 
+
+        auto l = [&](const T* v) {
+            const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
+            const T lt = friction_mu * yn0 * (sqrt(v[0] * v[0] + v[1] * v[1] + config::epsv<T> * config::epsv<T>) - config::epsv<T>); // Eq. 33
+            const T f0 = stiffness * phi0;
+            const T vn = min(v_hat, v[kZAxis]); // Eq. 16
+            const T ln_a = stiffness * damping * dt * dt;
+            const T ln_b = -(stiffness * dt * (dt + damping * phi0));
+            const T ln_c = stiffness * dt * phi0;
+            const T ln = -(T(1. / 3.) * ln_a * vn * vn * vn + T(1. / 2.) * ln_b * vn * vn + ln_c * vn); // Eq.7
+            return lt + ln;
+        };
+
+        atomicAdd(&g_E1[color_index], l(new_v_local));
+        if constexpr(EVAL_E0) {
+            atomicAdd(&g_E0[color_index], l(old_v_local));
+        }
+    }
+}
+
+template<typename T>
+__global__ void update_grid_contact_alpha_kernel(
+    const uint32_t touched_cells_cnt,
+    uint32_t* g_touched_ids,
+    const T* g_masses,
+    const T* g_v_star,
+    T* g_momentum,
+    const T* g_Dir,
+    T* g_alpha,
+    const T* g_E0,
+    const T* g_E1,
+    uint32_t* solved_grid_DoFs,
+    const uint32_t g_color_mask) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        uint3 xyz = inverse_cell_index(cell_idx);
+        if (g_masses[cell_idx] > T(0.) && 
+            get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask &&
+            g_alpha[cell_idx] > 0.) {
+            T* g_vel = &g_momentum[cell_idx * 3];
+            const T* v_star = &g_v_star[cell_idx * 3];
+            const T mass = g_masses[cell_idx];
+            const T alpha = g_alpha[cell_idx];
+            const T* Dir = &g_Dir[cell_idx * 3];
+            T old_v_rel[3] = {
+                g_vel[0] - v_star[0],
+                g_vel[1] - v_star[1],
+                g_vel[2] - v_star[2]
+            };
+            T new_v_rel[3] = {
+                g_vel[0] - alpha * Dir[0] - v_star[0],
+                g_vel[1] - alpha * Dir[1] - v_star[1],
+                g_vel[2] - alpha * Dir[2] - v_star[2]
+            };
+            T E0 = g_E0[cell_idx] + T(0.5) * mass * norm_sqr<3>(old_v_rel);
+            T E1 = g_E1[cell_idx] + T(0.5) * mass * norm_sqr<3>(new_v_rel);
+            if (E1 < E0) {
+                g_vel[0] -= alpha * Dir[0];
+                g_vel[1] -= alpha * Dir[1];
+                g_vel[2] -= alpha * Dir[2];
+                g_alpha[cell_idx] = T(-1.);
+                atomicAdd(solved_grid_DoFs, 1U);
+            } else {
+                g_alpha[cell_idx] *= T(0.5);
+                if (g_alpha[cell_idx] < 1e-4) {
+                    printf("Tiny Alpha!!!!!!!!!!!\n");
+                    g_vel[0] -= alpha * Dir[0];
+                    g_vel[1] -= alpha * Dir[1];
+                    g_vel[2] -= alpha * Dir[2];
+                    g_alpha[cell_idx] = T(-1.);
+                    atomicAdd(solved_grid_DoFs, 1U);
+                }
             }
         }
     }

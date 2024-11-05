@@ -125,6 +125,10 @@ namespace config {
 	template<class T> constexpr T kTol;
 	template<> constexpr float kTol<float> = 1e-3;
 	template<> constexpr double kTol<double> = 1e-3;
+
+	template<class T> constexpr T epsv;
+	template<> constexpr float epsv<float> = 1e-3;
+	template<> constexpr double epsv<double> = 1e-3;
 };
 
 }  // namespace gmpm
