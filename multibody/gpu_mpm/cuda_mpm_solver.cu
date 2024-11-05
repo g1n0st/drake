@@ -318,7 +318,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
         CUDA_SAFE_CALL(cudaMemcpy(&max_dir_norm, max_dir_norm_d, sizeof(T), cudaMemcpyDeviceToHost));
         count += 1;
-        // throw;
+        throw;
     }
     std::cout << "Iteration count :" <<  count << ", tol: " << max_dir_norm << " n_contacts " << n_contacts << std::endl;
     CUDA_SAFE_CALL(cudaFree(max_dir_norm_d));

@@ -1428,7 +1428,8 @@ __global__ void update_grid_contact_alpha_kernel(
             };
             T E0 = g_E0[cell_idx] + T(0.5) * mass * norm_sqr<3>(old_v_rel);
             T E1 = g_E1[cell_idx] + T(0.5) * mass * norm_sqr<3>(new_v_rel);
-            if (E1 < E0) {
+            printf("color=%u E0=%.7f E1=%.7f\n", g_color_mask, E0, E1);
+            if (E1 <= E0) {
                 g_vel[0] -= alpha * Dir[0];
                 g_vel[1] -= alpha * Dir[1];
                 g_vel[2] -= alpha * Dir[2];
