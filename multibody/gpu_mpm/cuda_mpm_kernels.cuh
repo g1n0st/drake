@@ -1406,7 +1406,8 @@ __global__ void update_grid_contact_alpha_kernel(
     const T* g_E0,
     T* g_E1,
     uint32_t* solved_grid_DoFs,
-    const uint32_t g_color_mask) {
+    const uint32_t g_color_mask,
+    bool enable_line_search) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
@@ -1432,7 +1433,7 @@ __global__ void update_grid_contact_alpha_kernel(
             };
             T E0 = g_E0[cell_idx] + T(0.5) * mass * norm_sqr<3>(old_v_rel);
             T E1 = g_E1[cell_idx] + T(0.5) * mass * norm_sqr<3>(new_v_rel);
-            if (E1 <= E0) {
+            if (E1 <= E0 || !enable_line_search) {
                 g_vel[0] -= alpha * Dir[0];
                 g_vel[1] -= alpha * Dir[1];
                 g_vel[2] -= alpha * Dir[2];
