@@ -275,26 +275,49 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             printf("color(%u) total_grid_DoFs=%u\n", color_mask, total_grid_DoFs);
             
             // line search
+            int line_search_cnt = 0;
             while (solved_grid_DoFs < total_grid_DoFs) {
-                CUDA_SAFE_CALL((
-                    grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/true><<<
-                    (n_contacts + 32 - 1) / 32, 32>>>
-                    (n_contacts, 
-                    state->contact_pos(), 
-                    state->contact_vel(), 
-                    state->current_velocities(),
-                    state->current_volumes(),
-                    state->contact_mpm_id(), 
-                    state->contact_dist(), 
-                    state->contact_normal(), 
-                    state->contact_rigid_v(),
-                    state->grid_momentum(),
-                    state->grid_Dir(),
-                    state->grid_alpha(),
-                    state->grid_E0(),
-                    state->grid_E1(),
-                    dt, friction_mu, stiffness, damping, color_mask)
-                    ));
+                if (line_search_cnt == 0) {
+                    CUDA_SAFE_CALL((
+                        grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/true><<<
+                        (n_contacts + 32 - 1) / 32, 32>>>
+                        (n_contacts, 
+                        state->contact_pos(), 
+                        state->contact_vel(), 
+                        state->current_velocities(),
+                        state->current_volumes(),
+                        state->contact_mpm_id(), 
+                        state->contact_dist(), 
+                        state->contact_normal(), 
+                        state->contact_rigid_v(),
+                        state->grid_momentum(),
+                        state->grid_Dir(),
+                        state->grid_alpha(),
+                        state->grid_E0(),
+                        state->grid_E1(),
+                        dt, friction_mu, stiffness, damping, color_mask)
+                        ));
+                } else {
+                    CUDA_SAFE_CALL((
+                        grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/false><<<
+                        (n_contacts + 32 - 1) / 32, 32>>>
+                        (n_contacts, 
+                        state->contact_pos(), 
+                        state->contact_vel(), 
+                        state->current_velocities(),
+                        state->current_volumes(),
+                        state->contact_mpm_id(), 
+                        state->contact_dist(), 
+                        state->contact_normal(), 
+                        state->contact_rigid_v(),
+                        state->grid_momentum(),
+                        state->grid_Dir(),
+                        state->grid_alpha(),
+                        state->grid_E0(),
+                        state->grid_E1(),
+                        dt, friction_mu, stiffness, damping, color_mask)
+                        ));
+                }
                 CUDA_SAFE_CALL((
                     update_grid_contact_alpha_kernel<<<
                     (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
@@ -305,6 +328,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                     ));
                 CUDA_SAFE_CALL(cudaDeviceSynchronize());
                 CUDA_SAFE_CALL(cudaMemcpy(&solved_grid_DoFs, solved_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+                line_search_cnt += 1;
             }
             
             CUDA_SAFE_CALL((
