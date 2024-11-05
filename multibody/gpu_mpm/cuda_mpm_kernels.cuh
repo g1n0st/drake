@@ -1386,9 +1386,10 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
             return lt + ln;
         };
 
-        atomicAdd(&g_E1[color_index], l(new_v_local));
+        T weight = weights[threadIdx.x][ii][0] * weights[threadIdx.x][jj][1] * weights[threadIdx.x][kk][2];
+        atomicAdd(&g_E1[color_index], mass * weight * l(new_v_local));
         if constexpr(EVAL_E0) {
-            atomicAdd(&g_E0[color_index], l(old_v_local));
+            atomicAdd(&g_E0[color_index], mass * weight * l(old_v_local));
         }
     }
 }
