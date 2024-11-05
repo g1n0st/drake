@@ -1142,9 +1142,9 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         T* W_Hess = &val[0];
         T* W_Grad = &val[9];
         T tmp[9];
-        matmul<3, 3, 1, T>(R_WC, C_Grad, W_Grad); // J^T yamma
-        matmul<3, 3, 3, T>(R_WC, C_Hess, tmp);
-        matmul<3, 3, 3, T>(tmp, R_CW, W_Hess); // J^T G J
+        matmul<3, 3, 1, T>(R_CW, C_Grad, W_Grad); // J^T yamma
+        matmul<3, 3, 3, T>(R_CW, C_Hess, tmp);
+        matmul<3, 3, 3, T>(tmp, R_WC, W_Hess); // J^T G J
 
         uint32_t i, j, k;
         get_color_coordinates(base[0], base[1], base[2], g_color_mask, i, j, k);
@@ -1432,7 +1432,7 @@ __global__ void update_grid_contact_alpha_kernel(
             };
             T E0 = g_E0[cell_idx] + T(0.5) * mass * norm_sqr<3>(old_v_rel);
             T E1 = g_E1[cell_idx] + T(0.5) * mass * norm_sqr<3>(new_v_rel);
-            printf("color=%u E0=%.7f E1=%.7f\n", g_color_mask, E0, E1);
+            // printf("color=%u E0=%.7f E1=%.7f\n", g_color_mask, E0, E1);
             if (E1 <= E0) {
                 g_vel[0] -= alpha * Dir[0];
                 g_vel[1] -= alpha * Dir[1];

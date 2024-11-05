@@ -272,7 +272,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 ));
             CUDA_SAFE_CALL(cudaDeviceSynchronize());
             CUDA_SAFE_CALL(cudaMemcpy(&total_grid_DoFs, total_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
-            printf("color(%u) total_grid_DoFs=%u\n", color_mask, total_grid_DoFs);
+            // printf("color(%u) total_grid_DoFs=%u\n", color_mask, total_grid_DoFs);
             
             // line search
             int line_search_cnt = 0;
@@ -342,7 +342,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
         CUDA_SAFE_CALL(cudaMemcpy(&max_dir_norm, max_dir_norm_d, sizeof(T), cudaMemcpyDeviceToHost));
         count += 1;
-        throw;
+        // throw;
     }
     std::cout << "Iteration count :" <<  count << ", tol: " << max_dir_norm << " n_contacts " << n_contacts << std::endl;
     CUDA_SAFE_CALL(cudaFree(max_dir_norm_d));
