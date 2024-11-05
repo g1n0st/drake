@@ -225,7 +225,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     T max_dir_norm = 1e10;
     T *max_dir_norm_d;
     CUDA_SAFE_CALL(cudaMalloc(&max_dir_norm_d, sizeof(T)));
-    while (max_dir_norm > gmpm::config::kTol<T> && count < 30) {
+    while (max_dir_norm > gmpm::config::kTol<T> && count < 100) {
         CUDA_SAFE_CALL(cudaMemset(max_dir_norm_d, 0, sizeof(T)));
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((

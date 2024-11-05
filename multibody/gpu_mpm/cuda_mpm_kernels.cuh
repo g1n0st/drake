@@ -1153,7 +1153,8 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
 #endif
         T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
         #pragma unroll
-        for (int ii = 0; ii < 12; ++ii) val[ii] *= mass * weight;
+        for (int ii = 0; ii < 9; ++ii) val[ii] *= mass * weight * weight * mass;
+        for (int ii = 9; ii < 12; ++ii) val[ii] *= mass * weight;
 
         for (int iter = 1; iter <= mark; iter <<= 1) {
             T tmp[12]; 
@@ -1212,9 +1213,9 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
 
             // stop criterion
             atomicAdd(max_dir_norm, norm<3>(local_Dir));
-            printf("color(%u), idx=%d, det(Hess)=%.10f, Dir=%.5f %.5f %.5f v_star=%.5f %.5f %.5f\n", 
+            /*printf("color(%u), idx=%d, det(Hess)=%.10f, Dir=%.5f %.5f %.5f v_star=%.5f %.5f %.5f\n", 
                 g_color_mask, cell_idx, determinant3(local_Hess), local_Dir[0], local_Dir[1], local_Dir[2],
-                g_v_star[cell_idx * 3 + 0], g_v_star[cell_idx * 3 + 1], g_v_star[cell_idx * 3 + 2]);
+                g_v_star[cell_idx * 3 + 0], g_v_star[cell_idx * 3 + 1], g_v_star[cell_idx * 3 + 2]);*/
             if (norm<3>(local_Dir) >= config::kTol<T>) {
                 const T alpha = T(1.); // should be safeguarded by line search
                 g_vel[0] -= alpha * local_Dir[0];
