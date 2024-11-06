@@ -1178,6 +1178,18 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     }
 }
 
+inline __device__ float atomicMaxFloat(float* address, float val) {
+    int* address_as_int = reinterpret_cast<int*>(address);
+    int old = *address_as_int, assumed;
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_int, assumed, 
+                        __float_as_int(fmaxf(val, __int_as_float(assumed))));
+    } while (assumed != old);
+    return __int_as_float(old);
+}
+
+
 template<typename T>
 __global__ void update_grid_contact_coordinate_descent_kernel(
     const uint32_t touched_cells_cnt,
@@ -1221,7 +1233,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
             // for (int i = 0; i < 3; ++i) local_Dir[i] = -local_Grad[i];
 
             // stop criterion
-            atomicAdd(max_dir_norm, norm<3>(local_Dir));
+            atomicMaxFloat((float*)max_dir_norm, float(norm<3>(local_Dir))); // only support fp32
             atomicAdd(total_grid_DoFs, 1U);
             if (norm<3>(local_Dir) >= config::kTol<T>) {
                 const T alpha = T(1.); // should be safeguarded by line search

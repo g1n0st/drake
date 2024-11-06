@@ -231,7 +231,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaMalloc(&max_dir_norm_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&total_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
-    while (max_dir_norm > gmpm::config::kTol<T> && count < 5) {
+    while (max_dir_norm > gmpm::config::kTol<T> && count < 100) {
         CUDA_SAFE_CALL(cudaMemset(max_dir_norm_d, 0, sizeof(T)));
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((
