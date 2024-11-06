@@ -1203,7 +1203,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
     T* g_alpha,
     T* g_E0,
     T* g_E1,
-    T* max_dir_norm,
+    T* dir_norm_sqr,
     uint32_t* total_grid_DoFs,
     const uint32_t g_color_mask) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -1233,21 +1233,11 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
             // for (int i = 0; i < 3; ++i) local_Dir[i] = -local_Grad[i];
 
             // stop criterion
-            atomicMaxFloat((float*)max_dir_norm, float(norm<3>(local_Dir))); // only support fp32
+            atomicAdd(dir_norm_sqr, norm_sqr<3>(local_Dir));
             atomicAdd(total_grid_DoFs, 1U);
-            if (norm<3>(local_Dir) >= config::kTol<T>) {
-                const T alpha = T(1.); // should be safeguarded by line search
-                g_vel[0] -= alpha * local_Dir[0];
-                g_vel[1] -= alpha * local_Dir[1];
-                g_vel[2] -= alpha * local_Dir[2];
-            }
-
-            /*printf("color(%u), idx=%d, det(Hess)=%.10f, Dir=%.5f %.5f %.5f v_star=%.5f %.5f %.5f\n", 
-                g_color_mask, cell_idx, determinant3(local_Hess), local_Dir[0], local_Dir[1], local_Dir[2],
-                g_v_star[cell_idx * 3 + 0], g_v_star[cell_idx * 3 + 1], g_v_star[cell_idx * 3 + 2]);*/
-            g_alpha[cell_idx] = T(1.);
-            g_E0[cell_idx] = T(0);
-            g_E1[cell_idx] = T(0);
+            g_vel[0] -= local_Dir[0];
+            g_vel[1] -= local_Dir[1];
+            g_vel[2] -= local_Dir[2];
         }
     }
 }
