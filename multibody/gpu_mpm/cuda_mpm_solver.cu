@@ -221,6 +221,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         ));
     
     bool enable_line_search = false;
+    const int max_newton_iterations = 100;
     int count = 0;
     T max_dir_norm = 1e10;
     T *max_dir_norm_d;
@@ -231,7 +232,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaMalloc(&max_dir_norm_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&total_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
-    while (max_dir_norm > gmpm::config::kTol<T> && count < 100) {
+    while (max_dir_norm > gmpm::config::kTol<T> && count < max_newton_iterations) {
         CUDA_SAFE_CALL(cudaMemset(max_dir_norm_d, 0, sizeof(T)));
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((
