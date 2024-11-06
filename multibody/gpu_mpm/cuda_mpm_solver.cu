@@ -221,20 +221,20 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         ));
     
     bool enable_line_search = false;
-    const int max_newton_iterations = 20;
+    const int max_newton_iterations = 100;
     const T kTol = 1e-3;
     int count = 0;
-    T max_norm_dir = 1e10;
-    T *max_norm_dir_d;
+    T norm_dir = 1e10;
+    T *norm_dir_d;
     uint32_t total_grid_DoFs = 0;
     uint32_t *total_grid_DoFs_d = 0;
     uint32_t solved_grid_DoFs = 0;
     uint32_t *solved_grid_DoFs_d = 0;
-    CUDA_SAFE_CALL(cudaMalloc(&max_norm_dir_d, sizeof(T)));
+    CUDA_SAFE_CALL(cudaMalloc(&norm_dir_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&total_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
-    while (max_norm_dir > kTol && count < max_newton_iterations) {
-        CUDA_SAFE_CALL(cudaMemset(max_norm_dir_d, 0, sizeof(T)));
+    while (sqrt(norm_dir) > kTol && count < max_newton_iterations) {
+        CUDA_SAFE_CALL(cudaMemset(norm_dir_d, 0, sizeof(T)));
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((
                 clean_grid_contact_kernel<<<
@@ -271,7 +271,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                 state->grid_v_star(), state->grid_Hess(), state->grid_Grad(), state->grid_momentum(), state->grid_Dir(),
                 state->grid_alpha(), state->grid_E0(), state->grid_E1(),
-                max_norm_dir_d, total_grid_DoFs_d, color_mask)
+                norm_dir_d, total_grid_DoFs_d, color_mask)
                 ));
             CUDA_SAFE_CALL(cudaDeviceSynchronize());
             CUDA_SAFE_CALL(cudaMemcpy(&total_grid_DoFs, total_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
@@ -345,12 +345,12 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         }
 
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
-        CUDA_SAFE_CALL(cudaMemcpy(&max_norm_dir, max_norm_dir_d, sizeof(T), cudaMemcpyDeviceToHost));
+        CUDA_SAFE_CALL(cudaMemcpy(&norm_dir, norm_dir_d, sizeof(T), cudaMemcpyDeviceToHost));
         count += 1;
         // throw;
     }
-    std::cout << "Iteration count :" <<  count << ", tol: " << max_norm_dir << " n_contacts " << n_contacts << std::endl;
-    CUDA_SAFE_CALL(cudaFree(max_norm_dir_d));
+    std::cout << "Iteration count :" <<  count << ", tol: " << sqrt(norm_dir) << " n_contacts " << n_contacts << std::endl;
+    CUDA_SAFE_CALL(cudaFree(norm_dir_d));
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
 }
