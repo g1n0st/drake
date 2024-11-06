@@ -1235,9 +1235,9 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
             // stop criterion
             atomicAdd(dir_norm_sqr, norm_sqr<3>(local_Dir));
             atomicAdd(total_grid_DoFs, 1U);
-            g_vel[0] -= local_Dir[0];
-            g_vel[1] -= local_Dir[1];
-            g_vel[2] -= local_Dir[2];
+            g_alpha[cell_idx] = T(1.0);
+            g_E0[cell_idx] = T(0.0);
+            g_E1[cell_idx] = T(0.0);
         }
     }
 }

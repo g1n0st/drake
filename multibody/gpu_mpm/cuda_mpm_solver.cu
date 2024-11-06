@@ -221,7 +221,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         ));
     
     bool enable_line_search = false;
-    const int max_newton_iterations = 100;
+    const int max_newton_iterations = 10;
     const T kTol = 1e-7;
     int count = 0;
     T dir_norm_sqr = 1e10;
@@ -234,7 +234,6 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaMalloc(&total_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
     while (sqrt(dir_norm_sqr) > kTol && count < max_newton_iterations) {
-        printf("%f\n", sqrt(dir_norm_sqr));
         CUDA_SAFE_CALL(cudaMemset(dir_norm_sqr_d, 0, sizeof(T)));
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((
@@ -265,6 +264,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 ));
             CUDA_SAFE_CALL(cudaMemset(total_grid_DoFs_d, 0, sizeof(uint32_t)));
             CUDA_SAFE_CALL(cudaMemset(solved_grid_DoFs_d, 0, sizeof(uint32_t)));
+            solved_grid_DoFs = 0;
             CUDA_SAFE_CALL((
                 update_grid_contact_coordinate_descent_kernel<<<
                 (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
@@ -278,70 +278,70 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             // printf("color(%u) total_grid_DoFs=%u\n", color_mask, total_grid_DoFs);
             
             // line search
-            // int line_search_cnt = 0;
-            // while (solved_grid_DoFs < total_grid_DoFs) {
-            //     if (enable_line_search) {
-            //         if (line_search_cnt == 0) {
-            //             CUDA_SAFE_CALL((
-            //                 grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/true><<<
-            //                 (n_contacts + 32 - 1) / 32, 32>>>
-            //                 (n_contacts, 
-            //                 state->contact_pos(), 
-            //                 state->contact_vel(), 
-            //                 state->current_velocities(),
-            //                 state->current_volumes(),
-            //                 state->contact_mpm_id(), 
-            //                 state->contact_dist(), 
-            //                 state->contact_normal(), 
-            //                 state->contact_rigid_v(),
-            //                 state->grid_momentum(),
-            //                 state->grid_Dir(),
-            //                 state->grid_alpha(),
-            //                 state->grid_E0(),
-            //                 state->grid_E1(),
-            //                 dt, friction_mu, stiffness, damping, color_mask)
-            //                 ));
-            //         } else {
-            //             CUDA_SAFE_CALL((
-            //                 grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/false><<<
-            //                 (n_contacts + 32 - 1) / 32, 32>>>
-            //                 (n_contacts, 
-            //                 state->contact_pos(), 
-            //                 state->contact_vel(), 
-            //                 state->current_velocities(),
-            //                 state->current_volumes(),
-            //                 state->contact_mpm_id(), 
-            //                 state->contact_dist(), 
-            //                 state->contact_normal(), 
-            //                 state->contact_rigid_v(),
-            //                 state->grid_momentum(),
-            //                 state->grid_Dir(),
-            //                 state->grid_alpha(),
-            //                 state->grid_E0(),
-            //                 state->grid_E1(),
-            //                 dt, friction_mu, stiffness, damping, color_mask)
-            //                 ));
-            //         }
-            //     }
-            //     CUDA_SAFE_CALL((
-            //         update_grid_contact_alpha_kernel<<<
-            //         (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            //         (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
-            //         state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
-            //         state->grid_alpha(), state->grid_E0(), state->grid_E1(),
-            //         solved_grid_DoFs_d, color_mask, enable_line_search)
-            //         ));
-            //     CUDA_SAFE_CALL(cudaDeviceSynchronize());
-            //     CUDA_SAFE_CALL(cudaMemcpy(&solved_grid_DoFs, solved_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
-            //     line_search_cnt += 1;
-            // }
+            int line_search_cnt = 0;
+            while (solved_grid_DoFs < total_grid_DoFs) {
+                if (enable_line_search) {
+                    if (line_search_cnt == 0) {
+                        CUDA_SAFE_CALL((
+                            grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/true><<<
+                            (n_contacts + 32 - 1) / 32, 32>>>
+                            (n_contacts, 
+                            state->contact_pos(), 
+                            state->contact_vel(), 
+                            state->current_velocities(),
+                            state->current_volumes(),
+                            state->contact_mpm_id(), 
+                            state->contact_dist(), 
+                            state->contact_normal(), 
+                            state->contact_rigid_v(),
+                            state->grid_momentum(),
+                            state->grid_Dir(),
+                            state->grid_alpha(),
+                            state->grid_E0(),
+                            state->grid_E1(),
+                            dt, friction_mu, stiffness, damping, color_mask)
+                            ));
+                    } else {
+                        CUDA_SAFE_CALL((
+                            grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/false><<<
+                            (n_contacts + 32 - 1) / 32, 32>>>
+                            (n_contacts, 
+                            state->contact_pos(), 
+                            state->contact_vel(), 
+                            state->current_velocities(),
+                            state->current_volumes(),
+                            state->contact_mpm_id(), 
+                            state->contact_dist(), 
+                            state->contact_normal(), 
+                            state->contact_rigid_v(),
+                            state->grid_momentum(),
+                            state->grid_Dir(),
+                            state->grid_alpha(),
+                            state->grid_E0(),
+                            state->grid_E1(),
+                            dt, friction_mu, stiffness, damping, color_mask)
+                            ));
+                    }
+                }
+                CUDA_SAFE_CALL((
+                    update_grid_contact_alpha_kernel<<<
+                    (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                    (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
+                    state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
+                    state->grid_alpha(), state->grid_E0(), state->grid_E1(),
+                    solved_grid_DoFs_d, color_mask, enable_line_search)
+                    ));
+                CUDA_SAFE_CALL(cudaDeviceSynchronize());
+                CUDA_SAFE_CALL(cudaMemcpy(&solved_grid_DoFs, solved_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+                line_search_cnt += 1;
+            }
             
-            // CUDA_SAFE_CALL((
-            //     grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
-            //     (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            //     (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
-            //     state->grid_masses(), state->grid_momentum(), dt)
-            //     ));
+            CUDA_SAFE_CALL((
+                grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+                (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
+                state->grid_masses(), state->grid_momentum(), dt)
+                ));
         }
 
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
