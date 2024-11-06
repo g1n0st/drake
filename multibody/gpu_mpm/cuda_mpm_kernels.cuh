@@ -1203,7 +1203,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
     T* g_alpha,
     T* g_E0,
     T* g_E1,
-    T* dir_norm_sqr,
+    T* max_norm_dir,
     uint32_t* total_grid_DoFs,
     const uint32_t g_color_mask) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -1233,7 +1233,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
             // for (int i = 0; i < 3; ++i) local_Dir[i] = -local_Grad[i];
 
             // stop criterion
-            atomicAdd(dir_norm_sqr, norm_sqr<3>(local_Dir));
+            atomicMaxFloat(max_norm_dir, norm<3>(local_Dir));
             atomicAdd(total_grid_DoFs, 1U);
             g_alpha[cell_idx] = T(1.0);
             g_E0[cell_idx] = T(0.0);
