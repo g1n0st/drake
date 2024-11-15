@@ -1304,12 +1304,6 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
             for (int j = 0; j < 3; ++j) {
                 #pragma unroll
                 for (int k = 0; k < 3; ++k) {
-                    T xi_minus_xp[3] = {
-                        (i - fx[0]),
-                        (j - fx[1]),
-                        (k - fx[2])
-                    };
-
                     const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
