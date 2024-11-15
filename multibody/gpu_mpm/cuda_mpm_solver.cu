@@ -220,7 +220,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
     
-    bool enable_line_search = false;
+    bool enable_line_search = true;
     const int max_newton_iterations = 100;
     const T kTol = 1e-3;
     int count = 0;

@@ -1320,12 +1320,11 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
                         old_v[0] += weight * g_v[0];
                         old_v[1] += weight * g_v[1];
                         old_v[2] += weight * g_v[2];
-                        new_v[0] += weight * (g_v[0] - alpha * g_Dir[0]);
-                        new_v[1] += weight * (g_v[1] - alpha * g_Dir[0]);
-                        new_v[2] += weight * (g_v[2] - alpha * g_Dir[0]);
+                        new_v[0] += weight * (g_v[0] - alpha * g_D[0]);
+                        new_v[1] += weight * (g_v[1] - alpha * g_D[1]);
+                        new_v[2] += weight * (g_v[2] - alpha * g_D[2]);
                     } else {
                         const T* g_v = &g_velocities[target_cell_index * 3];
-                        const T* g_D = &g_Dir[target_cell_index * 3];
                         old_v[0] += weight * g_v[0];
                         old_v[1] += weight * g_v[1];
                         old_v[2] += weight * g_v[2];
