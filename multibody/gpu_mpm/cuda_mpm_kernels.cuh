@@ -1248,6 +1248,11 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
             // NOTE(changyu): enable it to test gradient descent
             // for (int i = 0; i < 3; ++i) local_Dir[i] = -local_Grad[i];
 
+            // NOTE(changyu): enable it to add relaxation factor
+            if (JACOBI) {
+                for (int i = 0; i < 3; ++i) local_Dir[i] *= T(0.3);
+            }
+
             // stop criterion
             atomicAdd(norm_dir, norm_sqr<3>(local_Dir));
             atomicAdd(total_grid_DoFs, 1U);

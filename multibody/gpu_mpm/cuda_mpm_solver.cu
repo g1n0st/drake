@@ -221,8 +221,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         ));
     
     bool enable_line_search = false;
-    const int max_newton_iterations = 100;
-    constexpr bool JACOBI = false;
+    const int max_newton_iterations = 50;
+    constexpr bool JACOBI = true;
     const T kTol = 1e-5;
     int count = 0;
     T norm_dir = 1e10;
