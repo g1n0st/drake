@@ -953,7 +953,7 @@ __device__ __host__ inline void get_color_coordinates(UINT x, UINT y, UINT z, UI
     k = ((3U + k_offset) - (z % 3U)) % 3U;
 }
 
-template<typename T, int BLOCK_DIM>
+template<typename T, int BLOCK_DIM, bool JACOBI>
 __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
@@ -1137,60 +1137,76 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
             C_Grad[2] = yn;
         }
         
-        T val[12]; // buffer for both W_Hess & W_Grad
         // hess and grad in the world local coordinate
-        T* W_Hess = &val[0];
-        T* W_Grad = &val[9];
+        T W_Hess[9];
+        T W_Grad[3];
         T tmp[9];
         matmul<3, 3, 1, T>(R_CW, C_Grad, W_Grad); // J^T yamma
         matmul<3, 3, 3, T>(R_CW, C_Hess, tmp);
         matmul<3, 3, 3, T>(tmp, R_WC, W_Hess); // J^T G J
 
-        uint32_t i, j, k;
-        get_color_coordinates(base[0], base[1], base[2], g_color_mask, i, j, k);
-#ifdef DEBUG
-        if (get_color_mask(base[0] + i, base[1] + j, base[2] + k) != g_color_mask) {
-            printf("ERROR NOT SAME COLOR!!!!!!!!!");
-        }
-#endif
-        T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
-        #pragma unroll
-        for (int ii = 0; ii < 9; ++ii) val[ii] *= mass * weight * weight;
-        for (int ii = 9; ii < 12; ++ii) val[ii] *= mass * weight;
+        if constexpr(!JACOBI) {
+            uint32_t i, j, k;
+            get_color_coordinates(base[0], base[1], base[2], g_color_mask, i, j, k);
 
-        for (int iter = 1; iter <= mark; iter <<= 1) {
-            T tmp[12]; 
+            T val[12]; // buffer for both W_Hess & W_Grad
+            T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
             #pragma unroll
-            for (int ii = 0; ii < 12; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
-            if (interval >= iter) {
+            for (int ii = 0; ii < 9; ++ii) val[ii] = mass * weight * weight * W_Hess[ii];
+            for (int ii = 9; ii < 12; ++ii) val[ii] = mass * weight * W_Grad[ii - 9];
+
+            for (int iter = 1; iter <= mark; iter <<= 1) {
+                T tmp[12]; 
                 #pragma unroll
-                for (int ii = 0; ii < 12; ++ii) val[ii] += tmp[ii];
+                for (int ii = 0; ii < 12; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
+                if (interval >= iter) {
+                    #pragma unroll
+                    for (int ii = 0; ii < 12; ++ii) val[ii] += tmp[ii];
+                }
             }
-        }
 
-        if (boundary) {
-            const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-            #pragma unroll
-            for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), W_Hess[ii]);
-            #pragma unroll
-            for (int ii = 0; ii < 3; ++ii) atomicAdd(&(g_Grad[target_cell_index * 3 + ii]), W_Grad[ii]);
+            if (boundary) {
+                const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                #pragma unroll
+                for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), val[ii]);
+                #pragma unroll
+                for (int ii = 0; ii < 3; ++ii) atomicAdd(&(g_Grad[target_cell_index * 3 + ii]), val[ii + 9]);
+            }
+        } else {
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    for (int k = 0; k < 3; ++k) {
+                        T val[12]; // buffer for both W_Hess & W_Grad
+                            T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
+                            #pragma unroll
+                            for (int ii = 0; ii < 9; ++ii) val[ii] = mass * weight * weight * W_Hess[ii];
+                            for (int ii = 9; ii < 12; ++ii) val[ii] = mass * weight * W_Grad[ii - 9];
+
+                            for (int iter = 1; iter <= mark; iter <<= 1) {
+                                T tmp[12]; 
+                                #pragma unroll
+                                for (int ii = 0; ii < 12; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
+                                if (interval >= iter) {
+                                    #pragma unroll
+                                    for (int ii = 0; ii < 12; ++ii) val[ii] += tmp[ii];
+                                }
+                            }
+
+                            if (boundary) {
+                                const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                                #pragma unroll
+                                for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), val[ii]);
+                                #pragma unroll
+                                for (int ii = 0; ii < 3; ++ii) atomicAdd(&(g_Grad[target_cell_index * 3 + ii]), val[ii + 9]);
+                            }
+                    }
+                }
+            }
         }
     }
 }
 
-inline __device__ float atomicMaxFloat(float* address, float val) {
-    int* address_as_int = reinterpret_cast<int*>(address);
-    int old = *address_as_int, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_int, assumed, 
-                        __float_as_int(fmaxf(val, __int_as_float(assumed))));
-    } while (assumed != old);
-    return __int_as_float(old);
-}
-
-
-template<typename T>
+template<typename T, bool JACOBI>
 __global__ void update_grid_contact_coordinate_descent_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
@@ -1212,7 +1228,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
         uint3 xyz = inverse_cell_index(cell_idx);
         if (g_masses[cell_idx] > T(0.) && 
-            get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask &&
+            (get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask || JACOBI) &&
             (norm<9>(&g_Hess[cell_idx * 9]) > 1e-7 || norm<3>(&g_Grad[cell_idx * 3]) > 1e-7)) {
             T* g_vel = &g_momentum[cell_idx * 3];
             T mass = g_masses[cell_idx];
@@ -1242,7 +1258,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool EVAL_E0>
+template<typename T, int BLOCK_DIM, bool JACOBI, bool EVAL_E0>
 __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
@@ -1307,7 +1323,7 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
                     const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
-                    if (get_color_mask(base[0] + i, base[1] + j, base[2] + k) == g_color_mask) {
+                    if constexpr (JACOBI) {
                         const T* g_v = &g_velocities[target_cell_index * 3];
                         const T* g_D = &g_Dir[target_cell_index * 3];
                         const T alpha = g_alpha[target_cell_index];
@@ -1318,13 +1334,25 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
                         new_v[1] += weight * (g_v[1] - alpha * g_D[1]);
                         new_v[2] += weight * (g_v[2] - alpha * g_D[2]);
                     } else {
-                        const T* g_v = &g_velocities[target_cell_index * 3];
-                        old_v[0] += weight * g_v[0];
-                        old_v[1] += weight * g_v[1];
-                        old_v[2] += weight * g_v[2];
-                        new_v[0] += weight * g_v[0];
-                        new_v[1] += weight * g_v[1];
-                        new_v[2] += weight * g_v[2];
+                        if (get_color_mask(base[0] + i, base[1] + j, base[2] + k) == g_color_mask) {
+                            const T* g_v = &g_velocities[target_cell_index * 3];
+                            const T* g_D = &g_Dir[target_cell_index * 3];
+                            const T alpha = g_alpha[target_cell_index];
+                            old_v[0] += weight * g_v[0];
+                            old_v[1] += weight * g_v[1];
+                            old_v[2] += weight * g_v[2];
+                            new_v[0] += weight * (g_v[0] - alpha * g_D[0]);
+                            new_v[1] += weight * (g_v[1] - alpha * g_D[1]);
+                            new_v[2] += weight * (g_v[2] - alpha * g_D[2]);
+                        } else {
+                            const T* g_v = &g_velocities[target_cell_index * 3];
+                            old_v[0] += weight * g_v[0];
+                            old_v[1] += weight * g_v[1];
+                            old_v[2] += weight * g_v[2];
+                            new_v[0] += weight * g_v[0];
+                            new_v[1] += weight * g_v[1];
+                            new_v[2] += weight * g_v[2];
+                        }
                     }
                 }
             }
@@ -1389,7 +1417,7 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
     }
 }
 
-template<typename T>
+template<typename T, bool JACOBI>
 __global__ void update_grid_contact_alpha_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
@@ -1409,7 +1437,7 @@ __global__ void update_grid_contact_alpha_kernel(
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
         uint3 xyz = inverse_cell_index(cell_idx);
         if (g_masses[cell_idx] > T(0.) && 
-            get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask &&
+            (get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask || JACOBI) &&
             g_alpha[cell_idx] > 0.) {
             T* g_vel = &g_momentum[cell_idx * 3];
             const T* v_star = &g_v_star[cell_idx * 3];

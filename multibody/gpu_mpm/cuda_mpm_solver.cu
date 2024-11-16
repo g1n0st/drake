@@ -222,6 +222,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     
     bool enable_line_search = false;
     const int max_newton_iterations = 100;
+    constexpr bool JACOBI = false;
     const T kTol = 1e-5;
     int count = 0;
     T norm_dir = 1e10;
@@ -246,9 +247,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 state->grid_alpha(), state->grid_E0(), state->grid_E1())
                 ));
         }
-        for (uint32_t color_mask = 0U; color_mask < 27U; ++color_mask) {
+        for (uint32_t color_mask = 0U; color_mask < (JACOBI ? 1U: 27U); ++color_mask) {
             CUDA_SAFE_CALL((
-                contact_particle_to_grid_kernel<T, 32><<<
+                contact_particle_to_grid_kernel<T, 32, JACOBI><<<
                 (n_contacts + 32 - 1) / 32, 32>>>
                 (n_contacts, 
                 state->contact_pos(), 
@@ -268,7 +269,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             CUDA_SAFE_CALL(cudaMemset(solved_grid_DoFs_d, 0, sizeof(uint32_t)));
             solved_grid_DoFs = 0;
             CUDA_SAFE_CALL((
-                update_grid_contact_coordinate_descent_kernel<<<
+                update_grid_contact_coordinate_descent_kernel<T, JACOBI><<<
                 (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                 (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                 state->grid_v_star(), state->grid_Hess(), state->grid_Grad(), state->grid_momentum(), state->grid_Dir(),
@@ -285,7 +286,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 if (enable_line_search) {
                     if (line_search_cnt == 0) {
                         CUDA_SAFE_CALL((
-                            grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/true><<<
+                            grid_to_particle_vdb_line_search_kernel<T, 32, JACOBI, /*EVAL_E0=*/true><<<
                             (n_contacts + 32 - 1) / 32, 32>>>
                             (n_contacts, 
                             state->contact_pos(), 
@@ -305,7 +306,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                             ));
                     } else {
                         CUDA_SAFE_CALL((
-                            grid_to_particle_vdb_line_search_kernel<T, 32, /*EVAL_E0=*/false><<<
+                            grid_to_particle_vdb_line_search_kernel<T, 32, JACOBI, /*EVAL_E0=*/false><<<
                             (n_contacts + 32 - 1) / 32, 32>>>
                             (n_contacts, 
                             state->contact_pos(), 
@@ -326,7 +327,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                     }
                 }
                 CUDA_SAFE_CALL((
-                    update_grid_contact_alpha_kernel<<<
+                    update_grid_contact_alpha_kernel<T, JACOBI><<<
                     (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                     (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                     state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
