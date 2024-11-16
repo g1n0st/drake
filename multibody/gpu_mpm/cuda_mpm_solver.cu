@@ -220,9 +220,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
     
-    bool enable_line_search = true;
+    bool enable_line_search = false;
     const int max_newton_iterations = 100;
-    const T kTol = 1e-3;
+    const T kTol = 1e-6;
     int count = 0;
     T norm_dir = 1e10;
     T *norm_dir_d;
@@ -233,7 +233,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaMalloc(&norm_dir_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&total_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
-    while (sqrt(norm_dir) > kTol && count < max_newton_iterations) {
+    while (sqrt(norm_dir) / n_contacts > kTol && count < max_newton_iterations) {
         CUDA_SAFE_CALL(cudaMemset(norm_dir_d, 0, sizeof(T)));
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((
@@ -342,6 +342,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
                 state->grid_masses(), state->grid_momentum(), dt)
                 ));
+            // throw;
         }
 
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
@@ -349,7 +350,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         count += 1;
         // throw;
     }
-    std::cout << "Iteration count :" <<  count << ", tol: " << sqrt(norm_dir) << " n_contacts " << n_contacts << std::endl;
+    // throw;
+    std::cout << "Iteration count :" <<  count << ", tol: " << sqrt(norm_dir) / n_contacts << " n_contacts " << n_contacts << std::endl;
     CUDA_SAFE_CALL(cudaFree(norm_dir_d));
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
