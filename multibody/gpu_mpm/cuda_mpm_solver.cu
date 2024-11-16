@@ -222,10 +222,11 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     
     bool enable_line_search = false;
     const int max_newton_iterations = 100;
-    const T kTol = 1e-6;
+    const T kTol = 1e-5;
     int count = 0;
     T norm_dir = 1e10;
     T *norm_dir_d;
+    int grid_DoFs = 0;
     uint32_t total_grid_DoFs = 0;
     uint32_t *total_grid_DoFs_d = 0;
     uint32_t solved_grid_DoFs = 0;
@@ -233,8 +234,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaMalloc(&norm_dir_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&total_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
-    while (sqrt(norm_dir) / n_contacts > kTol && count < max_newton_iterations) {
+    while (norm_dir > kTol && count < max_newton_iterations) {
         CUDA_SAFE_CALL(cudaMemset(norm_dir_d, 0, sizeof(T)));
+        grid_DoFs = 0;
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((
                 clean_grid_contact_kernel<<<
@@ -343,15 +345,20 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 state->grid_masses(), state->grid_momentum(), dt)
                 ));
             // throw;
+            grid_DoFs += total_grid_DoFs;
         }
 
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
         CUDA_SAFE_CALL(cudaMemcpy(&norm_dir, norm_dir_d, sizeof(T), cudaMemcpyDeviceToHost));
+        norm_dir = sqrt(norm_dir) / grid_DoFs;
         count += 1;
         // throw;
     }
     // throw;
-    std::cout << "Iteration count :" <<  count << ", tol: " << sqrt(norm_dir) / n_contacts << " n_contacts " << n_contacts << std::endl;
+    std::cout << "Iteration count :" <<  count 
+              << ", tol: " << norm_dir 
+              << ", n_contacts " << n_contacts 
+              << ", grid_DoFs " << grid_DoFs << std::endl;
     CUDA_SAFE_CALL(cudaFree(norm_dir_d));
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
