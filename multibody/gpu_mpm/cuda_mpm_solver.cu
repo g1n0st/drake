@@ -220,23 +220,34 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
     
-    bool enable_line_search = false;
-    const int max_newton_iterations = 50;
-    constexpr bool JACOBI = true;
+    bool enable_line_search = true;
+    const int max_newton_iterations = 20;
+    constexpr bool use_jacobi = true;
+    const T jacobi_relax_coeff = enable_line_search ? T(1.): T(.3);
+    const bool global_line_search = true;
     const T kTol = 1e-5;
     int count = 0;
+
     T norm_dir = 1e10;
-    T *norm_dir_d;
+    T *norm_dir_d = nullptr;
+    T global_E0 = T(0.);
+    T *global_E0_d = nullptr;
+    T global_E1 = T(0.);
+    T *global_E1_d = nullptr;
     int grid_DoFs = 0;
     uint32_t total_grid_DoFs = 0;
-    uint32_t *total_grid_DoFs_d = 0;
+    uint32_t *total_grid_DoFs_d = nullptr;
     uint32_t solved_grid_DoFs = 0;
-    uint32_t *solved_grid_DoFs_d = 0;
+    uint32_t *solved_grid_DoFs_d = nullptr;
     CUDA_SAFE_CALL(cudaMalloc(&norm_dir_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&total_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
+    CUDA_SAFE_CALL(cudaMalloc(&global_E0_d, sizeof(T)));
+    CUDA_SAFE_CALL(cudaMalloc(&global_E1_d, sizeof(T)));
     while (norm_dir > kTol && count < max_newton_iterations) {
         CUDA_SAFE_CALL(cudaMemset(norm_dir_d, 0, sizeof(T)));
+        CUDA_SAFE_CALL(cudaMemset(global_E0_d, 0, sizeof(T)));
+        CUDA_SAFE_CALL(cudaMemset(global_E1_d, 0, sizeof(T)));
         grid_DoFs = 0;
         if (touched_cells_cnt > 0) {
             CUDA_SAFE_CALL((
@@ -247,9 +258,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 state->grid_alpha(), state->grid_E0(), state->grid_E1())
                 ));
         }
-        for (uint32_t color_mask = 0U; color_mask < (JACOBI ? 1U: 27U); ++color_mask) {
+        for (uint32_t color_mask = 0U; color_mask < (use_jacobi ? 1U: 27U); ++color_mask) {
             CUDA_SAFE_CALL((
-                contact_particle_to_grid_kernel<T, 32, JACOBI><<<
+                contact_particle_to_grid_kernel<T, 32, use_jacobi><<<
                 (n_contacts + 32 - 1) / 32, 32>>>
                 (n_contacts, 
                 state->contact_pos(), 
@@ -269,12 +280,12 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             CUDA_SAFE_CALL(cudaMemset(solved_grid_DoFs_d, 0, sizeof(uint32_t)));
             solved_grid_DoFs = 0;
             CUDA_SAFE_CALL((
-                update_grid_contact_coordinate_descent_kernel<T, JACOBI><<<
+                update_grid_contact_coordinate_descent_kernel<T, use_jacobi><<<
                 (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                 (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                 state->grid_v_star(), state->grid_Hess(), state->grid_Grad(), state->grid_momentum(), state->grid_Dir(),
                 state->grid_alpha(), state->grid_E0(), state->grid_E1(),
-                norm_dir_d, total_grid_DoFs_d, color_mask)
+                norm_dir_d, total_grid_DoFs_d, color_mask, jacobi_relax_coeff)
                 ));
             CUDA_SAFE_CALL(cudaDeviceSynchronize());
             CUDA_SAFE_CALL(cudaMemcpy(&total_grid_DoFs, total_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
@@ -282,60 +293,80 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             
             // line search
             int line_search_cnt = 0;
-            while (solved_grid_DoFs < total_grid_DoFs) {
+            T global_alpha = T(1.0);
+            bool global_line_search_satisfied = false;
+            while (!(((enable_line_search && global_line_search) && global_line_search_satisfied) || 
+                     ((!global_line_search || !enable_line_search) && solved_grid_DoFs == total_grid_DoFs))) {
                 if (enable_line_search) {
-                    if (line_search_cnt == 0) {
-                        CUDA_SAFE_CALL((
-                            grid_to_particle_vdb_line_search_kernel<T, 32, JACOBI, /*EVAL_E0=*/true><<<
-                            (n_contacts + 32 - 1) / 32, 32>>>
-                            (n_contacts, 
-                            state->contact_pos(), 
-                            state->contact_vel(), 
-                            state->current_velocities(),
-                            state->current_volumes(),
-                            state->contact_mpm_id(), 
-                            state->contact_dist(), 
-                            state->contact_normal(), 
-                            state->contact_rigid_v(),
-                            state->grid_momentum(),
-                            state->grid_Dir(),
-                            state->grid_alpha(),
-                            state->grid_E0(),
-                            state->grid_E1(),
-                            dt, friction_mu, stiffness, damping, color_mask)
-                            ));
+                    CUDA_SAFE_CALL(cudaMemset(global_E1_d, 0, sizeof(T)));
+                    CUDA_SAFE_CALL((
+                        grid_to_particle_vdb_line_search_kernel<T, 32, use_jacobi><<<
+                        (n_contacts + 32 - 1) / 32, 32>>>
+                        (n_contacts, 
+                        state->contact_pos(), 
+                        state->contact_vel(), 
+                        state->current_velocities(),
+                        state->current_volumes(),
+                        state->contact_mpm_id(), 
+                        state->contact_dist(), 
+                        state->contact_normal(), 
+                        state->contact_rigid_v(),
+                        state->grid_momentum(),
+                        state->grid_Dir(),
+                        state->grid_alpha(),
+                        global_line_search ? global_E0_d : state->grid_E0(),
+                        global_line_search ? global_E1_d : state->grid_E1(),
+                        dt, friction_mu, stiffness, damping, color_mask,
+                        /*eval_E0=*/line_search_cnt == 0,
+                        global_line_search,
+                        global_alpha)
+                        ));
+                }
+
+                if (enable_line_search && global_line_search) {
+                    CUDA_SAFE_CALL((
+                        update_global_energy_grid_kernel<T, use_jacobi><<<
+                        (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                        (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
+                        state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
+                        global_E0_d, global_E1_d,
+                        color_mask, global_alpha, /*eval_E0=*/line_search_cnt == 0)
+                        ));
+                    CUDA_SAFE_CALL(cudaDeviceSynchronize());
+                    CUDA_SAFE_CALL(cudaMemcpy(&global_E0, global_E0_d, sizeof(T), cudaMemcpyDeviceToHost));
+                    CUDA_SAFE_CALL(cudaMemcpy(&global_E1, global_E1_d, sizeof(T), cudaMemcpyDeviceToHost));
+                    if (global_E1 <= global_E0 + T(1e-6)) { // NOTE (changyu): numerical error on float
+                        global_line_search_satisfied = true;
+                        // printf("global line search E0=%.7f E1=%.7f alpha=%.3f\n", global_E0, global_E1, global_alpha);
                     } else {
+                        global_alpha /= T(2.0);
+                        if (global_alpha < T(1e-5)) {
+                            printf("Tiny Alpha!!!!!!!!!!! E0=%.10f E1=%.10f\n", global_E0, global_E1);
+                            global_line_search_satisfied = true;
+                        }
+                    }
+                    if (global_line_search_satisfied) {
                         CUDA_SAFE_CALL((
-                            grid_to_particle_vdb_line_search_kernel<T, 32, JACOBI, /*EVAL_E0=*/false><<<
-                            (n_contacts + 32 - 1) / 32, 32>>>
-                            (n_contacts, 
-                            state->contact_pos(), 
-                            state->contact_vel(), 
-                            state->current_velocities(),
-                            state->current_volumes(),
-                            state->contact_mpm_id(), 
-                            state->contact_dist(), 
-                            state->contact_normal(), 
-                            state->contact_rigid_v(),
-                            state->grid_momentum(),
-                            state->grid_Dir(),
-                            state->grid_alpha(),
-                            state->grid_E0(),
-                            state->grid_E1(),
-                            dt, friction_mu, stiffness, damping, color_mask)
+                            apply_global_line_search_grid_kernel<T, use_jacobi><<<
+                            (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                            (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
+                            state->grid_momentum(), state->grid_Dir(),
+                            color_mask, global_alpha)
                             ));
                     }
+                } else {
+                    CUDA_SAFE_CALL((
+                        update_grid_contact_alpha_kernel<T, use_jacobi><<<
+                        (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                        (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
+                        state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
+                        state->grid_alpha(), state->grid_E0(), state->grid_E1(),
+                        solved_grid_DoFs_d, color_mask, enable_line_search)
+                        ));
+                    CUDA_SAFE_CALL(cudaDeviceSynchronize());
+                    CUDA_SAFE_CALL(cudaMemcpy(&solved_grid_DoFs, solved_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
                 }
-                CUDA_SAFE_CALL((
-                    update_grid_contact_alpha_kernel<T, JACOBI><<<
-                    (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-                    (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
-                    state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
-                    state->grid_alpha(), state->grid_E0(), state->grid_E1(),
-                    solved_grid_DoFs_d, color_mask, enable_line_search)
-                    ));
-                CUDA_SAFE_CALL(cudaDeviceSynchronize());
-                CUDA_SAFE_CALL(cudaMemcpy(&solved_grid_DoFs, solved_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+
                 line_search_cnt += 1;
             }
             

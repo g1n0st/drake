@@ -1221,7 +1221,8 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
     T* g_E1,
     T* norm_dir,
     uint32_t* total_grid_DoFs,
-    const uint32_t g_color_mask) {
+    const uint32_t g_color_mask,
+    const T jacobi_relax_coeff) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
@@ -1250,7 +1251,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
 
             // NOTE(changyu): enable it to add relaxation factor
             if (JACOBI) {
-                for (int i = 0; i < 3; ++i) local_Dir[i] *= T(0.3);
+                for (int i = 0; i < 3; ++i) local_Dir[i] *= jacobi_relax_coeff;
             }
 
             // stop criterion
@@ -1263,7 +1264,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool JACOBI, bool EVAL_E0>
+template<typename T, int BLOCK_DIM, bool JACOBI>
 __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
@@ -1282,7 +1283,10 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
     const T friction_mu,
     const T stiffness,
     const T damping,
-    const uint32_t g_color_mask) {
+    const uint32_t g_color_mask,
+    const bool eval_E0,
+    const bool global_line_search,
+    const T global_alpha) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -1315,7 +1319,7 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
         uint32_t ii, jj, kk;
         get_color_coordinates(base[0], base[1], base[2], g_color_mask, ii, jj, kk);
         const uint32_t color_index = cell_index(base[0] + ii, base[1] + jj, base[2] + kk);
-        if (g_alpha[color_index] < 0.) { // NOTE (changyu): use g_alpha[color_index] < 0 to indicate this DoF is solved
+        if (g_alpha[color_index] < 0. && !JACOBI) { // NOTE (changyu): use g_alpha[color_index] < 0 to indicate this DoF is solved
             return;
         }
 
@@ -1331,7 +1335,7 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
                     if constexpr (JACOBI) {
                         const T* g_v = &g_velocities[target_cell_index * 3];
                         const T* g_D = &g_Dir[target_cell_index * 3];
-                        const T alpha = g_alpha[target_cell_index];
+                        const T alpha = global_line_search ? global_alpha : g_alpha[target_cell_index];
                         old_v[0] += weight * g_v[0];
                         old_v[1] += weight * g_v[1];
                         old_v[2] += weight * g_v[2];
@@ -1415,9 +1419,23 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
         };
 
         T weight = weights[threadIdx.x][ii][0] * weights[threadIdx.x][jj][1] * weights[threadIdx.x][kk][2];
-        atomicAdd(&g_E1[color_index], mass * l(new_v_local));
-        if constexpr(EVAL_E0) {
-            atomicAdd(&g_E0[color_index], mass * l(old_v_local));
+        if (global_line_search) {
+            atomicAdd(g_E1, mass * l(new_v_local));
+        } else {
+            if (JACOBI) {
+                printf("ERROR, JACOBI CANNOT USE LOCAL LINE-SEARCH!!!!!!!!!!!!!!!!!!!!!!!\n");
+            }
+            atomicAdd(&g_E1[color_index], mass * l(new_v_local));
+        }
+        if (eval_E0) {
+            if (global_line_search) {
+                atomicAdd(g_E0, mass * l(old_v_local));
+            } else {
+                if (JACOBI) {
+                    printf("ERROR, JACOBI CANNOT USE LOCAL LINE-SEARCH!!!!!!!!!!!!!!!!!!!!!!!\n");
+                }
+                atomicAdd(&g_E0[color_index], mass * l(old_v_local));
+            }
         }
     }
 }
@@ -1435,7 +1453,7 @@ __global__ void update_grid_contact_alpha_kernel(
     T* g_E1,
     uint32_t* solved_grid_DoFs,
     const uint32_t g_color_mask,
-    bool enable_line_search) {
+    const bool enable_line_search) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
@@ -1479,6 +1497,75 @@ __global__ void update_grid_contact_alpha_kernel(
                     atomicAdd(solved_grid_DoFs, 1U);
                 }
             }
+        }
+    }
+}
+
+template<typename T, bool JACOBI>
+__global__ void update_global_energy_grid_kernel(
+    const uint32_t touched_cells_cnt,
+    uint32_t* g_touched_ids,
+    const T* g_masses,
+    const T* g_v_star,
+    T* g_momentum,
+    const T* g_Dir,
+    T* global_E0,
+    T* global_E1,
+    const uint32_t g_color_mask,
+    const T global_alpha,
+    const bool eval_E0) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        uint3 xyz = inverse_cell_index(cell_idx);
+        if (g_masses[cell_idx] > T(0.) && 
+            (get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask || JACOBI)) {
+            T* g_vel = &g_momentum[cell_idx * 3];
+            const T* v_star = &g_v_star[cell_idx * 3];
+            const T mass = g_masses[cell_idx];
+            const T* Dir = &g_Dir[cell_idx * 3];
+            T old_v_rel[3] = {
+                g_vel[0] - v_star[0],
+                g_vel[1] - v_star[1],
+                g_vel[2] - v_star[2]
+            };
+            T new_v_rel[3] = {
+                g_vel[0] - global_alpha * Dir[0] - v_star[0],
+                g_vel[1] - global_alpha * Dir[1] - v_star[1],
+                g_vel[2] - global_alpha * Dir[2] - v_star[2]
+            };
+
+            if (eval_E0) {
+                atomicAdd(global_E0, T(0.5) * mass * norm_sqr<3>(old_v_rel));
+            }
+            atomicAdd(global_E1, T(0.5) * mass * norm_sqr<3>(new_v_rel));
+            
+        }
+    }
+}
+
+template<typename T, bool JACOBI>
+__global__ void apply_global_line_search_grid_kernel(
+    const uint32_t touched_cells_cnt,
+    uint32_t* g_touched_ids,
+    const T* g_masses,
+    T* g_momentum,
+    const T* g_Dir,
+    const uint32_t g_color_mask,
+    const T global_alpha) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        uint3 xyz = inverse_cell_index(cell_idx);
+        if (g_masses[cell_idx] > T(0.) && 
+            (get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask || JACOBI)) {
+            T* g_vel = &g_momentum[cell_idx * 3];
+            const T* Dir = &g_Dir[cell_idx * 3];
+            g_vel[0] -= global_alpha * Dir[0];
+            g_vel[1] -= global_alpha * Dir[1];
+            g_vel[2] -= global_alpha * Dir[2];
         }
     }
 }
