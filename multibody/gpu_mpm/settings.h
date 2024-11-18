@@ -122,8 +122,8 @@ namespace config {
 	template<> constexpr double GRAVITY<double> = -9.8;
 
 	template<class T> constexpr T epsv;
-	template<> constexpr float epsv<float> = 1e-2f;
-	template<> constexpr double epsv<double> = 1e-2;
+	template<> constexpr float epsv<float> = 1e-3f;
+	template<> constexpr double epsv<double> = 1e-3;
 };
 
 }  // namespace gmpm

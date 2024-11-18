@@ -220,12 +220,13 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
     
-    bool enable_line_search = true;
     const int max_newton_iterations = 20;
     constexpr bool use_jacobi = true;
-    const T jacobi_relax_coeff = enable_line_search ? T(1.): T(.3);
-    const bool global_line_search = true;
     const T kTol = 1e-5;
+
+    bool enable_line_search = use_jacobi;
+    const T jacobi_relax_coeff = enable_line_search ? T(1.): T(.3);
+    const bool global_line_search = use_jacobi;
     int count = 0;
 
     T norm_dir = 1e10;
