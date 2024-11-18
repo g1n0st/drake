@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <iostream>
+#include <fstream>
+#include <chrono>
 #include <cuda_runtime.h>
 
 #include "multibody/gpu_mpm/cuda_mpm_solver.cuh"
@@ -207,12 +209,16 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const MpmParticleC
 }
 
 template<typename T>
-void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T& friction_mu, const T& stiffness, const T& damping) const {
+void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, const T& dt, const T& friction_mu, const T& stiffness, const T& damping) const {
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
 
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
     const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
+
+    // statistics
+    std::vector<T> s_residuals;
+    std::vector<T> s_times;
 
     CUDA_SAFE_CALL((
         compute_base_cell_node_index_kernel<<<
@@ -220,7 +226,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
     
-    const int max_newton_iterations = 20;
+    const bool dump = true;
+    const int max_newton_iterations = 200;
     constexpr bool use_jacobi = true;
     const T kTol = 1e-5;
 
@@ -246,6 +253,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaMalloc(&global_E0_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&global_E1_d, sizeof(T)));
     while (norm_dir > kTol && count < max_newton_iterations) {
+        long long before_ts = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         CUDA_SAFE_CALL(cudaMemset(norm_dir_d, 0, sizeof(T)));
         CUDA_SAFE_CALL(cudaMemset(global_E0_d, 0, sizeof(T)));
         CUDA_SAFE_CALL(cudaMemset(global_E1_d, 0, sizeof(T)));
@@ -386,6 +394,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         norm_dir = sqrt(norm_dir) / grid_DoFs;
         count += 1;
         // throw;
+        long long after_ts = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        s_residuals.push_back(norm_dir);
+        s_times.push_back(T((after_ts-before_ts) / 1e3));
     }
     // throw;
     std::cout << "Iteration count :" <<  count 
@@ -395,6 +406,26 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL(cudaFree(norm_dir_d));
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
+
+    if (dump) {
+        std::ofstream file("/home/changyu/Desktop/mpm-data/" 
+                           + std::string(use_jacobi ? "jacobi" : "colored_gs") 
+                           + "_iter_" + std::to_string(max_newton_iterations)
+                           + "_frame_" + std::to_string(frame) 
+                           + ".json");
+        file << "[\n";
+        for (int i = 0; i < count; ++i) {
+            file << "  {\n";
+            file << "      \"time\": " << s_times[i] << ",\n";
+            file << "      \"residual\": " << s_residuals[i] << "\n";
+            file << "  }";
+            if (i != count -1) file << ",";
+            file << "\n";
+        }
+        file << "]\n";
+        file.close();
+        printf("Dumped\n");
+    }
 }
 
 template class GpuMpmSolver<config::GpuT>;
