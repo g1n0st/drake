@@ -1249,14 +1249,15 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
             // NOTE(changyu): enable it to test gradient descent
             // for (int i = 0; i < 3; ++i) local_Dir[i] = -local_Grad[i];
 
+            // stop criterion
+            atomicAdd(norm_dir, norm_sqr<3>(local_Dir));
+            atomicAdd(total_grid_DoFs, 1U);
+
             // NOTE(changyu): enable it to add relaxation factor
             if (JACOBI) {
                 for (int i = 0; i < 3; ++i) local_Dir[i] *= jacobi_relax_coeff;
             }
 
-            // stop criterion
-            atomicAdd(norm_dir, norm_sqr<3>(local_Dir));
-            atomicAdd(total_grid_DoFs, 1U);
             g_alpha[cell_idx] = T(1.0);
             g_E0[cell_idx] = T(0.0);
             g_E1[cell_idx] = T(0.0);
