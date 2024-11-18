@@ -219,6 +219,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     // statistics
     std::vector<T> s_residuals;
     std::vector<T> s_times;
+    std::vector<T> s_energies;
 
     CUDA_SAFE_CALL((
         compute_base_cell_node_index_kernel<<<
@@ -231,8 +232,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     constexpr bool use_jacobi = true;
     const T kTol = 1e-5;
 
-    bool enable_line_search = use_jacobi;
-    const T jacobi_relax_coeff = enable_line_search ? T(1.): T(.3);
+    bool enable_line_search = true;
+    const T jacobi_relax_coeff = 1.0;
     const bool global_line_search = use_jacobi;
     int count = 0;
 
@@ -344,17 +345,18 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     CUDA_SAFE_CALL(cudaDeviceSynchronize());
                     CUDA_SAFE_CALL(cudaMemcpy(&global_E0, global_E0_d, sizeof(T), cudaMemcpyDeviceToHost));
                     CUDA_SAFE_CALL(cudaMemcpy(&global_E1, global_E1_d, sizeof(T), cudaMemcpyDeviceToHost));
-                    if (global_E1 <= global_E0 + T(1e-6)) { // NOTE (changyu): numerical error on float
+                    if (global_E1 <= global_E0) { // NOTE (changyu): numerical error on float
                         global_line_search_satisfied = true;
                         // printf("global line search E0=%.7f E1=%.7f alpha=%.3f\n", global_E0, global_E1, global_alpha);
                     } else {
                         global_alpha /= T(2.0);
-                        if (global_alpha < T(1e-5)) {
+                        if (global_alpha < T(1e-8)) {
                             printf("Tiny Alpha!!!!!!!!!!! E0=%.10f E1=%.10f\n", global_E0, global_E1);
                             global_line_search_satisfied = true;
                         }
                     }
                     if (global_line_search_satisfied) {
+                        s_energies.push_back(global_E1);
                         CUDA_SAFE_CALL((
                             apply_global_line_search_grid_kernel<T, use_jacobi><<<
                             (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
@@ -417,7 +419,12 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
         for (int i = 0; i < count; ++i) {
             file << "  {\n";
             file << "      \"time\": " << s_times[i] << ",\n";
-            file << "      \"residual\": " << s_residuals[i] << "\n";
+            if (enable_line_search && global_line_search) {
+                file << "      \"residual\": " << s_residuals[i] << ",\n";
+                file << "      \"energy\": " << s_energies[i] << "\n";
+            } else {
+                file << "      \"residual\": " << s_residuals[i] << "\n";
+            }
             file << "  }";
             if (i != count -1) file << ",";
             file << "\n";
