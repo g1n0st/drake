@@ -247,6 +247,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     T global_Em1 = T(0.);
     T global_Em2 = T(0.);
     int grid_DoFs = 0;
+    int line_search_cnt = 0;
     uint32_t total_grid_DoFs = 0;
     uint32_t *total_grid_DoFs_d = nullptr;
     uint32_t solved_grid_DoFs = 0;
@@ -343,7 +344,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                 return global_E;
             };
 
-            int line_search_cnt = 0;
+            line_search_cnt = 0;
             T global_alpha = T(1.0);
             T x_0 = T(0.0), x_1 = T(1.0), x_m1, x_m2, x_0_E, x_1_E, x_m1_E, x_m2_E;
             if (enable_line_search && global_line_search && bisection_line_search) {
@@ -399,7 +400,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
 
                 if (enable_line_search && global_line_search) {
                     if (bisection_line_search) {
-                        if (abs(x_1 - x_0) < 1e-4) {
+                        if (abs(x_1 - x_0) < 1e-5) {
                             global_E1 = (x_0_E + x_1_E) / T(2.);
                             global_alpha = (x_0 + x_1) / T(2.);
                             global_line_search_satisfied = true;
@@ -476,7 +477,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     std::cout << "Iteration count :" <<  count 
               << ", tol: " << norm_dir 
               << ", n_contacts " << n_contacts 
-              << ", grid_DoFs " << grid_DoFs << std::endl;
+              << ", grid_DoFs " << grid_DoFs 
+              << ", line_search_cnt " << line_search_cnt
+              << std::endl;
     CUDA_SAFE_CALL(cudaFree(norm_dir_d));
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
