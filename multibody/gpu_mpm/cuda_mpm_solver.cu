@@ -233,9 +233,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     const T kTol = 1e-5;
 
     bool enable_line_search = true;
-    const T jacobi_relax_coeff = 1.0;
+    const T jacobi_relax_coeff = 0.3;
     const bool global_line_search = use_jacobi;
-    const bool bisection_line_search = true;
+    const bool bisection_line_search = false;
     int count = 0;
 
     T norm_dir = 1e10;
