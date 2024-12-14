@@ -1571,6 +1571,50 @@ __global__ void apply_global_line_search_grid_kernel(
     }
 }
 
+template<typename T>
+__global__ void apply_contact_impulse_to_rigid_bodies(
+    const size_t n_contacts,
+    const T* contact_pos,
+    const T* contact_vel0,
+    const T* contact_vel,
+    const T* volumes,
+    const uint32_t* contact_mpm_id,
+    const uint32_t* contact_rigid_id,
+    const T* contact_rigid_p_WB,
+    T* F_Bq_W_tau,
+    T* F_Bq_W_f) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < n_contacts) {
+        T dv[3] = {
+            contact_vel[idx * 3 + 0] - contact_vel0[idx * 3 + 0],
+            contact_vel[idx * 3 + 1] - contact_vel0[idx * 3 + 1],
+            contact_vel[idx * 3 + 2] - contact_vel0[idx * 3 + 2]
+        };
+        T m = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        // We negate the sign of the grid node's momentum change to get
+        //  the impulse applied to the rigid body at the grid node.
+        T l_WN_W[3] = {m * -dv[0], m * -dv[1], m * -dv[2]};
+        const T* p_WN = &contact_pos[idx * 3];
+        const T* p_WB = &contact_rigid_p_WB[idx * 3];
+        const T p_BN_W[3] = {
+            p_WN[0] - p_WB[0],
+            p_WN[1] - p_WB[1],
+            p_WN[2] - p_WB[2]
+        };
+        // The angular impulse applied to the rigid body at the grid node.
+        T h_WNBo_W[3];
+        cross_product3(p_BN_W, l_WN_W, h_WNBo_W);
+
+        // Use `F_Bq_W` to store the spatial impulse applied to the body
+        //  at its origin, expressed in the world frame.
+        #pragma unroll
+        for (int i = 0 ; i < 3; ++i) {
+            atomicAdd(&F_Bq_W_tau[contact_rigid_id[idx] * 3 + i], h_WNBo_W[i]);
+            atomicAdd(&F_Bq_W_f[contact_rigid_id[idx] * 3 + i],   l_WN_W[i]);
+        }
+    }
+}
+
 }  // namespace gmpm
 }  // namespace multibody
 }  // namespace drake

@@ -195,10 +195,12 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const MpmParticleC
     state->ReallocateContacts(n_contacts);
     if (n_contacts == 0) return;
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_mpm_id(), contact_pairs.particle_in_contact_index.data(), sizeof(uint32_t) * n_contacts, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(state->contact_rigid_id(), contact_pairs.non_mpm_id.data(), sizeof(uint32_t) * n_contacts, cudaMemcpyHostToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_pos(), contact_pairs.particle_in_contact_position.data(), sizeof(T) * 3 * n_contacts, cudaMemcpyHostToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_dist(), contact_pairs.penetration_distance.data(), sizeof(T) * n_contacts, cudaMemcpyHostToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_normal(), contact_pairs.normal.data(), sizeof(T) * 3 * n_contacts, cudaMemcpyHostToDevice));
     CUDA_SAFE_CALL(cudaMemcpy(state->contact_rigid_v(), contact_pairs.rigid_v.data(), sizeof(T) * 3 * n_contacts, cudaMemcpyHostToDevice));
+    CUDA_SAFE_CALL(cudaMemcpy(state->contact_rigid_p_WB(), contact_pairs.rigid_p_WB.data(), sizeof(T) * 3 * n_contacts, cudaMemcpyHostToDevice));
     this->GpuSync();
     CUDA_SAFE_CALL((
         initialize_contact_velocities<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
@@ -257,6 +259,16 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&global_E0_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&global_E1_d, sizeof(T)));
+
+    // NOTE (changyu): pre-compute contact particle velocity `contact_vel0` after p2g2g before contact handling
+    // then the dv changed by the implicit contact optimization problem can be extacted by `dv = contact_vel - contact_vel`.
+    CUDA_SAFE_CALL((
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+        (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (n_contacts, state->contact_pos(), state->contact_vel0(), nullptr,
+        state->grid_masses(), state->grid_momentum(), dt)
+        ));
+
     while (norm_dir > kTol && count < max_newton_iterations) {
         long long before_ts = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         CUDA_SAFE_CALL(cudaMemset(norm_dir_d, 0, sizeof(T)));
@@ -508,6 +520,14 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
         file.close();
         printf("Dumped\n");
     }
+
+    // NOTE (changyu): two-way coupling part, apply contact impulse back to the rigid part
+    CUDA_SAFE_CALL((apply_contact_impulse_to_rigid_bodies<T><<<
+        (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (n_contacts, state->contact_pos(), state->contact_vel0(), state->contact_vel(), 
+        state->current_volumes(), state->contact_mpm_id(), state->contact_rigid_id(), 
+        state->contact_rigid_p_WB(), state->F_Bq_W_tau(), state->F_Bq_W_f())
+        ));
 }
 
 template class GpuMpmSolver<config::GpuT>;

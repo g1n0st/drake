@@ -18,10 +18,20 @@ namespace gmpm {
 // NOTE (changyu): buffers used for aggregating substepping contact impulse to rigid bodies;
 template <typename T>
 struct ExternalSpatialForce {
-    Vec3<T> p_BoBq_B;
+    std::vector<Vec3<T>> p_BoBq_B;
     // a spatial force F from a torque 𝛕 (tau) and a force 𝐟.
-    Vec3<T> F_Bq_W_tau;
-    Vec3<T> F_Bq_W_f;
+    std::vector<Vec3<T>> F_Bq_W_tau;
+    std::vector<Vec3<T>> F_Bq_W_f;
+
+    size_t size() const {
+        return p_BoBq_B.size();
+    }
+
+    void resize(const size_t size) {
+        p_BoBq_B.resize(size);
+        F_Bq_W_tau.resize(size);
+        F_Bq_W_f.resize(size);
+    }
 };
 
 template <typename T>
@@ -97,6 +107,9 @@ public:
     T* grid_E0() { return d_g_E0_; }
     T* grid_E1() { return d_g_E1_; }
 
+    T* F_Bq_W_tau() { return d_F_Bq_W_tau_; }
+    T* F_Bq_W_f() { return d_F_Bq_W_f_; }
+
     unsigned int* sort_buffer() { return sort_buffer_; };
     size_t& sort_buffer_size() { return sort_buffer_size_; }
 
@@ -105,22 +118,29 @@ public:
 
     const uint32_t* contact_mpm_id() const { return d_contact_mpm_id_; }
     uint32_t* contact_mpm_id() { return d_contact_mpm_id_; }
+    const uint32_t* contact_rigid_id() const { return d_contact_rigid_id_; }
+    uint32_t* contact_rigid_id() { return d_contact_rigid_id_; }
     const T* contact_pos() const { return d_contact_pos_; }
     T* contact_pos() { return d_contact_pos_; }
     const T* contact_vel() const { return d_contact_vel_; }
     T* contact_vel() { return d_contact_vel_; }
+    const T* contact_vel0() const { return d_contact_vel0_; }
+    T* contact_vel0() { return d_contact_vel0_; }
     const T* contact_dist() const { return d_contact_dist_; }
     T* contact_dist() { return d_contact_dist_; }
     const T* contact_normal() const { return d_contact_normal_; }
     T* contact_normal() { return d_contact_normal_; }
     const T* contact_rigid_v() const { return d_contact_rigid_v_; }
     T* contact_rigid_v() { return d_contact_rigid_v_; }
+    const T* contact_rigid_p_WB() const { return d_contact_rigid_p_WB_; }
+    T* contact_rigid_p_WB() { return d_contact_rigid_p_WB_; }
     uint32_t* contact_sort_keys() { return d_contact_sort_keys_; }
     uint32_t* contact_sort_ids() { return d_contact_sort_ids_; }
     size_t num_contacts() const { return num_contacts_; }
+    size_t num_external_bodies() const { return num_external_bodies_; }
 
-    const std::vector<ExternalSpatialForce<T>>& external_forces_host() const { return h_external_forces_; }
-    std::vector<ExternalSpatialForce<T>>& external_forces_host() { return h_external_forces_; }
+    const ExternalSpatialForce<T>& external_forces_host() const { return h_external_forces_; }
+    ExternalSpatialForce<T>& external_forces_host() { return h_external_forces_; }
 
     void AddQRCloth(const std::vector<Vec3<T>> &pos, 
                            const std::vector<Vec3<T>> &vel,
@@ -141,6 +161,10 @@ public:
 
     // NOTE (changyu): allocate contact pairs buffer based on given number of contacts
     void ReallocateContacts(size_t num_contacts);
+
+    // NOTE (changyu): allocate external body force buffer based on give number of rigid bodies
+    void ReallocateExternelBodies(size_t num_external_bodies);
+    void ExternelBodyForceToHost();
 
     int total_contact_iteration_count = 0;
 
@@ -185,15 +209,23 @@ private:
     // contact pairs device ptr
     size_t contact_buffer_size = 0;
     size_t num_contacts_ = 0;
+    size_t external_body_buffer_size = 0;
+    size_t num_external_bodies_ = 0;
     uint32_t* d_contact_mpm_id_ = nullptr;
+    uint32_t* d_contact_rigid_id_ = nullptr;
     uint32_t* d_contact_sort_keys_ = nullptr;
     uint32_t* d_contact_sort_ids_ = nullptr;
     T* d_contact_pos_ = nullptr;
     T* d_contact_vel_ = nullptr;
+    T* d_contact_vel0_ = nullptr;
     T* d_contact_dist_ = nullptr;
     T* d_contact_normal_ = nullptr;
     T* d_contact_rigid_v_ = nullptr;
-    
+    T* d_contact_rigid_p_WB_ = nullptr;
+
+    // external force device ptr
+    T* d_F_Bq_W_tau_ = nullptr;
+    T* d_F_Bq_W_f_ = nullptr;
 
     size_t sort_buffer_size_ = 0;
     unsigned int* sort_buffer_ = nullptr;
@@ -203,7 +235,7 @@ private:
     std::vector<Vec3<T>> h_velocities_;
     std::vector<int> h_indices_;
 
-    std::vector<ExternalSpatialForce<T>> h_external_forces_;
+    ExternalSpatialForce<T> h_external_forces_;
 
     // Grid state device ptrs
 

@@ -179,10 +179,12 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           #endif
           {
             result->push_back(
-                uint32_t(p), p2geometry.id_G.get_value(), GpuT(p2geometry.distance),
+                uint32_t(p), uint32_t(p2geometry.id_G.get_value()), GpuT(p2geometry.distance),
                 -p2geometry.grad_W.normalized().template cast<GpuT>(),
                 mpm_state->positions_host()[p],
-                rigid_v.template cast<GpuT>());
+                rigid_v.template cast<GpuT>(),
+                mpm_state->external_forces_host().p_BoBq_B[p2geometry.id_G.get_value()]
+                );
           }
         }
       }
@@ -193,24 +195,26 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
   void InitalizeExternalContactForces(const systems::Context<T>& context, 
                        gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state) const {
+    mpm_state->ReallocateExternelBodies(manager_->plant().num_bodies());
     mpm_state->external_forces_host().resize(manager_->plant().num_bodies());
     for (size_t i = 0; i < mpm_state->external_forces_host().size(); ++i) {
-      mpm_state->external_forces_host()[i].p_BoBq_B = 
+      mpm_state->external_forces_host().p_BoBq_B[i] = 
         manager_->plant().EvalBodyPoseInWorld(
           context, manager_->plant().get_body(BodyIndex(i))).translation()
           .template cast<gmpm::config::GpuT>();
-      mpm_state->external_forces_host()[i].F_Bq_W_tau = Vector3<gmpm::config::GpuT>::Zero();
-      mpm_state->external_forces_host()[i].F_Bq_W_f = Vector3<gmpm::config::GpuT>::Zero();
+      mpm_state->external_forces_host().F_Bq_W_tau[i] = Vector3<gmpm::config::GpuT>::Zero();
+      mpm_state->external_forces_host().F_Bq_W_f[i] = Vector3<gmpm::config::GpuT>::Zero();
     }
   }
 
   void FinalizeExternalContactForces(gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, 
                        const gmpm::config::GpuT &dt) const {
+    mpm_state->ExternelBodyForceToHost();
     // Restore p_BoBq_B value and divide by dt to turn impulse into forces.
     for (size_t i = 0; i < mpm_state->external_forces_host().size(); ++i) {
-      mpm_state->external_forces_host()[i].p_BoBq_B = Vector3<gmpm::config::GpuT>::Zero();
-      mpm_state->external_forces_host()[i].F_Bq_W_tau /= dt;
-      mpm_state->external_forces_host()[i].F_Bq_W_f /= dt;
+      mpm_state->external_forces_host().p_BoBq_B[i] = Vector3<gmpm::config::GpuT>::Zero();
+      mpm_state->external_forces_host().F_Bq_W_tau[i] /= dt;
+      mpm_state->external_forces_host().F_Bq_W_f[i] /= dt;
     }
   }
 

@@ -190,6 +190,10 @@ void GpuMpmState<T>::Destroy() {
         CUDA_SAFE_CALL(cudaFree(d_contact_mpm_id_));
         d_contact_mpm_id_ = nullptr;
     }
+    if (d_contact_rigid_id_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_rigid_id_));
+        d_contact_rigid_id_ = nullptr;
+    }
     if (d_contact_pos_) {
         CUDA_SAFE_CALL(cudaFree(d_contact_pos_));
         d_contact_pos_ = nullptr;
@@ -197,6 +201,10 @@ void GpuMpmState<T>::Destroy() {
     if (d_contact_vel_) {
         CUDA_SAFE_CALL(cudaFree(d_contact_vel_));
         d_contact_vel_ = nullptr;
+    }
+    if (d_contact_vel0_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_vel0_));
+        d_contact_vel0_ = nullptr;
     }
     if (d_contact_dist_) {
         CUDA_SAFE_CALL(cudaFree(d_contact_dist_));
@@ -210,6 +218,10 @@ void GpuMpmState<T>::Destroy() {
         CUDA_SAFE_CALL(cudaFree(d_contact_rigid_v_));
         d_contact_rigid_v_ = nullptr;
     }
+    if (d_contact_rigid_p_WB_) {
+        CUDA_SAFE_CALL(cudaFree(d_contact_rigid_p_WB_));
+        d_contact_rigid_p_WB_ = nullptr;
+    }
     if (d_contact_sort_keys_) {
         CUDA_SAFE_CALL(cudaFree(d_contact_sort_keys_));
         d_contact_sort_keys_ = nullptr;
@@ -217,6 +229,15 @@ void GpuMpmState<T>::Destroy() {
     if (d_contact_sort_ids_) {
         CUDA_SAFE_CALL(cudaFree(d_contact_sort_ids_));
         d_contact_sort_keys_ = nullptr;
+    }
+
+    if (d_F_Bq_W_tau_) {
+        CUDA_SAFE_CALL(cudaFree(d_F_Bq_W_tau_));
+        d_F_Bq_W_tau_ = nullptr;
+    }
+    if (d_F_Bq_W_f_) {
+        CUDA_SAFE_CALL(cudaFree(d_F_Bq_W_f_));
+        d_F_Bq_W_f_ = nullptr;
     }
 }
 
@@ -251,11 +272,17 @@ void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
         if (d_contact_mpm_id_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_mpm_id_));
         }
+        if (d_contact_rigid_id_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_rigid_id_));
+        }
         if (d_contact_pos_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_pos_));
         }
         if (d_contact_vel_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_vel_));
+        }
+        if (d_contact_vel0_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_vel0_));
         }
         if (d_contact_dist_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_dist_));
@@ -266,6 +293,9 @@ void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
         if (d_contact_rigid_v_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_rigid_v_));
         }
+        if (d_contact_rigid_p_WB_) {
+            CUDA_SAFE_CALL(cudaFree(d_contact_rigid_p_WB_));
+        }
         if (d_contact_sort_keys_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_sort_keys_));
         }
@@ -273,14 +303,44 @@ void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
             CUDA_SAFE_CALL(cudaFree(d_contact_sort_ids_));
         }
         cudaMalloc(&d_contact_mpm_id_, sizeof(uint32_t) * contact_buffer_size);
+        cudaMalloc(&d_contact_rigid_id_, sizeof(uint32_t) * contact_buffer_size);
         cudaMalloc(&d_contact_pos_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_vel_, sizeof(T) * 3 * contact_buffer_size);
+        cudaMalloc(&d_contact_vel0_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_dist_, sizeof(T) * contact_buffer_size);
         cudaMalloc(&d_contact_normal_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_rigid_v_, sizeof(T) * 3 * contact_buffer_size);
+        cudaMalloc(&d_contact_rigid_p_WB_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_sort_keys_, sizeof(uint32_t) * contact_buffer_size);
         cudaMalloc(&d_contact_sort_ids_, sizeof(uint32_t) * contact_buffer_size);
     }
+}
+
+template<typename T>
+void GpuMpmState<T>::ReallocateExternelBodies(size_t num_external_bodies) {
+    this->num_external_bodies_ = num_external_bodies;
+    if (num_external_bodies > external_body_buffer_size) {
+        external_body_buffer_size = num_external_bodies;
+        if (d_F_Bq_W_tau_) {
+            CUDA_SAFE_CALL(cudaFree(d_F_Bq_W_tau_));
+        }
+        if (d_F_Bq_W_f_) {
+            CUDA_SAFE_CALL(cudaFree(d_F_Bq_W_f_));
+        }
+        CUDA_SAFE_CALL(cudaMalloc(&d_F_Bq_W_tau_, sizeof(T) * 3 * external_body_buffer_size));
+        CUDA_SAFE_CALL(cudaMalloc(&d_F_Bq_W_f_, sizeof(T) * 3 * external_body_buffer_size));
+    }
+
+    // NOTE (changyu): reset external force buffers at the beginning for each time step,
+    // and accumulate them within substeps.
+    CUDA_SAFE_CALL(cudaMemset(d_F_Bq_W_tau_, 0, sizeof(T) * 3 * external_body_buffer_size));
+    CUDA_SAFE_CALL(cudaMemset(d_F_Bq_W_f_, 0, sizeof(T) * 3 * external_body_buffer_size));
+}
+
+template<typename T>
+void GpuMpmState<T>::ExternelBodyForceToHost() {
+    CUDA_SAFE_CALL(cudaMemcpy(h_external_forces_.F_Bq_W_tau.data(), F_Bq_W_tau(), sizeof(Vec3<T>) * num_external_bodies(), cudaMemcpyDeviceToHost));
+    CUDA_SAFE_CALL(cudaMemcpy(h_external_forces_.F_Bq_W_f.data(), F_Bq_W_f(), sizeof(Vec3<T>) * num_external_bodies(), cudaMemcpyDeviceToHost));
 }
 
 template class GpuMpmState<config::GpuT>;

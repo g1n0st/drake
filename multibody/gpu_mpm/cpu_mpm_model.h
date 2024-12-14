@@ -72,11 +72,12 @@ Rigid body with id A
 template <typename T>
 struct MpmParticleContactPairs {
    std::vector<uint32_t> particle_in_contact_index;
-   std::vector<int64_t> non_mpm_id;
+   std::vector<uint32_t> non_mpm_id;
    std::vector<T> penetration_distance;
    std::vector<Vec3<T>> normal;
    std::vector<Vec3<T>> particle_in_contact_position;
    std::vector<Vec3<T>> rigid_v;
+   std::vector<Vec3<T>> rigid_p_WB;
 
    void clear() {
         particle_in_contact_index.clear();
@@ -85,15 +86,17 @@ struct MpmParticleContactPairs {
         normal.clear();
         particle_in_contact_position.clear();
         rigid_v.clear();
+        rigid_p_WB.clear();
    }
 
    void push_back(
     uint32_t particle_in_contact_index_,
-    int64_t non_mpm_id_,
+    uint32_t non_mpm_id_,
     T penetration_distance_,
     Vec3<T> normal_,
     Vec3<T> particle_in_contact_position_,
-    Vec3<T> rigid_v_
+    Vec3<T> rigid_v_,
+    Vec3<T> rigid_p_WB_
     ) {
         particle_in_contact_index.push_back(particle_in_contact_index_);
         non_mpm_id.push_back(non_mpm_id_);
@@ -101,6 +104,7 @@ struct MpmParticleContactPairs {
         normal.push_back(normal_);
         particle_in_contact_position.push_back(particle_in_contact_position_);
         rigid_v.push_back(rigid_v_);
+        rigid_p_WB.push_back(rigid_p_WB_);
    }
 
    size_t size() const {

@@ -2397,12 +2397,12 @@ void MultibodyPlant<T>::AddAppliedExternalSpatialForces(
 
       // Get the position vector from the body origin (Bo) to the point of
       // force application (Bq), expressed in the world frame (W).
-      const Vector3<T> p_BoBq_W = X_WB.rotation() * mpm_rigid_forces[i].p_BoBq_B.template cast<T>();
+      const Vector3<T> p_BoBq_W = X_WB.rotation() * mpm_rigid_forces.p_BoBq_B[i].template cast<T>();
 
       // Shift the spatial force from Bq to Bo.
       F_BBo_W_array[body_mobod_index] += SpatialForce<T>(
-        mpm_state.external_forces_host()[i].F_Bq_W_tau.template cast<T>(), 
-        mpm_state.external_forces_host()[i].F_Bq_W_f.template cast<T>()).Shift(-p_BoBq_W);
+        mpm_state.external_forces_host().F_Bq_W_tau[i].template cast<T>(), 
+        mpm_state.external_forces_host().F_Bq_W_f[i].template cast<T>()).Shift(-p_BoBq_W);
     }
   }
 
