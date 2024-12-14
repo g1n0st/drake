@@ -28,3 +28,6 @@
 
 # User-specified configuration
 /user.bazelrc
+
+# cloth html
+cloth*.html
