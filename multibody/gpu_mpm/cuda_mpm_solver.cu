@@ -371,30 +371,94 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
             };
 
             line_search_cnt = 0;
-            T global_alpha = T(1.0);
-            T x_0 = T(0.0), x_1 = T(1.0), x_m;
-            std::tuple<T, T, T> x_0_E, x_1_E, x_m_E;
+
+            // NOTE (changyu): DoNewtonWithBisectionFallback reference:
+            // https://github.com/RobotLocomotion/drake/blob/1e19d4808c684f28cadd86e3f5d4387e571de75f/multibody/contact_solvers/newton_with_bisection.cc
+            const T f_tolerance = T(1e-10);
+            const T x_tolerance = T(1e-5);
+            T global_alpha = T(1.);
+            T x_lower = T(0.), x_upper = T(1.), root;
+            std::tuple<T, T, T> f_lower, f_upper, f_root;
             if (enable_line_search && global_line_search && exact_line_search) {
-                x_0_E = line_search(T(0.0));
-                x_1_E = line_search(T(1.0));
+                f_lower = line_search(T(0.));
+                f_upper = line_search(T(1.));
             }
-            if (std::get<1>(x_0_E) < 0.0 && std::get<1>(x_1_E) < 0.0) { // pick alpha=1.0 is optimal when grad<0 is always true
-                x_0 = T(1.0);
-                x_0_E = x_1_E;
+            if (std::get<1>(f_lower) < T(0.) && std::get<1>(f_upper) < T(0.)) { // pick alpha=1.0 is optimal when grad<0 is always true
+                x_lower = T(1.0);
+                f_lower = f_upper;
             }
+            root = x_lower; // Initialize to user supplied guess.
+            T minus_dx = x_lower - x_upper;
+            T minus_dx_previous = minus_dx;
+
+            // Helper to perform a bisection update. It returns the pair (root, -dx).
+            auto do_bisection = [&x_lower, &x_upper]() {
+                const T dx_negative = T(.5) * (x_lower - x_upper);
+                // N.B. This way of updating the root will lead to root == x_lower if
+                // the value of minus_dx is insignificant compared to x_lower when using
+                // floating point precision.
+                const T x = x_lower - dx_negative;
+                return std::make_pair(x, dx_negative);
+            };
+
+            // Helper to perform a Newton update. It returns the pair (root, -dx).
+            auto do_newton = [&f_root, &root]() {
+                const T dx_negative = std::get<1>(f_root) / std::get<2>(f_root);
+                T x = root;
+                // N.B. x will not change if dx_negative is negligible within machine
+                // precision.
+                x -= dx_negative;
+                return std::make_pair(x, dx_negative);
+            };
+
             bool global_line_search_satisfied = false;
             while (!(((enable_line_search && global_line_search) && global_line_search_satisfied) || 
                      ((!global_line_search || !enable_line_search) && solved_grid_DoFs == total_grid_DoFs))) {
                 if (enable_line_search && global_line_search && exact_line_search) {
-                    x_m = (x_0 + x_1) / T(2.);
-                    x_m_E = line_search(x_m);
-                    // printf("%.4lf\n", x_m_E);
-                    if (sign(std::get<1>(x_1_E)) == sign(std::get<1>(x_m_E))) {
-                        x_1 = x_m;
-                        x_1_E = x_m_E;
+                    // The one evaluation per iteration.
+                    f_root = line_search(root);
+
+                    // Update the bracket around root to guarantee that there exist a root
+                    // within the interval [x_lower, x_upper].
+                    // Bisection
+                    if (sign(std::get<1>(f_root)) != sign(std::get<1>(f_upper))) {
+                        x_lower = root;
+                        f_lower = f_root;
                     } else {
-                        x_0 = x_m;
-                        x_0_E = x_m_E;
+                        x_upper = root;
+                        f_upper = f_root;
+                    }
+
+                    if (abs(std::get<1>(f_root)) < f_tolerance) {
+                        global_line_search_satisfied = true;
+                    }
+
+                    // N.B. This check is based on the check used within method rtsafe from
+                    // Numerical Recipes.
+                    // N.B. One way to think about this: if we assume 0 ≈ |fᵏ| << |fᵏ⁻¹| and
+                    // f'ᵏ⁻¹ ≈ f'ᵏ (this would be the case when Newton is converging
+                    // quadratically), then we can estimate fᵏ⁻¹ from values at the last
+                    // iteration as fᵏ⁻¹ ≈ fᵏ + dxᵏ⁻¹⋅f'ᵏ⁻¹ ≈ dxᵏ⁻¹⋅f'ᵏ. Therefore the
+                    // inequality below is an approximation for |2⋅fᵏ| > |fᵏ⁻¹|. That is, we use
+                    // Newton's method when |fᵏ| < |fᵏ⁻¹|/2. Otherwise we use bisection which
+                    // guarantees convergence, though linearly.
+                    const bool newton_is_slow = 2.0 * abs(sign(std::get<1>(f_root))) > abs(minus_dx_previous * sign(std::get<2>(f_root)));
+
+                    minus_dx_previous = minus_dx;
+                    if (newton_is_slow) {
+                        std::tie(root, minus_dx) = do_bisection();
+                    }
+                    else {
+                        std::tie(root, minus_dx) = do_newton();
+                        if (x_lower <= root && root <= x_upper) {
+                        } else {
+                             std::tie(root, minus_dx) = do_bisection();
+                        }
+                    }
+
+                    // No need for additional evaluations if the root is within tolerance.
+                    if (abs(minus_dx) < x_tolerance) {
+                        global_line_search_satisfied = true;
                     }
                 }
                 else if (enable_line_search) {
@@ -425,12 +489,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                 }
 
                 if (enable_line_search && global_line_search) {
-                    if (exact_line_search) {
-                        if (abs(x_1 - x_0) < 1e-5) {
-                            global_E1 = (std::get<0>(x_0_E) + std::get<0>(x_1_E)) / T(2.);
-                            global_alpha = (x_0 + x_1) / T(2.);
-                            global_line_search_satisfied = true;
-                        }
+                    if (exact_line_search && global_line_search_satisfied) {
+                        global_E1 = std::get<0>(f_root);
+                        global_alpha = root;
                     } else {
                         CUDA_SAFE_CALL((
                             update_global_energy_grid_kernel<T, use_jacobi, /*SOLVE_DF_DDF=*/false><<<
