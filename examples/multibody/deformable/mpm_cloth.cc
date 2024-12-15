@@ -1,4 +1,5 @@
 #include <memory>
+#include <fstream>
 
 #include <gflags/gflags.h>
 
@@ -19,6 +20,11 @@
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
+#include "drake/visualization/visualization_config.h"
+#include "drake/visualization/visualization_config_functions.h"
+#include "drake/geometry/meshcat.h"
+#include "drake/geometry/meshcat_visualizer.h"
+#include "drake/geometry/meshcat_visualizer_params.h"
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
@@ -230,6 +236,22 @@ int do_main() {
   builder.Connect(plant.get_output_port(
     plant.deformable_model().mpm_output_port_index()), 
     visualizer.mpm_input_port());
+  
+  auto meshcat = std::make_shared<geometry::Meshcat>();
+  auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
+  meshcat_params.show_mpm = true;
+  auto& meshcat_visualizer = drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
+      &builder, scene_graph, meshcat, meshcat_params);
+  visualization::ApplyVisualizationConfig(
+      visualization::VisualizationConfig{
+          .default_proximity_color = geometry::Rgba{1, 0, 0, 0.25},
+          .enable_alpha_sliders = true,
+      },
+      &builder, nullptr, nullptr, nullptr, meshcat);
+  
+  builder.Connect(plant.get_output_port(
+    plant.deformable_model().mpm_output_port_index()), 
+    meshcat_visualizer.mpm_input_port());
 
   auto diagram = builder.Build();
   std::unique_ptr<Context<double>> diagram_context = diagram->CreateDefaultContext();
@@ -249,9 +271,16 @@ int do_main() {
 
   /* Build the simulator and run! */
   systems::Simulator<double> simulator(*diagram, std::move(diagram_context));
-  simulator.Initialize();
+  meshcat->StartRecording();
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
+  simulator.Initialize();
   simulator.AdvanceTo(FLAGS_simulation_time);
+  meshcat->StopRecording();
+  meshcat->PublishRecording();
+
+  std::ofstream htmlFile("/home/changyu/Desktop/cloth.html");
+  htmlFile << meshcat->StaticHtml();
+  htmlFile.close();
 
   return 0;
 }
