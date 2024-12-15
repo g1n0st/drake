@@ -953,6 +953,92 @@ __device__ __host__ inline void get_color_coordinates(UINT x, UINT y, UINT z, UI
     k = ((3U + k_offset) - (z % 3U)) % 3U;
 }
 
+template<typename T>
+__device__ void compute_contact_grad_and_hess(
+    const T phi0, const T dt, const T stiffness, const T damping, const T friction_mu, 
+    const T *v0, const T *v_next,
+    T *C_Hess, T *C_Grad) {
+    /* Solves the contact problem for a single particle against a rigid body
+        assuming the rigid body has infinite mass and inertia.
+
+        Let phi be the penetration distance (positive when penetration occurs) and vn
+        be the relative velocity of the particle with respect to the rigid body in the
+        normal direction (vn>0 when separting). Then we have phi_dot = -vn.
+
+        In the normal direction, the contact force is modeled as a linear elastic system
+        with Hunt-Crossley dissipation.
+
+        f = k * phi_+ * (1 + d * phi_dot)_+
+
+        where phi_+ = max(0, phi)
+
+        The momentum balance in the normal direction becomes
+
+        m(vn_next - vn) = k * dt * (phi0 - dt * vn_next)_+ * (1 - d * vn_next)_+
+
+        where we used the fact that phi = phi0 - dt * vn_next. This is a quadratic
+        equation in vn_next, and we solve it to get the next velocity vn_next.
+
+        The quadratic equation is ax^2 + bx + c = 0, where
+
+        a = k * d * dt^2
+        b = -m - (k * dt * (dt + d * phi0))
+        c = k * dt * phi0 + m * vn
+
+        After solving for vn_next, we check if the friction force lies in the friction
+        cone, if not, we project the velocity back into the friction cone. */
+    constexpr int kZAxis = 2;
+    T v_hat = min(phi0 / dt, T(1.) / damping); // Eq. 
+    if (v0[kZAxis] > v_hat) {
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) C_Hess[i] = 0;
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) C_Grad[i] = 0;
+    }
+    else {
+        // normal component
+        const T yn = stiffness * dt * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
+        const T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
+
+        // frictional component
+        // For a physical model of compliance for which γn is only a function of vn
+        const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
+        const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + config::epsv<T> * config::epsv<T>);
+        const T ts_hat[2] = {v_next[0] / ts_coeff, v_next[1] / ts_coeff}; // Eq. 18
+
+        const T yt[2] = {-friction_mu * yn0 * ts_hat[0], -friction_mu * yn0 * ts_hat[1]}; // Eq. 33
+        T P_ts_hat[4];
+        outer_product<2, T>(ts_hat, ts_hat, P_ts_hat);
+        const T P_perp_ts_hat[4] = {
+            T(1.) - P_ts_hat[0], -P_ts_hat[1],
+            -P_ts_hat[2], T(1.) - P_ts_hat[3]
+        };
+        const T d2ltdvt2_coeff = -friction_mu * yn0 / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
+        const T d2ltdvt2[4] = {
+            d2ltdvt2_coeff * P_perp_ts_hat[0],
+            d2ltdvt2_coeff * P_perp_ts_hat[1],
+            d2ltdvt2_coeff * P_perp_ts_hat[2],
+            d2ltdvt2_coeff * P_perp_ts_hat[3]
+        };
+
+        C_Hess[0] = d2ltdvt2[0];
+        C_Hess[1] = d2ltdvt2[1];
+        C_Hess[2] = T(0.);
+
+        C_Hess[3] = d2ltdvt2[2];
+        C_Hess[4] = d2ltdvt2[3];
+        C_Hess[5] = T(0.);
+
+        C_Hess[6] = T(0.);
+        C_Hess[7] = T(0.);
+        C_Hess[8] = d2lndvn2;
+
+        C_Grad[0] = yt[0];
+        C_Grad[1] = yt[1];
+        C_Grad[2] = yn;
+    }
+}
+
 template<typename T, int BLOCK_DIM, bool JACOBI>
 __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     const T* contact_pos,
@@ -1056,86 +1142,8 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         matmul<3, 3, 1, T>(R_WC, v_rel, v_next);
 
         T C_Hess[9], C_Grad[3]; // hess and grad in the contact local coordinate
-
-        /* Solves the contact problem for a single particle against a rigid body
-            assuming the rigid body has infinite mass and inertia.
-
-            Let phi be the penetration distance (positive when penetration occurs) and vn
-            be the relative velocity of the particle with respect to the rigid body in the
-            normal direction (vn>0 when separting). Then we have phi_dot = -vn.
-
-            In the normal direction, the contact force is modeled as a linear elastic system
-            with Hunt-Crossley dissipation.
-
-            f = k * phi_+ * (1 + d * phi_dot)_+
-
-            where phi_+ = max(0, phi)
-
-            The momentum balance in the normal direction becomes
-
-            m(vn_next - vn) = k * dt * (phi0 - dt * vn_next)_+ * (1 - d * vn_next)_+
-
-            where we used the fact that phi = phi0 - dt * vn_next. This is a quadratic
-            equation in vn_next, and we solve it to get the next velocity vn_next.
-
-            The quadratic equation is ax^2 + bx + c = 0, where
-
-            a = k * d * dt^2
-            b = -m - (k * dt * (dt + d * phi0))
-            c = k * dt * phi0 + m * vn
-
-            After solving for vn_next, we check if the friction force lies in the friction
-            cone, if not, we project the velocity back into the friction cone. */
-
-        T v_hat = min(phi0 / dt, T(1.) / damping); // Eq. 
-        if (v0[kZAxis] > v_hat) {
-            #pragma unroll
-            for (int i = 0; i < 9; ++i) C_Hess[i] = 0;
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) C_Grad[i] = 0;
-        }
-        else {
-            // normal component
-            const T yn = stiffness * dt * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
-            const T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
-
-            // frictional component
-            // For a physical model of compliance for which γn is only a function of vn
-            const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
-            const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + config::epsv<T> * config::epsv<T>);
-            const T ts_hat[2] = {v_next[0] / ts_coeff, v_next[1] / ts_coeff}; // Eq. 18
-
-            const T yt[2] = {-friction_mu * yn0 * ts_hat[0], -friction_mu * yn0 * ts_hat[1]}; // Eq. 33
-            T P_ts_hat[4];
-            outer_product<2, T>(ts_hat, ts_hat, P_ts_hat);
-            const T P_perp_ts_hat[4] = {
-                T(1.) - P_ts_hat[0], -P_ts_hat[1],
-                -P_ts_hat[2], T(1.) - P_ts_hat[3]
-            };
-            const T d2ltdvt2_coeff = -friction_mu * yn0 / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
-            const T d2ltdvt2[4] = {
-                d2ltdvt2_coeff * P_perp_ts_hat[0],
-                d2ltdvt2_coeff * P_perp_ts_hat[1],
-                d2ltdvt2_coeff * P_perp_ts_hat[2],
-                d2ltdvt2_coeff * P_perp_ts_hat[3]
-            };
-
-            C_Hess[0] = d2ltdvt2[0];
-            C_Hess[1] = d2ltdvt2[1];
-            C_Hess[2] = T(0.);
-
-            C_Hess[3] = d2ltdvt2[2];
-            C_Hess[4] = d2ltdvt2[3];
-            C_Hess[5] = T(0.);
-
-            C_Hess[6] = T(0.);
-            C_Hess[7] = T(0.);
-            C_Hess[8] = d2lndvn2;
-
-            C_Grad[0] = yt[0];
-            C_Grad[1] = yt[1];
-            C_Grad[2] = yn;
-        }
+        compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, v0, v_next, C_Hess, C_Grad);
+        
         
         // hess and grad in the world local coordinate
         T W_Hess[9];
@@ -1265,7 +1273,7 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool JACOBI>
+template<typename T, int BLOCK_DIM, bool JACOBI, bool SOLVE_DF_DDF>
 __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
@@ -1280,6 +1288,8 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
     const T* g_alpha,
     T* g_E0,
     T* g_E1,
+    T* g_dE1,
+    T* g_d2E1,
     const T dt,
     const T friction_mu,
     const T stiffness,
@@ -1324,6 +1334,8 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
             return;
         }
 
+        T global_Dir[3] = {0, 0, 0};
+
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
             #pragma unroll
@@ -1343,6 +1355,9 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
                         new_v[0] += weight * (g_v[0] - alpha * g_D[0]);
                         new_v[1] += weight * (g_v[1] - alpha * g_D[1]);
                         new_v[2] += weight * (g_v[2] - alpha * g_D[2]);
+                        global_Dir[0] += weight * g_D[0];
+                        global_Dir[1] += weight * g_D[1];
+                        global_Dir[2] += weight * g_D[2];
                     } else {
                         if (get_color_mask(base[0] + i, base[1] + j, base[2] + k) == g_color_mask) {
                             const T* g_v = &g_velocities[target_cell_index * 3];
@@ -1420,8 +1435,24 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
         };
 
         T weight = weights[threadIdx.x][ii][0] * weights[threadIdx.x][jj][1] * weights[threadIdx.x][kk][2];
+        if constexpr(SOLVE_DF_DDF) {
+            if (JACOBI && global_line_search && !eval_E0) {
+            } else {
+                printf("SOLVE_DF_DDF must be JACOBI && global_line_search && !eval_E0!!!!!!!!!!!!!!!!!\n");
+            }
+        }
         if (global_line_search) {
             atomicAdd(g_E1, mass * l(new_v_local));
+            if constexpr (SOLVE_DF_DDF) {
+                T C_Hess[9], C_Grad[3]; // hess and grad in the contact local coordinate
+                compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, v0, new_v_local, C_Hess, C_Grad);
+                T R_WC_g_D[3];
+                matmul<3, 3, 1, T>(R_WC, global_Dir, R_WC_g_D);
+                atomicAdd(g_dE1, mass * dot<3>(C_Grad, R_WC_g_D));
+                T tmp[3];
+                matmul<1, 3, 3, T>(R_WC_g_D, C_Hess, tmp);
+                atomicAdd(g_d2E1, mass * dot<3>(tmp, R_WC_g_D));
+            }
         } else {
             if (JACOBI) {
                 printf("ERROR, JACOBI CANNOT USE LOCAL LINE-SEARCH!!!!!!!!!!!!!!!!!!!!!!!\n");
@@ -1502,7 +1533,7 @@ __global__ void update_grid_contact_alpha_kernel(
     }
 }
 
-template<typename T, bool JACOBI>
+template<typename T, bool JACOBI, bool SOLVE_DF_DDF>
 __global__ void update_global_energy_grid_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
@@ -1512,6 +1543,8 @@ __global__ void update_global_energy_grid_kernel(
     const T* g_Dir,
     T* global_E0,
     T* global_E1,
+    T* global_dE1,
+    T* global_d2E1,
     const uint32_t g_color_mask,
     const T global_alpha,
     const bool eval_E0) {
@@ -1537,11 +1570,20 @@ __global__ void update_global_energy_grid_kernel(
                 g_vel[2] - global_alpha * Dir[2] - v_star[2]
             };
 
+            if constexpr(SOLVE_DF_DDF) {
+                if (JACOBI && !eval_E0) {
+                } else {
+                    printf("SOLVE_DF_DDF must be JACOBI && !eval_E0!!!!!!!!!!!!!!!!!\n");
+                }
+            }
             if (eval_E0) {
                 atomicAdd(global_E0, T(0.5) * mass * norm_sqr<3>(old_v_rel));
             }
             atomicAdd(global_E1, T(0.5) * mass * norm_sqr<3>(new_v_rel));
-            
+            if constexpr(SOLVE_DF_DDF) {
+                atomicAdd(global_dE1, -mass * dot<3>(new_v_rel, Dir));
+                atomicAdd(global_d2E1, mass * norm_sqr<3>(Dir));
+            }
         }
     }
 }

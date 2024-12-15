@@ -235,9 +235,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     const T kTol = 1e-5;
 
     bool enable_line_search = true;
-    const T jacobi_relax_coeff = 0.3;
+    const T jacobi_relax_coeff = 1.0;
     const bool global_line_search = use_jacobi;
-    const bool bisection_line_search = false;
+    const bool exact_line_search = true;
     int count = 0;
 
     T norm_dir = 1e10;
@@ -246,8 +246,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     T *global_E0_d = nullptr;
     T global_E1 = T(0.);
     T *global_E1_d = nullptr;
-    T global_Em1 = T(0.);
-    T global_Em2 = T(0.);
+    T *global_dE1_d = nullptr;
+    T *global_d2E1_d = nullptr;
     int grid_DoFs = 0;
     int line_search_cnt = 0;
     uint32_t total_grid_DoFs = 0;
@@ -259,6 +259,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     CUDA_SAFE_CALL(cudaMalloc(&solved_grid_DoFs_d, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&global_E0_d, sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&global_E1_d, sizeof(T)));
+    CUDA_SAFE_CALL(cudaMalloc(&global_dE1_d, sizeof(T)));
+    CUDA_SAFE_CALL(cudaMalloc(&global_d2E1_d, sizeof(T)));
 
     // NOTE (changyu): pre-compute contact particle velocity `contact_vel0` after p2g2g before contact handling
     // then the dv changed by the implicit contact optimization problem can be extacted by `dv = contact_vel - contact_vel`.
@@ -320,9 +322,10 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
             // line search
             const auto & line_search = [&](const T current_alpha) {
                 CUDA_SAFE_CALL(cudaMemset(global_E1_d, 0, sizeof(T)));
-                T global_E = 0;
+                CUDA_SAFE_CALL(cudaMemset(global_dE1_d, 0, sizeof(T)));
+                CUDA_SAFE_CALL(cudaMemset(global_d2E1_d, 0, sizeof(T)));
                 CUDA_SAFE_CALL((
-                    grid_to_particle_vdb_line_search_kernel<T, 32, true><<<
+                    grid_to_particle_vdb_line_search_kernel<T, 32, /*JACOBI=*/true, /*SOLVE_DF_DDF=*/true><<<
                     (n_contacts + 32 - 1) / 32, 32>>>
                     (n_contacts, 
                     state->contact_pos(), 
@@ -338,56 +341,66 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     state->grid_alpha(),
                     nullptr,
                     global_E1_d,
+                    global_dE1_d,
+                    global_d2E1_d,
                     dt, friction_mu, stiffness, damping, color_mask,
                     /*eval_E0=*/ false,
                     global_line_search,
                     current_alpha)
                     ));
                 CUDA_SAFE_CALL((
-                    update_global_energy_grid_kernel<T, true><<<
+                    update_global_energy_grid_kernel<T, true, /*SOLVE_DF_DDF=*/true><<<
                     (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                     (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                     state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
-                    nullptr, global_E1_d,
+                    nullptr, global_E1_d, global_dE1_d, global_d2E1_d,
                     /*color_mask*/ 0, current_alpha, /*eval_E0=*/ false)
                     ));
                 CUDA_SAFE_CALL(cudaDeviceSynchronize());
-                CUDA_SAFE_CALL(cudaMemcpy(&global_E, global_E1_d, sizeof(T), cudaMemcpyDeviceToHost));
-                return global_E;
+                T E, dE, d2E;
+                CUDA_SAFE_CALL(cudaMemcpy(&E, global_E1_d, sizeof(T), cudaMemcpyDeviceToHost));
+                CUDA_SAFE_CALL(cudaMemcpy(&dE, global_dE1_d, sizeof(T), cudaMemcpyDeviceToHost));
+                CUDA_SAFE_CALL(cudaMemcpy(&d2E, global_d2E1_d, sizeof(T), cudaMemcpyDeviceToHost));
+                return std::make_tuple(E, dE, d2E);
+            };
+
+            const auto sign = [](T value) -> int {
+                if (value > 0) return 1;
+                if (value < 0) return -1;
+                return 0;
             };
 
             line_search_cnt = 0;
             T global_alpha = T(1.0);
-            T x_0 = T(0.0), x_1 = T(1.0), x_m1, x_m2, x_0_E, x_1_E, x_m1_E, x_m2_E;
-            if (enable_line_search && global_line_search && bisection_line_search) {
+            T x_0 = T(0.0), x_1 = T(1.0), x_m;
+            std::tuple<T, T, T> x_0_E, x_1_E, x_m_E;
+            if (enable_line_search && global_line_search && exact_line_search) {
                 x_0_E = line_search(T(0.0));
                 x_1_E = line_search(T(1.0));
+            }
+            if (std::get<1>(x_0_E) < 0.0 && std::get<1>(x_1_E) < 0.0) { // pick alpha=1.0 is optimal when grad<0 is always true
+                x_0 = T(1.0);
+                x_0_E = x_1_E;
             }
             bool global_line_search_satisfied = false;
             while (!(((enable_line_search && global_line_search) && global_line_search_satisfied) || 
                      ((!global_line_search || !enable_line_search) && solved_grid_DoFs == total_grid_DoFs))) {
-                if (enable_line_search && global_line_search && bisection_line_search) {
-                    x_m1 = x_0 + (T(1.) / T(3.)) * (x_1 - x_0);
-                    x_m2 = x_1 - (T(1.) / T(3.)) * (x_1 - x_0);
-                    x_m1_E = line_search(x_m1);
-                    x_m2_E = line_search(x_m2);
-                    if (x_m1_E < x_m2_E) {
-                        x_1 = x_m2;
-                        x_1_E = x_m2_E;
-                    } else if (x_m1_E > x_m2_E) {
-                        x_0 = x_m1;
-                        x_0_E = x_m1_E;
+                if (enable_line_search && global_line_search && exact_line_search) {
+                    x_m = (x_0 + x_1) / T(2.);
+                    x_m_E = line_search(x_m);
+                    // printf("%.4lf\n", x_m_E);
+                    if (sign(std::get<1>(x_1_E)) == sign(std::get<1>(x_m_E))) {
+                        x_1 = x_m;
+                        x_1_E = x_m_E;
                     } else {
-                        x_1 = x_m2;
-                        x_1_E = x_m2_E;
-                        x_0 = x_m1;
-                        x_0_E = x_m1_E;
+                        x_0 = x_m;
+                        x_0_E = x_m_E;
                     }
                 }
                 else if (enable_line_search) {
                     CUDA_SAFE_CALL(cudaMemset(global_E1_d, 0, sizeof(T)));
                     CUDA_SAFE_CALL((
-                        grid_to_particle_vdb_line_search_kernel<T, 32, use_jacobi><<<
+                        grid_to_particle_vdb_line_search_kernel<T, 32, use_jacobi, /*SOLVE_DF_DDF=*/false><<<
                         (n_contacts + 32 - 1) / 32, 32>>>
                         (n_contacts, 
                         state->contact_pos(), 
@@ -403,6 +416,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                         state->grid_alpha(),
                         global_line_search ? global_E0_d : state->grid_E0(),
                         global_line_search ? global_E1_d : state->grid_E1(),
+                        nullptr, nullptr,
                         dt, friction_mu, stiffness, damping, color_mask,
                         /*eval_E0=*/line_search_cnt == 0,
                         global_line_search,
@@ -411,19 +425,19 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                 }
 
                 if (enable_line_search && global_line_search) {
-                    if (bisection_line_search) {
+                    if (exact_line_search) {
                         if (abs(x_1 - x_0) < 1e-5) {
-                            global_E1 = (x_0_E + x_1_E) / T(2.);
+                            global_E1 = (std::get<0>(x_0_E) + std::get<0>(x_1_E)) / T(2.);
                             global_alpha = (x_0 + x_1) / T(2.);
                             global_line_search_satisfied = true;
                         }
                     } else {
                         CUDA_SAFE_CALL((
-                            update_global_energy_grid_kernel<T, use_jacobi><<<
+                            update_global_energy_grid_kernel<T, use_jacobi, /*SOLVE_DF_DDF=*/false><<<
                             (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                             (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                             state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
-                            global_E0_d, global_E1_d,
+                            global_E0_d, global_E1_d, nullptr, nullptr,
                             color_mask, global_alpha, /*eval_E0=*/line_search_cnt == 0)
                             ));
                         CUDA_SAFE_CALL(cudaDeviceSynchronize());
