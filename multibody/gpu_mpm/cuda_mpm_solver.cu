@@ -497,9 +497,11 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                 }
 
                 if (enable_line_search && global_line_search) {
-                    if (exact_line_search && global_line_search_satisfied) {
-                        global_E1 = std::get<0>(f_root);
-                        global_alpha = root;
+                    if (exact_line_search) {
+                        if (global_line_search_satisfied) {
+                            global_E1 = std::get<0>(f_root);
+                            global_alpha = root;
+                        }
                     } else {
                         CUDA_SAFE_CALL((
                             update_global_energy_grid_kernel<T, use_jacobi, /*SOLVE_DF_DDF=*/false><<<
