@@ -396,7 +396,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                 x_lower = T(1.0);
                 f_lower = f_upper;
             }
-            root = x_lower; // Initialize to user supplied guess.
+            root = x_upper; // Initialize to user supplied guess.
             T minus_dx = x_lower - x_upper;
             T minus_dx_previous = minus_dx;
 
