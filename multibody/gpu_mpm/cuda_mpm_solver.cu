@@ -380,7 +380,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
             // is robust with small changes in performances (about 30%). We then choose a
             // safe tolerance far enough from the lower limit (close to machine epsilon)
             // and the upper limit (close to an inexact method).
-            const T f_tolerance = T(1e-15);
+            const T f_tolerance = T(1e-8);
             // NOTE (changyu): for exact line search, take jacobi_relax_coeff as alpha_guess
             const T x_tolerance = f_tolerance * jacobi_relax_coeff; // alpha_tolerance = f_tolerance * alpha_guess;
             T global_alpha = T(1.);
