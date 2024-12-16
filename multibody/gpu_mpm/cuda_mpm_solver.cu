@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <numeric>
 #include <cuda_runtime.h>
 
 #include "multibody/gpu_mpm/cuda_mpm_solver.cuh"
@@ -222,6 +223,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     std::vector<T> s_residuals;
     std::vector<T> s_times;
     std::vector<T> s_energies;
+    std::vector<int> s_line_search_cnts;
 
     CUDA_SAFE_CALL((
         compute_base_cell_node_index_kernel<<<
@@ -526,6 +528,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                         }
                     }
                     if (global_line_search_satisfied) {
+                        s_line_search_cnts.push_back(line_search_cnt + 1);
                         s_energies.push_back(global_E1);
                         CUDA_SAFE_CALL((
                             apply_global_line_search_grid_kernel<T, use_jacobi><<<
@@ -575,7 +578,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
               << ", tol: " << norm_dir 
               << ", n_contacts " << n_contacts 
               << ", grid_DoFs " << grid_DoFs 
-              << ", line_search_cnt " << line_search_cnt
+              << ", line_search_cnt_aver " << static_cast<T>(std::accumulate(s_line_search_cnts.begin(), s_line_search_cnts.end(), 0)) / s_line_search_cnts.size()
               << std::endl;
     CUDA_SAFE_CALL(cudaFree(norm_dir_d));
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
@@ -593,6 +596,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
             file << "      \"time\": " << s_times[i] << ",\n";
             if (enable_line_search && global_line_search) {
                 file << "      \"residual\": " << s_residuals[i] << ",\n";
+                file << "      \"line_search_cnt\": " << s_line_search_cnts[i] << ",\n";
                 file << "      \"energy\": " << s_energies[i] << "\n";
             } else {
                 file << "      \"residual\": " << s_residuals[i] << "\n";
