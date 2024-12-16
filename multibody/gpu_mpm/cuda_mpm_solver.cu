@@ -374,8 +374,14 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
 
             // NOTE (changyu): DoNewtonWithBisectionFallback reference:
             // https://github.com/RobotLocomotion/drake/blob/1e19d4808c684f28cadd86e3f5d4387e571de75f/multibody/contact_solvers/newton_with_bisection.cc
-            const T f_tolerance = T(1e-10);
-            const T x_tolerance = T(1e-5);
+            // https://github.com/RobotLocomotion/drake/blob/5fa497cfde7496910eed84ba54755bf2e555284f/multibody/contact_solvers/sap/sap_solver.cc#L682-L686
+            // This relative tolerance was obtained by experimentation on a large set of
+            // tests cases. We found out that with f_tolerance ∈ [10⁻¹⁴, 10⁻³] the solver
+            // is robust with small changes in performances (about 30%). We then choose a
+            // safe tolerance far enough from the lower limit (close to machine epsilon)
+            // and the upper limit (close to an inexact method).
+            const T f_tolerance = T(1e-8);
+            const T x_tolerance = T(1e-8); // alpha_tolerance = f_tolerance * alpha_guess;
             T global_alpha = T(1.);
             T x_lower = T(0.), x_upper = T(1.), root;
             std::tuple<T, T, T> f_lower, f_upper, f_root;
@@ -429,6 +435,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                         f_upper = f_root;
                     }
 
+                    // Exit if f(root) is close to zero.
                     if (abs(std::get<1>(f_root)) < f_tolerance) {
                         global_line_search_satisfied = true;
                     }
@@ -442,7 +449,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     // inequality below is an approximation for |2⋅fᵏ| > |fᵏ⁻¹|. That is, we use
                     // Newton's method when |fᵏ| < |fᵏ⁻¹|/2. Otherwise we use bisection which
                     // guarantees convergence, though linearly.
-                    const bool newton_is_slow = 2.0 * abs(sign(std::get<1>(f_root))) > abs(minus_dx_previous * sign(std::get<2>(f_root)));
+                    const bool newton_is_slow = T(2.) * abs(std::get<1>(f_root)) > abs(minus_dx_previous * std::get<2>(f_root));
 
                     minus_dx_previous = minus_dx;
                     if (newton_is_slow) {
