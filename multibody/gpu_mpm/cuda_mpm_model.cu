@@ -339,6 +339,7 @@ void GpuMpmState<T>::ReallocateExternelBodies(size_t num_external_bodies) {
 
 template<typename T>
 void GpuMpmState<T>::ExternelBodyForceToHost() {
+    CUDA_SAFE_CALL(cudaDeviceSynchronize());
     CUDA_SAFE_CALL(cudaMemcpy(h_external_forces_.F_Bq_W_tau.data(), F_Bq_W_tau(), sizeof(Vec3<T>) * num_external_bodies(), cudaMemcpyDeviceToHost));
     CUDA_SAFE_CALL(cudaMemcpy(h_external_forces_.F_Bq_W_f.data(), F_Bq_W_f(), sizeof(Vec3<T>) * num_external_bodies(), cudaMemcpyDeviceToHost));
 }

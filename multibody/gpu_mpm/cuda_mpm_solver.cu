@@ -496,6 +496,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                         global_line_search,
                         global_alpha)
                         ));
+                    CUDA_SAFE_CALL(cudaDeviceSynchronize());
                 }
 
                 if (enable_line_search && global_line_search) {
@@ -537,6 +538,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                             state->grid_momentum(), state->grid_Dir(),
                             color_mask, global_alpha)
                             ));
+                        CUDA_SAFE_CALL(cudaDeviceSynchronize());
                     }
                 } else {
                     CUDA_SAFE_CALL((
