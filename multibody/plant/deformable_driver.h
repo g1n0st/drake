@@ -179,11 +179,11 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           #endif
           {
             result->push_back(
-                uint32_t(p), uint32_t(p2geometry.id_G.get_value()), GpuT(p2geometry.distance),
+                uint32_t(p), index_rigid, GpuT(p2geometry.distance),
                 -p2geometry.grad_W.normalized().template cast<GpuT>(),
                 mpm_state->positions_host()[p],
                 rigid_v.template cast<GpuT>(),
-                mpm_state->external_forces_host().p_BoBq_B[p2geometry.id_G.get_value()]
+                mpm_state->external_forces_host().p_BoBq_B[index_rigid]
                 );
           }
         }
