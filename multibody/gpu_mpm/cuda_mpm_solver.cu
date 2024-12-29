@@ -84,7 +84,7 @@ void GpuMpmSolver<T>::CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt) c
 }
 
 template<typename T>
-void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
+void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt, bool apply_gravity, bool apply_elasticity) const {
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
     const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
     if (touched_cells_cnt > 0) {
@@ -94,14 +94,50 @@ void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
         (touched_cells_cnt, state->grid_touched_ids(), state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
         ));
     }
-    CUDA_SAFE_CALL((
-        particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
-        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
-         state->forces(), state->taus(),
-         state->current_sort_keys(),
-         state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
-        ));
+
+    if (!apply_gravity && !apply_elasticity) {
+        CUDA_SAFE_CALL((
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/false, /*APPLY_ELASTICITY=*/false><<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->forces(), state->taus(),
+            state->current_sort_keys(),
+            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            ));
+    }
+
+    if (apply_gravity && !apply_elasticity) {
+        CUDA_SAFE_CALL((
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/true, /*APPLY_ELASTICITY=*/false><<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->forces(), state->taus(),
+            state->current_sort_keys(),
+            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            ));
+    }
+
+    if (!apply_gravity && apply_elasticity) {
+        CUDA_SAFE_CALL((
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/false, /*APPLY_ELASTICITY=*/true><<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->forces(), state->taus(),
+            state->current_sort_keys(),
+            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            ));
+    }
+
+    if (apply_gravity && apply_elasticity) {
+        CUDA_SAFE_CALL((
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/true, /*APPLY_ELASTICITY=*/true><<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->forces(), state->taus(),
+            state->current_sort_keys(),
+            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            ));
+    }
 }
 
 template<typename T>
