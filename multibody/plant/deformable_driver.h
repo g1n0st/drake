@@ -252,18 +252,18 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
       mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
       mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
-      mpm_solver_.ParticleToGrid(&mutable_mpm_state, substep_dt, true, false);
+      mpm_solver_.ParticleToGrid(&mutable_mpm_state, dt, true, false);
       mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc);
 
       // NOTE (changyu): update contact information at each substep for weak coupling scheme
       CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs);
       mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
-      mpm_solver_.UpdateContact(&mutable_mpm_state, current_frame, substep_dt, 
+      mpm_solver_.UpdateContact(&mutable_mpm_state, current_frame, dt, 
         deformable_model_->cpu_mpm_model().config.contact_friction_mu,
         deformable_model_->cpu_mpm_model().config.contact_stiffness, 
         deformable_model_->cpu_mpm_model().config.contact_damping);
-      mpm_solver_.GridToParticle(&mutable_mpm_state, substep_dt);
-      FinalizeExternalContactForces(&mutable_mpm_state, substep_dt);
+      mpm_solver_.GridToParticle(&mutable_mpm_state, dt);
+      FinalizeExternalContactForces(&mutable_mpm_state, dt);
 
       // logging
       long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
