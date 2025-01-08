@@ -803,13 +803,14 @@ __global__ void update_grid_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
+template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER, bool POST_CONTACT>
 __global__ void grid_to_particle_kernel(const size_t n_particles,
     T* positions, 
     T* velocities,
     T* affine_matrices,
     const T* g_masses,
     const T* g_momentum,
+    const T* g_v_star,
     const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
@@ -837,11 +838,13 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
+        T old_v[3];
         T new_v[3];
         T new_C[9], new_CT[9];
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
             new_v[i] = 0;
+            old_v[i] = 0;
         }
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
@@ -876,6 +879,11 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                         new_v[0] += weight * g_v[0];
                         new_v[1] += weight * g_v[1];
                         new_v[2] += weight * g_v[2];
+                        if constexpr (POST_CONTACT) {
+                            old_v[0] += weight * g_v_star[target_cell_index * 3 + 0];
+                            old_v[1] += weight * g_v_star[target_cell_index * 3 + 1];
+                            old_v[2] += weight * g_v_star[target_cell_index * 3 + 2];
+                        }
                         // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
 
                         // printf("i=%d j=%d k=%d\n", i, j, k);
@@ -917,9 +925,16 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
 
             // Advection
-            positions[idx * 3 + 0] += new_v[0] * dt;
-            positions[idx * 3 + 1] += new_v[1] * dt;
-            positions[idx * 3 + 2] += new_v[2] * dt;
+            if constexpr (POST_CONTACT) {
+                positions[idx * 3 + 0] += (new_v[0] - old_v[0]) * dt;
+                positions[idx * 3 + 1] += (new_v[1] - old_v[1]) * dt;
+                positions[idx * 3 + 2] += (new_v[2] - old_v[2]) * dt;
+            }
+            else {
+                positions[idx * 3 + 0] += new_v[0] * dt;
+                positions[idx * 3 + 1] += new_v[1] * dt;
+                positions[idx * 3 + 2] += new_v[2] * dt;
+            }
 
             // printf("v=\n");
             // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);

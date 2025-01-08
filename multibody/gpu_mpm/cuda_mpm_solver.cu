@@ -189,10 +189,20 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state, int mpm_bc) const {
 template<typename T>
 void GpuMpmSolver<T>::GridToParticle(GpuMpmState<T> *state, const T& dt) const {
     CUDA_SAFE_CALL((
-        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false><<<
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false, /*POST_CONTACT=*/false><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
-         state->grid_masses(), state->grid_momentum(), dt)
+         state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
+        ));
+}
+
+template<typename T>
+void GpuMpmSolver<T>::ContactGridToParticle(GpuMpmState<T> *state, const T& dt) const {
+    CUDA_SAFE_CALL((
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false, /*POST_CONTACT=*/true><<<
+        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
+         state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
         ));
 }
 
@@ -301,10 +311,10 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     // NOTE (changyu): pre-compute contact particle velocity `contact_vel0` after p2g2g before contact handling
     // then the dv changed by the implicit contact optimization problem can be extacted by `dv = contact_vel - contact_vel`.
     CUDA_SAFE_CALL((
-        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true, /*POST_CONTACT=*/false><<<
         (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (n_contacts, state->contact_pos(), state->contact_vel0(), nullptr,
-        state->grid_masses(), state->grid_momentum(), dt)
+        state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
         ));
 
     while (norm_dir > kTol && count < max_newton_iterations) {
@@ -591,10 +601,10 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
             }
             
             CUDA_SAFE_CALL((
-                grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+                grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true, /*POST_CONTACT=*/false><<<
                 (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                 (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
-                state->grid_masses(), state->grid_momentum(), dt)
+                state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
                 ));
             // throw;
             grid_DoFs += total_grid_DoFs;
