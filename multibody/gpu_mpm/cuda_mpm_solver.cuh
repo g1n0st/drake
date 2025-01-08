@@ -24,6 +24,7 @@ public:
     void ParticleToGrid(GpuMpmState<T> *state, const T& dt, bool apply_gravity=true, bool apply_elasticity=true) const;
     void UpdateGrid(GpuMpmState<T> *state, int mpm_bc = -1) const;
     void GridToParticle(GpuMpmState<T> *state, const T& dt) const;
+    void ContactGridToParticle(GpuMpmState<T> *state, const T& dt) const;
     void GpuSync() const;
     void SyncParticleStateToCpu(GpuMpmState<T> *state) const;
     void Dump(const GpuMpmState<T> &state, std::string filename) const;
