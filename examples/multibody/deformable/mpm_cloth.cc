@@ -193,6 +193,7 @@ int do_main() {
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
         double z = FLAGS_testcase == 100 ? 0.051 : (FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
+        if (FLAGS_testcase == 2) z = 0.27;
         if (FLAGS_testcase == 5) z = 0.18;
         inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx + k * 0.01, (0.5 - 0.5 * l) + j * dx + k * 0.01, z);
         inital_vel.emplace_back(0., 0., 0.);
