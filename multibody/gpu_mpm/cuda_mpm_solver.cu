@@ -212,7 +212,7 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const MpmParticleC
 }
 
 template<typename T>
-void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, const T& dt, const T& friction_mu, const T& stiffness, const T& damping) const {
+void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, const int substep, const T& dt, const T& friction_mu, const T& stiffness, const T& damping, const bool dump) const {
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
 
@@ -231,7 +231,6 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
     
-    const bool dump = true;
     const int max_newton_iterations = 2000;
     constexpr bool use_jacobi = true;
     const T kTol = 1e-4;
@@ -591,6 +590,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                            + std::string(use_jacobi ? "jacobi" : "colored_gs") 
                            + "_iter_" + std::to_string(max_newton_iterations)
                            + "_frame_" + std::to_string(frame) 
+                           + "_substep_" + std::to_string(substep)
                            + ".json");
         file << "[\n";
         for (int i = 0; i < count; ++i) {

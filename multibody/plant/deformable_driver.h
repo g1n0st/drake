@@ -249,10 +249,11 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         // NOTE (changyu): update contact information at each substep for weak coupling scheme
         CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs);
         mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
-        mpm_solver_.UpdateContact(&mutable_mpm_state, current_frame, ddt, 
+        mpm_solver_.UpdateContact(&mutable_mpm_state, current_frame, substep, ddt, 
           deformable_model_->cpu_mpm_model().config.contact_friction_mu,
           deformable_model_->cpu_mpm_model().config.contact_stiffness, 
-          deformable_model_->cpu_mpm_model().config.contact_damping);
+          deformable_model_->cpu_mpm_model().config.contact_damping,
+          deformable_model_->cpu_mpm_model().config.write_files);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         substep += 1;
       }
