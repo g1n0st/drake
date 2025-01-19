@@ -253,7 +253,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           deformable_model_->cpu_mpm_model().config.contact_friction_mu,
           deformable_model_->cpu_mpm_model().config.contact_stiffness, 
           deformable_model_->cpu_mpm_model().config.contact_damping,
-          deformable_model_->cpu_mpm_model().config.write_files);
+          deformable_model_->cpu_mpm_model().config.write_files,
+          deformable_model_->cpu_mpm_model().config.exact_line_search);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         substep += 1;
       }

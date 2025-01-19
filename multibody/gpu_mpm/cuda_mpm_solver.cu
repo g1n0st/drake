@@ -212,7 +212,7 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const MpmParticleC
 }
 
 template<typename T>
-void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, const int substep, const T& dt, const T& friction_mu, const T& stiffness, const T& damping, const bool dump) const {
+void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, const int substep, const T& dt, const T& friction_mu, const T& stiffness, const T& damping, const bool dump, const bool exact_line_search) const {
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
 
@@ -238,7 +238,6 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     bool enable_line_search = true;
     const T jacobi_relax_coeff = 0.3;
     const bool global_line_search = use_jacobi;
-    const bool exact_line_search = false;
     int count = 0;
 
     T norm_dir = 1e10;
