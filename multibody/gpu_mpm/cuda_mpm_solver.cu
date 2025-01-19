@@ -585,7 +585,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
 
     if (dump) {
-        std::ofstream file("/home/changyu/Desktop/mpm-data/" 
+        std::ofstream file("/home/changyu/drake/mpm-data/" 
                            + std::string(use_jacobi ? "jacobi" : "colored_gs") 
                            + "_iter_" + std::to_string(max_newton_iterations)
                            + "_frame_" + std::to_string(frame) 

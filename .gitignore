@@ -31,3 +31,5 @@
 
 # cloth html
 cloth*.html
+*.json
+*.pdf
