@@ -1011,8 +1011,14 @@ __device__ void compute_contact_grad_and_hess(
         After solving for vn_next, we check if the friction force lies in the friction
         cone, if not, we project the velocity back into the friction cone. */
     constexpr int kZAxis = 2;
-    T v_hat = min(phi0 / dt, T(1.) / damping); // Eq. 
-    if (v0[kZAxis] > v_hat) {
+
+    // NOTE: follow the pattern in https://github.com/RobotLocomotion/drake/blob/master/multibody/contact_solvers/sap/sap_hunt_crossley_constraint.cc
+    // Check if predicted penetration is positive.
+    // If not, then the contact force is not repulsive, don't apply it.
+    const T xdot = -v_next[kZAxis];
+    T phi = phi0 + dt * xdot;
+    T damping_cond = T(1.) + damping * xdot;
+    if (damping_cond <= 0 || phi <= 0) { // Quick exits
         #pragma unroll
         for (int i = 0; i < 9; ++i) C_Hess[i] = 0;
         #pragma unroll
@@ -1138,11 +1144,6 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         //     mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
         //   );
         T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-        if (phi0 < 0) {
-            printf("IMPOSSIBLE!!!\n");
-        }
-#endif
 
         T v0_rel[3] = {
             particle_v0[0] - contact_rigid_v[idx * 3 + 0],
@@ -1411,11 +1412,6 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
 
         T nhat_W[3] = {-contact_normal[idx * 3 + 0], -contact_normal[idx * 3 + 1], -contact_normal[idx * 3 + 2]};
         T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-        if (phi0 < 0) {
-            printf("IMPOSSIBLE!!!\n");
-        }
-#endif
 
         T v0_rel[3] = {
             particle_v0[0] - contact_rigid_v[idx * 3 + 0],
