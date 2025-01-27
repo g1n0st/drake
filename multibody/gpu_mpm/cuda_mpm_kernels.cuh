@@ -1164,11 +1164,6 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         //     mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
         //   );
         T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-        if (phi0 < 0) {
-            printf("IMPOSSIBLE!!!\n");
-        }
-#endif
 
         T vn_rel_W[3] = {
             particle_vn[0] - contact_rigid_v[idx * 3 + 0],
@@ -1452,11 +1447,6 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
         T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-        if (phi0 < 0) {
-            printf("IMPOSSIBLE!!!\n");
-        }
-#endif
 
         T vn_rel_W[3] = {
             v_p_n[0] - contact_rigid_v[idx * 3 + 0],
