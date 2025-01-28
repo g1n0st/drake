@@ -39,7 +39,7 @@ DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
               "are: 'sap', 'lagged', and 'similar'.");
-DEFINE_double(stiffness, 2e4, "Contact Stiffness.");
+DEFINE_double(stiffness, 1e5, "Contact Stiffness.");
 DEFINE_double(friction, 0.0, "Contact Friction.");
 DEFINE_double(margin, 1.0, "MPM-Rigid Margin.");
 DEFINE_double(damping, 1e-2,
@@ -289,7 +289,7 @@ int do_main() {
       meshcat->StopRecording();
       meshcat->PublishRecording();
 
-      std::ofstream htmlFile("/home/changyu/Desktop/cloth.html");
+      std::ofstream htmlFile("/home/changyu/drake/cloth.html");
       htmlFile << meshcat->StaticHtml();
       htmlFile.close();
   }
