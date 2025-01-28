@@ -303,7 +303,7 @@ int do_main() {
       meshcat->StopRecording();
       meshcat->PublishRecording();
 
-      std::ofstream htmlFile("/home/changyu/Desktop/cloth.html");
+      std::ofstream htmlFile("/home/changyu/drake/cloth.html");
       htmlFile << meshcat->StaticHtml();
       htmlFile.close();
   }

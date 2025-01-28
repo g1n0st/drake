@@ -841,6 +841,7 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
         T old_v[3];
         T new_v[3];
         T new_C[9], new_CT[9];
+        T old_C[9], old_CT[9];
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
             new_v[i] = 0;
@@ -849,6 +850,7 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             new_C[i] = 0;
+            old_C[i] = 0;
         }
 
         #pragma unroll
@@ -896,6 +898,17 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                         new_C[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
                         new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
                         new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
+                        if constexpr (POST_CONTACT) {
+                            old_C[0] += 4 * config::G_DX_INV<T> * weight * g_v_star[0] * xi_minus_xp[0];
+                            old_C[1] += 4 * config::G_DX_INV<T> * weight * g_v_star[0] * xi_minus_xp[1];
+                            old_C[2] += 4 * config::G_DX_INV<T> * weight * g_v_star[0] * xi_minus_xp[2];
+                            old_C[3] += 4 * config::G_DX_INV<T> * weight * g_v_star[1] * xi_minus_xp[0];
+                            old_C[4] += 4 * config::G_DX_INV<T> * weight * g_v_star[1] * xi_minus_xp[1];
+                            old_C[5] += 4 * config::G_DX_INV<T> * weight * g_v_star[1] * xi_minus_xp[2];
+                            old_C[6] += 4 * config::G_DX_INV<T> * weight * g_v_star[2] * xi_minus_xp[0];
+                            old_C[7] += 4 * config::G_DX_INV<T> * weight * g_v_star[2] * xi_minus_xp[1];
+                            old_C[8] += 4 * config::G_DX_INV<T> * weight * g_v_star[2] * xi_minus_xp[2];
+                        }
                     }
                 }
             }
@@ -911,23 +924,35 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             velocities[idx * 3 + 2] = new_v[2];
 
             transpose<3, 3, T>(new_C, new_CT);
-            affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
-            affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
-            affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
-            affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
-            affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
-            affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
-            affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
-            affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
-            affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
-
             // Advection
             if constexpr (POST_CONTACT) {
+                transpose<3, 3, T>(old_C, old_CT);
+
+                affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[0] - old_C[0]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[0] - old_CT[0]);
+                affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[1] - old_C[1]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[1] - old_CT[1]);
+                affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[2] - old_C[2]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[2] - old_CT[2]);
+                affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[3] - old_C[3]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[3] - old_CT[3]);
+                affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[4] - old_C[4]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[4] - old_CT[4]);
+                affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[5] - old_C[5]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[5] - old_CT[5]);
+                affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[6] - old_C[6]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[6] - old_CT[6]);
+                affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[7] - old_C[7]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[7] - old_CT[7]);
+                affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[8] - old_C[8]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[8] - old_CT[8]);
+
                 positions[idx * 3 + 0] += (new_v[0] - old_v[0]) * dt;
                 positions[idx * 3 + 1] += (new_v[1] - old_v[1]) * dt;
                 positions[idx * 3 + 2] += (new_v[2] - old_v[2]) * dt;
             }
             else {
+                affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
+                affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
+                affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
+                affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
+                affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
+                affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
+                affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
+                affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
+                affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
+
                 positions[idx * 3 + 0] += new_v[0] * dt;
                 positions[idx * 3 + 1] += new_v[1] * dt;
                 positions[idx * 3 + 2] += new_v[2] * dt;
@@ -1016,7 +1041,7 @@ __device__ void compute_contact_grad_and_hess(
 
     // NOTE (changyu): in math eqns from (https://arxiv.org/pdf/2312.03908) and in code,
     // ϕ differs by a sign.
-    const T phi = phi0 - dt * v_next[kZAxis];
+    const T phi = phi0 - dt * (v_next[kZAxis] - v0[kZAxis]);
     // If (-ϕ0 - δt vn)+ or (1 − dvn)+ equals zero, no impulse should be applied
     if (T(1.) - damping * v_next[kZAxis] <= 0 || phi <= 0) { // Quick exits
         #pragma unroll
@@ -1029,7 +1054,7 @@ __device__ void compute_contact_grad_and_hess(
         // fn(ϕ, vn) = k (−ϕ)+ (1 − dvn)+
         // γn(vn) = n(vn; ϕ0) = δt fn(ϕ0 + δt vn, vn)
         //        = δt k (-ϕ0 - δt vn)+ (1 − dvn)+
-        const T yn = dt * stiffness * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
+        const T yn = stiffness * dt * (phi0 - dt * (v_next[kZAxis] - v0[kZAxis])) * (T(1.) - damping * (v_next[kZAxis] - v0[kZAxis])); // Eq. 13
 
         // ∂²ln / ∂vn² = - δt ∂ fn / ∂vn
         //               = - δt ∂ fn(ϕ0 + δt vn, vn) / ∂vn
@@ -1038,7 +1063,7 @@ __device__ void compute_contact_grad_and_hess(
         //               = - δt k ∂ (-ϕ0 - δt vn) (1 − dvn) / ∂vn
         //               = - δt k ∂ (-ϕ0 - δt vn + ϕ0 dvn + d δt vn²) / ∂vn
         //               = - δt k (- δt + ϕ0 d + 2 d δt vn)
-        const T d2lndvn2 = - dt * stiffness * (-dt -phi0 * damping + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
+        const T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * (v_next[kZAxis] - v0[kZAxis])); // Eq. 8
 
         // frictional component (Lagged Model)
         // For a physical model of compliance for which γn is only a function of vn
