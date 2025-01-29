@@ -141,7 +141,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       // always remember it is type GpuT and should be casted to type T explicitly.
       std::vector<geometry::SignedDistanceToPoint<T>> p_to_geometries =
           query_object.geometry_state().ComputeSignedDistanceToPoint(
-            mpm_state->positions_host()[p].template cast<T>(), T(0));
+            mpm_state->positions_host()[p].template cast<T>(), T(margin));
       // identify those that are in contact
       // NOTE: register a contact point whenever (phi0 > -margin) instead of only registering contact points when phi0 > 0.
       for (const auto& p2geometry : p_to_geometries) {
