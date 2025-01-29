@@ -277,7 +277,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
     
-    const int max_newton_iterations = 100;
+    const int max_newton_iterations = 500;
+    const int max_line_search_iterations = 100;
     constexpr bool use_jacobi = true;
     const T kTol = 1e-4;
 
@@ -483,7 +484,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     }
 
                     // Exit if f(root) is close to zero.
-                    if (abs(std::get<1>(f_root)) < f_tolerance) {
+                    if (abs(std::get<1>(f_root)) < f_tolerance || line_search_cnt >= max_line_search_iterations) {
                         global_line_search_satisfied = true;
                     }
 
