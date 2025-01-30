@@ -50,6 +50,7 @@ void GpuMpmState<T>::Finalize() {
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_velocities, sizeof(Vec3<T>) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_volumes, sizeof(T) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_affine_matrices, sizeof(Mat3<T>) * n_particles_));
+        CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_affine_matrices_backup, sizeof(Mat3<T>) * n_particles_));
 
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_pids, sizeof(int) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_sort_keys, sizeof(uint32_t) * n_particles_));
@@ -75,6 +76,7 @@ void GpuMpmState<T>::Finalize() {
                                       cudaMemcpyHostToDevice));
             CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_volumes, 0, sizeof(T) * n_particles_));
             CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_affine_matrices, 0, sizeof(Mat3<T>) * n_particles_));
+            CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_affine_matrices_backup, 0, sizeof(Mat3<T>) * n_particles_));
         }
     }
     
@@ -128,6 +130,7 @@ void GpuMpmState<T>::Destroy() {
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_velocities));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_volumes));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_affine_matrices));
+        CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_affine_matrices_backup));
 
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_pids));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_sort_keys));
@@ -138,6 +141,7 @@ void GpuMpmState<T>::Destroy() {
         particle_buffer_[i].d_velocities = nullptr;
         particle_buffer_[i].d_volumes = nullptr;
         particle_buffer_[i].d_affine_matrices = nullptr;
+        particle_buffer_[i].d_affine_matrices_backup = nullptr;
         particle_buffer_[i].d_pids = nullptr;
         particle_buffer_[i].d_sort_keys = nullptr;
         particle_buffer_[i].d_sort_ids = nullptr;

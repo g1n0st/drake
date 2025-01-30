@@ -180,13 +180,14 @@ inline void project_strain(T* F) {
     matmul<3, 3, 3, T>(Q, R, F);
 }
 
-template<typename T>
+template<typename T, bool POST_CONTACT>
 __global__ void calc_fem_state_and_force_kernel(
     const size_t n_faces,
     const int* indices,
     const int* index_mappings,
     const T* volumes,
     const T* affine_matrices,
+    const T* affine_matrices_star,
     const T* Dm_inverses,
     T* positions, 
     T* velocities,
@@ -207,7 +208,18 @@ __global__ void calc_fem_state_and_force_kernel(
         }
 
         T* F = &deformation_gradients[idx * 9];
-        const T* C = &affine_matrices[face_pid * 9];
+        T C[9];
+        if constexpr(POST_CONTACT) {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                C[i] = (affine_matrices[face_pid * 9 + i] - affine_matrices_star[face_pid * 9 + i]);
+            }
+        } else {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                C[i] = affine_matrices[face_pid * 9 + i];
+            }
+        }
         T ctF[9]; // cotangent F
 
         // Eq.4 in Jiang et.al 2017, dE_p, β(x̂) = (∇x̂)p dE,n_p, β
@@ -808,6 +820,7 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
     T* positions, 
     T* velocities,
     T* affine_matrices,
+    T* affine_matrices_star,
     const T* g_masses,
     const T* g_momentum,
     const T* g_v_star,
@@ -928,15 +941,25 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             if constexpr (POST_CONTACT) {
                 transpose<3, 3, T>(old_C, old_CT);
 
-                affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[0] - old_C[0]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[0] - old_CT[0]);
-                affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[1] - old_C[1]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[1] - old_CT[1]);
-                affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[2] - old_C[2]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[2] - old_CT[2]);
-                affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[3] - old_C[3]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[3] - old_CT[3]);
-                affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[4] - old_C[4]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[4] - old_CT[4]);
-                affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[5] - old_C[5]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[5] - old_CT[5]);
-                affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[6] - old_C[6]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[6] - old_CT[6]);
-                affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[7] - old_C[7]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[7] - old_CT[7]);
-                affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * (new_C[8] - old_C[8]) + ((config::V<T> - T(1.)) * T(.5)) * (new_CT[8] - old_CT[8]);
+                affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
+                affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
+                affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
+                affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
+                affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
+                affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
+                affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
+                affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
+                affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
+
+                affine_matrices_star[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * old_C[0] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[0];
+                affine_matrices_star[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * old_C[1] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[1];
+                affine_matrices_star[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * old_C[2] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[2];
+                affine_matrices_star[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * old_C[3] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[3];
+                affine_matrices_star[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * old_C[4] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[4];
+                affine_matrices_star[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * old_C[5] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[5];
+                affine_matrices_star[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * old_C[6] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[6];
+                affine_matrices_star[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * old_C[7] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[7];
+                affine_matrices_star[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * old_C[8] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[8];
 
                 positions[idx * 3 + 0] += (new_v[0] - old_v[0]) * dt;
                 positions[idx * 3 + 1] += (new_v[1] - old_v[1]) * dt;
