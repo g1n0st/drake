@@ -267,6 +267,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         deformable_model_->cpu_mpm_model().config.exact_line_search
         );
       mpm_solver_.ContactGridToParticle(&mutable_mpm_state, dt);
+      mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, dt, true);
       FinalizeExternalContactForces(&mutable_mpm_state, dt);
 
       // logging
