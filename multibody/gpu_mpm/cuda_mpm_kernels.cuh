@@ -1096,7 +1096,7 @@ __device__ void compute_contact_grad_and_hess(
         //               = - δt k ∂ (-ϕ0 - δt vn) (1 − dvn) / ∂vn
         //               = - δt k ∂ (-ϕ0 - δt vn + ϕ0 dvn + d δt vn²) / ∂vn
         //               = - δt k (- δt + ϕ0 d + 2 d δt vn)
-        const T d2lndvn2 = stiffness * dt * (-dt - damping * phi0 + T(2.) * damping * dt * (v_next[kZAxis] - v0[kZAxis])); // Eq. 8
+        const T d2lndvn2 = - dt * stiffness * (-dt -phi0 * damping + T(2.) * damping * dt * (v_next[kZAxis] - v0[kZAxis])); // Eq. 8
 
         // frictional component (Lagged Model)
         // For a physical model of compliance for which γn is only a function of vn
