@@ -1077,7 +1077,7 @@ __device__ void compute_contact_grad_and_hess(
         // fn(ϕ, vn) = k (−ϕ)+ (1 − dvn)+
         // γn(vn) = n(vn; ϕ0) = δt fn(ϕ0 + δt vn, vn)
         //        = δt k (-ϕ0 - δt vn)+ (1 − dvn)+
-        const T yn = stiffness * dt * (phi0 - dt * (v_next[kZAxis] - v0[kZAxis])) * (T(1.) - damping * (v_next[kZAxis] - v0[kZAxis])); // Eq. 13
+        const T yn = dt * stiffness * (phi0 - dt * (v_next[kZAxis] - v0[kZAxis])) * (T(1.) - damping * (v_next[kZAxis] - v0[kZAxis])); // Eq. 13
 
         // ∂²ln / ∂vn² = - δt ∂ fn / ∂vn
         //               = - δt ∂ fn(ϕ0 + δt vn, vn) / ∂vn
