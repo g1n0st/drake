@@ -78,7 +78,7 @@ void GpuMpmSolver<T>::CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt, c
         CUDA_SAFE_CALL((
             calc_fem_state_and_force_kernel<T, /*POST_CONTACT=*/true><<<
             (state->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (state->n_faces(), state->indices(), state->index_mappings(), state->current_volumes(), state->current_affine_matrices(), state->current_affine_matrices_backup(), 
+            (state->n_faces(), state->indices(), state->index_mappings(), state->current_volumes(), state->current_affine_matrices(), state->current_affine_matrices_star(), 
             state->Dm_inverses(), state->current_positions(), state->current_velocities(), state->deformation_gradients(),
             state->forces(), state->taus(), dt)
             ));
@@ -211,7 +211,7 @@ void GpuMpmSolver<T>::ContactGridToParticle(GpuMpmState<T> *state, const T& dt) 
     CUDA_SAFE_CALL((
         grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false, /*POST_CONTACT=*/true><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(), state->current_affine_matrices_backup(),
+        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(), state->current_affine_matrices_star(),
          state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
         ));
 }

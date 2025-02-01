@@ -53,8 +53,8 @@ public:
     const T* current_volumes() const { return particle_buffer_[current_particle_buffer_id_].d_volumes; }
     T* current_affine_matrices() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
     const T* current_affine_matrices() const { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
-    T* current_affine_matrices_backup() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices_backup; }
-    const T* current_affine_matrices_backup() const { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices_backup; }
+    T* current_affine_matrices_star() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices_star; }
+    const T* current_affine_matrices_star() const { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices_star; }
 
     int* current_pids() { return particle_buffer_[current_particle_buffer_id_].d_pids; }
     const int* current_pids() const { return particle_buffer_[current_particle_buffer_id_].d_pids; }
@@ -67,7 +67,7 @@ public:
     T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
     T* next_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
     T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
-    T* next_affine_matrices_backup() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices_backup; }
+    T* next_affine_matrices_star() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices_star; }
     int* next_pids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_pids; }
     uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
     uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
@@ -197,7 +197,7 @@ private:
         T* d_velocities = nullptr;  // size: n_faces + n_verts
         T* d_volumes = nullptr;     // size: n_faces + n_verts
         T* d_affine_matrices = nullptr; // size: n_faces + n_verts
-        T* d_affine_matrices_backup = nullptr; // size: n_faces + n_verts
+        T* d_affine_matrices_star = nullptr; // size: n_faces + n_verts
 
         // used to work with index_mapping to get the original -> reordered mapping.
         int* d_pids = nullptr; // size: n_faces + n_verts
