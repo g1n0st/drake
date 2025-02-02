@@ -1740,10 +1740,12 @@ __global__ void apply_global_line_search_grid_kernel(
             g_vel[2] += global_alpha * Dir[2];
             
             // NOTE (changyu): check CFL condition here
+#if (DEBUG)
             const T CFL_dt = config::G_DX<T> / (norm<3>(g_vel) + 1e-10);
             if (dt > CFL_dt) {
                 printf("dt exceds CFL dt limit (%lf)!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dt / CFL_dt);
             }
+#endif
         }
     }
 }
