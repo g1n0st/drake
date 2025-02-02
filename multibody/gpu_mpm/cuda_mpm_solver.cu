@@ -591,7 +591,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                             (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                             (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                             state->grid_momentum(), state->grid_Dir(),
-                            color_mask, global_alpha)
+                            color_mask, global_alpha, dt)
                             ));
                         CUDA_SAFE_CALL(cudaDeviceSynchronize());
                     }
