@@ -1734,7 +1734,8 @@ __global__ void apply_global_line_search_grid_kernel(
     T* g_momentum,
     const T* g_Dir,
     const uint32_t g_color_mask,
-    const T global_alpha) {
+    const T global_alpha,
+    const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
@@ -1747,6 +1748,12 @@ __global__ void apply_global_line_search_grid_kernel(
             g_vel[0] += global_alpha * Dir[0];
             g_vel[1] += global_alpha * Dir[1];
             g_vel[2] += global_alpha * Dir[2];
+            
+            // NOTE (changyu): check CFL condition here
+            const T CFL_dt = config::G_DX<T> / (norm<3>(g_vel) + 1e-10);
+            if (dt > CFL_dt) {
+                printf("dt exceds CFL dt limit (%lf)!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dt / CFL_dt);
+            }
         }
     }
 }
