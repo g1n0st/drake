@@ -321,6 +321,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
 
     // NOTE (changyu): pre-compute contact particle velocity `contact_vel_star` after p2g2g before contact handling
     // then the dv changed by the implicit contact optimization problem can be extacted by `dv = contact_vel - contact_vel_star`.
+    // also, for strong coupling scheme, we track `contact_vel_star` to handle the penetration distance estimation correctly.
     CUDA_SAFE_CALL((
         grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true, /*POST_CONTACT=*/false><<<
         (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
@@ -350,7 +351,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                 (n_contacts, 
                 state->contact_pos(), 
                 state->contact_vel(), 
-                state->current_velocities(),
+                state->contact_vel_star(),
                 state->current_volumes(),
                 state->contact_mpm_id(), 
                 state->contact_dist(), 
@@ -387,7 +388,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     (n_contacts, 
                     state->contact_pos(), 
                     state->contact_vel(), 
-                    state->current_velocities(),
+                    state->contact_vel_star(),
                     state->current_volumes(),
                     state->contact_mpm_id(), 
                     state->contact_dist(), 
@@ -534,7 +535,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                         (n_contacts, 
                         state->contact_pos(), 
                         state->contact_vel(), 
-                        state->current_velocities(),
+                        state->contact_vel_star(),
                         state->current_volumes(),
                         state->contact_mpm_id(), 
                         state->contact_dist(), 
