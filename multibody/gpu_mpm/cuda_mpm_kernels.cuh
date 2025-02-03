@@ -1510,19 +1510,30 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
             // N(vn) = N+(min(vn, vˆ); f*)
             const T min_vn_v_hat = min(v_hat, v[kZAxis]);
 
-            // N+(vn; ϕ*) = δt k [−vn (ϕ* + 1/2 δt vn) + d vn²/2 (ϕ* + 2/3 δt vn)]
-            //            = δt k [−ϕ* vn  - 1/2 δt vn² + 1/2 d ϕ* vn² + 1/3 d δt vn³]
-            //            = δt k [1/3 d δt vn³ + 1/2 (d ϕ* - δt) vn² - ϕ* vn]
-            //            = ln_A vn³ + ln_B vn² + ln_C vn
+            // N+(vn; ϕ*) = ∫ n(vn; ϕ*) ∂vn
+            //            = ∫ δt fn(ϕ* + δt (vn - v*), vn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt (vn - v*))+ (1 − dvn)+ ∂vn
+
+            // when both (-ϕ* - δt (vn - v*)) > 0 and (1 − dvn) > 0 satisfied
+            //            = ∫ δt k (-ϕ* - δt (vn - v*)) (1 − dvn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt vn + δt v*) (1 − dvn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt vn + δt v* + d ϕ* vn + d δt vn² - d δt v* vn) ∂vn
+
+            //            = ∫ δt k (d δt vn² + d ϕ* vn - δt vn - d δt v* vn -ϕ* + δt v*) ∂vn
+            //            = ∫ δt k [ d δt vn² + (d ϕ* - δt - d δt v*) vn -ϕ* + δt v*] ∂vn
+            //            = δt k [ 1/3 d δt vn³ + 1/2 (d ϕ* - δt - d δt v*) vn² + (-ϕ* + δt v*) vn]
+            //            = 1/3 δt² k d vn³ + 1/2 δt k (d ϕ* - δt - d δt v*) + δt k (-ϕ* + δt v*) vn
+            //            = N_A vn³ + N_B vn² + N_C vn
+
             // where N_A = 1/3 δt² k d,
-            //       N_B = 1/2 δt k (d ϕ* - δt) 
-            //       N_C = δt k * (-ϕ*)
+            //       N_B = 1/2 δt k (d ϕ* - δt - d δt v*) 
+            //       N_C = δt k * (-ϕ* + δt v*)
             const T N_A = T(1. / 3.) * dt * dt * stiffness * damping;
-            const T N_B = T(1. / 2.) * dt * stiffness * (-damping * phi_star - dt);
-            const T N_C = dt * stiffness * phi_star;
+            const T N_B = T(1. / 2.) * dt * stiffness * (-damping * phi_star - dt - damping * dt * v_star[kZAxis]);
+            const T N_C = dt * stiffness * (phi_star + dt * v_star[kZAxis]);
             const T N_vn = N_A * min_vn_v_hat * min_vn_v_hat * min_vn_v_hat 
-                       + N_B * min_vn_v_hat * min_vn_v_hat 
-                       + N_C * min_vn_v_hat;
+                         + N_B * min_vn_v_hat * min_vn_v_hat 
+                         + N_C * min_vn_v_hat;
             
             // ln(vn) = −N(vn),
             const T ln = -N_vn; 
