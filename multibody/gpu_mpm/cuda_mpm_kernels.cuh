@@ -249,6 +249,9 @@ __global__ void calc_fem_state_and_force_kernel(
         ctF[6] = tangent_F[4];
         ctF[7] = tangent_F[5];
 
+        // the previous time step cotangent F
+        const T cotangent_n[3] = {F[2], F[5], F[8]};
+
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             F[i] = ctF[i];
@@ -263,8 +266,7 @@ __global__ void calc_fem_state_and_force_kernel(
 
         // technical document .(15) part 2
         T VP_local_c2[3] = { VP_local[2], VP_local[5], VP_local[8] };
-        T ctF_c2[3] = { ctF[2], ctF[5], ctF[8] };
-        outer_product<3, T>(VP_local_c2, ctF_c2, &taus[face_pid * 9]);
+        outer_product<3, T>(VP_local_c2, cotangent_n, &taus[face_pid * 9]);;
 
         T grad_N_hat[6] = {
             T(-1.), T(1.), T(0.),

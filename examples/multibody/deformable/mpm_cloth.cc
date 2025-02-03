@@ -53,7 +53,7 @@ DEFINE_string(contact_approximation, "sap",
 // The area of a particle is about 1e-2m * 1e-2m. So C*Area = 1e5 * 1e-4 = 1e1 = 10 Pa*m = 10 N/m
 
 // NOTE (changyu): here we choose k=100 for smaller amount of penetration (0.01mm or 1e-5m).
-DEFINE_double(stiffness, 10.0, "Contact Stiffness.");
+DEFINE_double(stiffness, 100.0, "Contact Stiffness.");
 DEFINE_double(friction, 0.0, "Contact Friction.");
 DEFINE_double(damping, 1e-5,
     "Hunt and Crossley damping for the deformable body, only used when "
