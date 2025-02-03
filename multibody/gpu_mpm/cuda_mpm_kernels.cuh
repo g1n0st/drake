@@ -1511,8 +1511,11 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
 
             // normal component (Compliant Contact)
 
+            // we need to find the v such that −ϕ = 0
+            // Starting with −ϕ = −ϕ* - dt * (v - v*)
+            // Setting -ϕ = 0 and solving for v, we get v = (-ϕ*) / dt + v*
             // vˆ = min(−ϕ* / δt, 1 / d),
-            T v_hat = min(phi_star / dt, T(1.) / damping);
+            T v_hat = min(phi_star / dt + v_star[kZAxis], T(1.) / damping);
 
             // N(vn) = N+(min(vn, vˆ); f*)
             const T min_vn_v_hat = min(v_hat, v[kZAxis]);
