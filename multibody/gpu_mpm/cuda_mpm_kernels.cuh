@@ -1190,11 +1190,6 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         const T* particle_v = &contact_vel[idx * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
-        // TODO (changyu): const GpuT phi_star = -(
-        // static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
-        //     (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
-        //     mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
-        //   );
         T phi_star = -contact_dist[idx];
 
         T v_star_rel_W[3] = {
