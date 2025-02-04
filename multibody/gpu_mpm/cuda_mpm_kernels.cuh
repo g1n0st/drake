@@ -77,17 +77,79 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
     T R[4];
     matmulT<2, 2, 2, T>(U, V, R);
     T J = determinant2(F);
-    T Finv[4];
-    inverse2(F, Finv);
-    dphi_dF[0] = T(2.) * config::MU<T> * (F[0] - R[0]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[0];
-    dphi_dF[1] = T(2.) * config::MU<T> * (F[1] - R[1]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[2];
-    dphi_dF[2] = T(2.) * config::MU<T> * (F[2] - R[2]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[1];
-    dphi_dF[3] = T(2.) * config::MU<T> * (F[3] - R[3]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[3];
+    T JFinvT[4];
+    cofactor_matrix_2x2(F, JFinvT);
+
+    // P.noalias() = (T)2 * mu * (s.F - s.R) + lambda * (s.J - 1) * s.JFinvT;
+    dphi_dF[0] = T(2.) * config::MU<T> * (F[0] - R[0]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[0];
+    dphi_dF[1] = T(2.) * config::MU<T> * (F[1] - R[1]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[1];
+    dphi_dF[2] = T(2.) * config::MU<T> * (F[2] - R[2]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[2];
+    dphi_dF[3] = T(2.) * config::MU<T> * (F[3] - R[3]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[3];
 }
 
 template<typename T>
 __device__ __host__
-inline void compute_dphi_dF(const T* F, T* dphi_dF) {
+inline void fixed_corotated_PK1_derivative_2D(const T* F, T* dPdF) {
+    T U[4], sig[4], V[4];
+    svd2x2(F, U, sig, V);
+    T R[4], S[4], tmp[4];
+    matmulT<2, 2, 2, T>(U, V, R);
+    matmul<2, 2, 2, T>(V, sig, tmp);
+    matmulT<2, 2, 2, T>(tmp, V, S);
+    T J = determinant2(F);
+    T JFinvT[4];
+    cofactor_matrix_2x2(F, JFinvT);
+
+    T JFinvT_vec[4] = {
+        JFinvT[0 * 2 + 0],
+        JFinvT[1 * 2 + 0],
+        JFinvT[0 * 2 + 1],
+        JFinvT[1 * 2 + 1]
+    };
+    // dPdF.noalias() = lambda * vec(s.JFinvT) * vec(s.JFinvT).transpose();
+    outer_product<4, T>(JFinvT_vec, JFinvT_vec, dPdF);
+    for (int i = 0; i < 16; ++i) dPdF[i] *= config::LAMBDA<T>;
+
+    // dPdF.diagonal().array() += 2 * mu;
+    for (int i = 0; i < 4; ++i) dPdF[i * 4 + i] += T(2.) * config::MU<T>;
+
+    // addScaledRotationalDerivative(s.R, s.S, -2 * mu, dPdF);
+    add_scaled_rotational_derivative_2x2(R, S, -T(2.) * config::MU<T>, dPdF);
+
+    // addScaledCofactorMatrixDerivative(s.F, lambda * (s.J - (T)1), dPdF);
+    add_scaled_cofactor_matrix_derivative_2x2(F, config::LAMBDA<T> * (J - T(1.)), dPdF);
+}
+
+template<typename T>
+__device__ __host__
+inline void fixed_corotated_PK1_differential_2D(const T *F, const T* dF, T* dP) {
+    T U[4], sig[4], V[4];
+    svd2x2(F, U, sig, V);
+    T R[4], S[4], tmp[4];
+    matmulT<2, 2, 2, T>(U, V, R);
+    matmul<2, 2, 2, T>(V, sig, tmp);
+    matmulT<2, 2, 2, T>(tmp, V, S);
+    T J = determinant2(F);
+    T JFinvT[4];
+    cofactor_matrix_2x2(F, JFinvT);
+
+    // dP.noalias() = lambda * s.JFinvT.cwiseProduct(dF).sum() * s.JFinvT;
+    T JFinvT_cwiseProduct_dF_sum = JFinvT[0] * dF[0] + JFinvT[1] * dF[1] + JFinvT[2] * dF[2] + JFinvT[3] * dF[3];
+    for (int i = 0; i < 4; ++i) dP[i] = config::LAMBDA<T> * JFinvT_cwiseProduct_dF_sum * JFinvT[i];
+
+    // dP += 2 * mu * dF;
+    for (int i = 0; i < 4; ++i) dP[i] += T(2.) * config::MU<T> * dF[i];
+
+    // addScaledRotationalDifferential(s.R, s.S, dF, -2 * mu, dP);
+    add_scaled_rotational_differential_2x2(R, S, dF, -T(2.) * config::MU<T>, dP);
+
+    // addScaledCofactorMatrixDifferential(s.F, dF, lambda * (s.J - (T)1), dP);
+    add_scaled_cofactor_matrix_differential_2x2(F, dF, config::LAMBDA<T> * (J - T(1.)), dP);
+}
+
+template<typename T>
+__device__ __host__
+inline void first_piola(const T* F, T* dphi_dF) {
     // A00=0, A01=1, A02=2
     // A10=3, A11=4, A12=5
     // A20=6, A21=7, A22=8
@@ -151,6 +213,130 @@ inline void compute_dphi_dF(const T* F, T* dphi_dF) {
     dphi_dF[6] = P_plane[6] + P_nonplane[6];
     dphi_dF[7] = P_plane[7] + P_nonplane[7];
     dphi_dF[8] = P_plane[8] + P_nonplane[8];
+}
+
+// Phat = Phat(R)
+// P(F) = Q(F) Phat(R) = Q(F) Phat(R(F))
+// dP(F) = dQ(F) Phat(R(F)) + Q(F) dPhatdR(R(F)):dRdF(F):dF
+//       = dQ(F) Phat(R(F)) + Q(F) (dPhatdR(R(F)):dR)
+//       = dQ(F) Phat(R(F)) + Q(F) dPhat(R(F))
+template<typename T>
+__device__ __host__
+inline void first_piola_differential(const T* F, const T* dF, T* dP) {
+    // updateScratch(const TM& new_F, Scratch& s) { ...
+    // A00=0, A01=1, A02=2
+    // A10=3, A11=4, A12=5
+    // A20=6, A21=7, A22=8
+    T Q[9], R[9];
+    givens_QR<3, 3, T>(F, Q, R);
+    T R_hat[4] = {
+        R[0], R[1],
+        R[3], R[4]
+    };
+    T dphi_dF_2x2[4];
+    fixed_corotated_PK1_2D(R_hat, dphi_dF_2x2);
+    T P_hat[9] = {
+        dphi_dF_2x2[0], dphi_dF_2x2[1], 0,
+        dphi_dF_2x2[2], dphi_dF_2x2[3], 0,
+        0             ,              0, 0
+    };
+    T P_plane[9];
+    matmul<3, 3, 3, T>(Q, P_hat, P_plane);
+
+    T rr = R[2] * R[2] + R[5] * R[5];
+    T g = config::GAMMA<T> * rr;
+    T gp = config::GAMMA<T>;
+    T fp = 0;
+    if (R[8] < T(1.)) {
+        fp = -config::K<T> * (T(1.) - R[8]) * (T(1.) - R[8]);
+    }
+
+    T A[9];
+    A[0] = gp * R[2] * R[2];
+    A[1] = gp * R[2] * R[5];
+    A[2] = gp * R[8] * R[2];
+    A[4] = gp * R[5] * R[5];
+    A[5] = gp * R[8] * R[8];
+    A[8] = fp * R[8];
+    A[3] = A[1];
+    A[6] = A[2];
+    A[7] = A[5];
+
+    T P_nonplane[9];
+    T Rinv[9], QA[9];
+    inverse3(R, Rinv);
+    matmul<3, 3, 3, T>(Q, A, QA);
+    matmulT<3, 3, 3, T>(QA, Rinv, P_nonplane);
+    // ... }
+
+    // TM dQ, dR;
+    // EIGEN_EXT::QRDifferential(s.Q, s.R, dF, dQ, dR);
+    T dQ[9], dR[9];
+    QR_differential_3x3(Q, R, dF, dQ, dR);
+
+    // Matrix<T, 2, 2> dPhat;
+    // corotated.firstPiolaDifferential(s.corotated_scratch, dR.template topLeftCorner<2, 2>(), dPhat);
+    T dPhat[4];
+    T dR_hat[4] = {
+        dR[0], dR[1],
+        dR[3], dR[4]
+    };
+    fixed_corotated_PK1_differential_2D(R_hat, dR_hat, dPhat);
+
+    // TM dPhat_full = TM::Zero();
+    T dPhat_full[9];
+    for (int i = 0; i < 9; ++i) dPhat_full[i] = 0;
+
+    // dPhat_full.template topLeftCorner<2, 2>() = dPhat;
+    dPhat_full[0] = dPhat[0];
+    dPhat_full[1] = dPhat[1];
+    dPhat_full[3] = dPhat[2];
+    dPhat_full[4] = dPhat[3];
+
+    // dP = s.Q * dPhat_full + dQ * s.Phat;
+    T QdPhat_full[9], dQPhat[9];
+    matmul<3, 3, 3, T>(Q, dPhat_full, QdPhat_full);
+    matmul<3, 3, 3, T>(dQ, P_hat, dQPhat);
+    for (int i = 0; i < 9; ++i) dP[i] = QdPhat_full[i] + dQPhat[i];
+
+    // TM dA;
+    T dA[9];
+
+    // T gp = gamma; // dgp = 0;
+    // T fp = 0, dfp = 0;
+    // if (s.R(2, 2) < (T)1) {
+    //     T zz = 1 - s.R(2, 2);
+    //     fp = -k * sqr(zz);
+    //     dfp = 2 * k * zz * dR(2, 2);
+    // }
+    T dfp = 0; // NOTE: others defined above
+    if (R[8] < T(1.)) {
+        T zz = T(1.) - R[8];
+        dfp = T(2.) * config::K<T> * zz * dR[8];
+    }
+
+    dA[0] = gp * T(2.) * R[2] * dR[2];
+    dA[1] = gp * (dR[2] * R[5] + R[2] * dR[5]);
+    dA[2] = gp * (dR[8] * R[2] + R[8] * dR[2]);
+    dA[4] = gp * T(2.) * R[5] * dR[5];
+    dA[5] = gp * (dR[8] * R[5] + R[8] * dR[5]);
+    dA[8] = dfp * R[8] + fp * dR[8];
+    dA[3] = dA[1];
+    dA[6] = dA[2];
+    dA[7] = dA[5];
+    
+    // dP += (s.Q * dA - s.P_nonplane * dR.transpose()) * s.R_inverse.transpose() - s.Q * dQ.transpose() * s.P_nonplane;
+    T Q_dA[9], P_nonplane_dRT[9], Q_dA_minus_P_nonplane_dRt[9], Q_dA_minus_P_nonplane_dRt_RinvT[9];
+    matmul<3, 3, 3, T>(Q, dA, Q_dA);
+    matmulT<3, 3, 3, T>(P_nonplane, dR, P_nonplane_dRT);
+    for (int i = 0; i < 9; ++i) Q_dA_minus_P_nonplane_dRt[i] = Q_dA[i] -  P_nonplane_dRT[i];
+    matmulT<3, 3, 3, T>(Q_dA_minus_P_nonplane_dRt, Rinv, Q_dA_minus_P_nonplane_dRt_RinvT);
+
+    T Q_dQT[9], Q_dQT_P_nonplane[9];
+    matmulT<3, 3, 3, T>(Q, dQ, Q_dQT);
+    matmul<3, 3, 3, T>(Q_dQT, P_nonplane, Q_dQT_P_nonplane);
+
+    for (int i = 0; i < 9; ++i) dP[i] += Q_dA_minus_P_nonplane_dRt_RinvT[i] - Q_dQT_P_nonplane[i];
 }
 
 template<typename T>
@@ -277,7 +463,7 @@ __global__ void calc_fem_state_and_force_kernel(
         }
 
         T VP_local[9];
-        compute_dphi_dF(ctF, VP_local);
+        first_piola(ctF, VP_local);
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             VP_local[i] *= volumes[face_pid];

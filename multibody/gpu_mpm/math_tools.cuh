@@ -510,6 +510,133 @@ inline __host__ __device__ void givens_QR(const T *A, T *Q, T *R) {
 }
 
 template<class T>
+inline __host__ __device__ void QR_differential_3x3(const T *Q, const T *R, const T *dF, T *dQ, T *dR) {
+    // TM QtdF = Q.transpose() * dF;
+    T QtdF[9], Qt[9];
+    transpose<3, 3, T>(Q, Qt);
+    matmul<3, 3, 3, T>(Qt, dF, QtdF);
+
+    // T w3 = QtdF(1, 0) / R(0, 0);
+    // T w2 = -QtdF(2, 0) / R(0, 0);
+    // T w1 = (QtdF(2, 1) + w2 * R(0, 1)) / R(1, 1);
+    const T w3 = QtdF[1 * 3 + 0] / R[0 * 3 + 0];
+    const T w2 = -QtdF[2 * 3 + 0] / R[0 * 3 + 0];
+    const T w1 = (QtdF[2 * 3 + 1] + w2 * R[0 * 3 + 1]) / R[1 * 3 + 1];
+
+    // TM QtdQ;
+    // QtdQ << 0, -w3, w2, w3, 0, -w1, -w2, w1, 0;
+    T QtdQ[9] = {
+        0, -w3, w2,
+        w3, 0, -w1,
+        -w2, w1, 0
+    };
+
+    // dQ = Q * QtdQ;
+    matmul<3, 3, 3, T>(Q, QtdQ, dQ);
+
+    // dR = Q.transpose() * dF - QtdQ * R;
+    T QtdQR[9];
+    matmul<3, 3, 3, T>(QtdQ, R, QtdQR);
+    for (int i = 0; i < 9; ++i) dR[i] = QtdF[i] - QtdQR[i];
+}
+
+template<class T>
+inline __host__ __device__ void cofactor_matrix_2x2(const T *F, T *A) {
+    // A(0, 0) = F(1, 1);
+    A[0 * 2 + 0] = F[1 * 2 + 1];
+    // A(1, 0) = -F(0, 1);
+    A[1 * 2 + 0] = -F[0 * 2 + 1];
+    // A(0, 1) = -F(1, 0);
+    A[0 * 2 + 1] = -F[1 * 2 + 0];
+    // A(1, 1) = F(0, 0);
+    A[1 * 2 + 1] = F[0 * 2 + 0];
+}
+
+/**
+   \brief add scaled 2X2 rotational Derivative (dRdF)
+   \param[in] R Rotation matrix of F
+   \param[in] S Symmetric matrix of F
+   \param[in] scale The scale factor
+   \param[out] M The matrix to add scale * dRdF to
+*/
+
+template <class T>
+__device__ __host__
+void add_scaled_rotational_derivative_2x2(const T* R, const T* S, const T scale, T* M) {
+    // T trace_s = S.trace();
+    const T trace_s = S[0 * 2 + 0] + S[1 * 2 + 1];
+    const T scale_over_trace = scale / trace_s;
+    // Matrix<T, 2, 2> RE;
+    // RE << -R(0, 1), R(0, 0), -R(1, 1), R(1, 0);
+    // Vector<T, 4> vec_RE = vec(RE);
+    const T vec_RE[4] = {
+        -R[0 * 2 + 1], -R[1 * 2 + 1], R[0 * 2 + 0], R[1 * 2 + 0]
+    };
+
+    // M.noalias() += scale_over_trace * (vec_RE * (vec_RE.transpose()));
+    #pragma unroll
+    for (int i = 0; i < 4; ++i)
+        #pragma unroll
+        for (int j = 0; j < 4; ++j)
+            M[i * 4 + j] += scale_over_trace * vec_RE[i] * vec_RE[j];
+}
+
+template <class T>
+__device__ __host__
+void add_scaled_rotational_differential_2x2(const T* R, const T* S, const T* dF, const T scale, T* M) {
+    // T trace_s = S.trace();
+    const T trace_s = S[0 * 2 + 0] + S[1 * 2 + 1];
+
+    //Majorly exploited but basically derived from "rotationalDifferential'
+    // T omega = (R(0, 0) * dF(0, 1) + R(1, 0) * dF(1, 1) - R(0, 1) * dF(0, 0) - R(1, 1) * dF(1, 0)) / trace_s * scale;
+    const T omega = (R[0 * 2 + 0] * dF[0 * 2 + 1] 
+                   + R[1 * 2 + 0] * dF[1 * 2 + 1] 
+                   - R[0 * 2 + 1] * dF[0 * 2 + 0] 
+                   - R[1 * 2 + 1] * dF[1 * 2 + 0]) / trace_s * scale;
+
+    // M(0, 0) -= omega * R(0, 1);
+    // M(1, 0) -= omega * R(1, 1);
+    // M(0, 1) += omega * R(0, 0);
+    // M(1, 1) += omega * R(1, 0);
+    M[0 * 2 + 0] -= omega * R[0 * 2 + 1];
+    M[1 * 2 + 0] -= omega * R[1 * 2 + 1];
+    M[0 * 2 + 1] += omega * R[0 * 2 + 0];
+    M[1 * 2 + 1] += omega * R[1 * 2 + 0];
+}
+
+/**
+   \brief 2X2 add scaled d( JF^(-T) )/dF
+   \param[in] F input matrix
+   \param[in] T scale
+   \param[in,out] result d( JF^(-T) )/dF
+*/
+template <class T>
+__device__ __host__
+void add_scaled_cofactor_matrix_derivative_2x2(const T* F, const T scale, T* result) {
+    // result(3, 0) += scale;
+    result[3 * 4 + 0] += scale;
+    // result(2, 1) -= scale;
+    result[2 * 4 + 1] -= scale;
+    // result(1, 2) -= scale;
+    result[1 * 4 + 2] -= scale;
+    // result(0, 3) += scale;
+    result[0 * 4 + 3] += scale;
+}
+
+template <class T>
+__device__ __host__
+void add_scaled_cofactor_matrix_differential_2x2(const T* F, const T* dF, const T scale, T* M) {
+    // M(0, 0) += scale * dF(1, 1);
+    M[0 * 2 + 0] += scale * dF[1 * 2 + 1];
+    // M(1, 0) -= scale * dF(0, 1);
+    M[1 * 2 + 0] -= scale * dF[0 * 2 + 1];
+    // M(0, 1) -= scale * dF(1, 0);
+    M[0 * 2 + 1] -= scale * dF[1 * 2 + 0];
+    // M(1, 1) += scale * dF(0, 0);
+    M[1 * 2 + 1] += scale * dF[0 * 2 + 0];
+}
+
+template<class T>
 inline __host__ __device__ void polar_decompose2x2(const T *A, T *U, T *P) {
     U[0] = T(1); U[1] = T(0);
     U[2] = T(0); U[3] = T(1);
@@ -677,6 +804,17 @@ inline __host__ __device__ bool cholesky_solve3(const T* H, const T* b, T* x) {
     return true;
 }
 
+template<int n, int m, typename T>
+__device__ __host__
+inline void watch_host(const char *name, const T *M) {
+    printf("%s\n", name);
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < m; j++) {
+            printf("%.5f ", M[i*m+j]);
+        }
+        printf("\n");
+    }
+}
 
 template<int n, int m, typename T>
 __device__ __host__
