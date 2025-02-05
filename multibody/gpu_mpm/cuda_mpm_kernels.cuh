@@ -178,11 +178,21 @@ inline void first_piola(const T* F, T* dphi_dF) {
     }
 
     T A[9];
+    // TM A = TM::Zero();
+    // A(0, 0) = gp * sqr(s.R(0, 2));
+    // A(0, 1) = gp * s.R(0, 2) * s.R(1, 2);
+    // A(0, 2) = gp * s.R(2, 2) * s.R(0, 2);
+    // A(1, 1) = gp * sqr(s.R(1, 2));
+    // A(1, 2) = gp * s.R(2, 2) * s.R(1, 2);
+    // A(2, 2) = fp * s.R(2, 2);
+    // A(1, 0) = A(0, 1);
+    // A(2, 0) = A(0, 2);
+    // A(2, 1) = A(1, 2);
     A[0] = gp * R[2] * R[2];
     A[1] = gp * R[2] * R[5];
     A[2] = gp * R[8] * R[2];
     A[4] = gp * R[5] * R[5];
-    A[5] = gp * R[8] * R[8];
+    A[5] = gp * R[8] * R[5];
     A[8] = fp * R[8];
     A[3] = A[1];
     A[6] = A[2];
@@ -242,11 +252,21 @@ inline void first_piola_differential(const T* F, const T* dF, T* dP) {
     }
 
     T A[9];
+    // TM A = TM::Zero();
+    // A(0, 0) = gp * sqr(s.R(0, 2));
+    // A(0, 1) = gp * s.R(0, 2) * s.R(1, 2);
+    // A(0, 2) = gp * s.R(2, 2) * s.R(0, 2);
+    // A(1, 1) = gp * sqr(s.R(1, 2));
+    // A(1, 2) = gp * s.R(2, 2) * s.R(1, 2);
+    // A(2, 2) = fp * s.R(2, 2);
+    // A(1, 0) = A(0, 1);
+    // A(2, 0) = A(0, 2);
+    // A(2, 1) = A(1, 2);
     A[0] = gp * R[2] * R[2];
     A[1] = gp * R[2] * R[5];
     A[2] = gp * R[8] * R[2];
     A[4] = gp * R[5] * R[5];
-    A[5] = gp * R[8] * R[8];
+    A[5] = gp * R[8] * R[5];
     A[8] = fp * R[8];
     A[3] = A[1];
     A[6] = A[2];
