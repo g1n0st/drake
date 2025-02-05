@@ -69,6 +69,10 @@ __global__ void initialize_fem_state_kernel(
     }
 }
 
+/**
+   \param[in] F \in 2x2
+   \param[out] dphi_dF \in 2x2
+*/
 template<typename T>
 __device__ __host__
 inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
@@ -87,39 +91,11 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
     dphi_dF[3] = T(2.) * config::MU<T> * (F[3] - R[3]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[3];
 }
 
-template<typename T>
-__device__ __host__
-inline void fixed_corotated_PK1_derivative_2D(const T* F, T* dPdF) {
-    T U[4], sig[4], V[4];
-    svd2x2(F, U, sig, V);
-    T R[4], S[4], tmp[4];
-    matmulT<2, 2, 2, T>(U, V, R);
-    matmul<2, 2, 2, T>(V, sig, tmp);
-    matmulT<2, 2, 2, T>(tmp, V, S);
-    T J = determinant2(F);
-    T JFinvT[4];
-    cofactor_matrix_2x2(F, JFinvT);
-
-    T JFinvT_vec[4] = {
-        JFinvT[0 * 2 + 0],
-        JFinvT[1 * 2 + 0],
-        JFinvT[0 * 2 + 1],
-        JFinvT[1 * 2 + 1]
-    };
-    // dPdF.noalias() = lambda * vec(s.JFinvT) * vec(s.JFinvT).transpose();
-    outer_product<4, T>(JFinvT_vec, JFinvT_vec, dPdF);
-    for (int i = 0; i < 16; ++i) dPdF[i] *= config::LAMBDA<T>;
-
-    // dPdF.diagonal().array() += 2 * mu;
-    for (int i = 0; i < 4; ++i) dPdF[i * 4 + i] += T(2.) * config::MU<T>;
-
-    // addScaledRotationalDerivative(s.R, s.S, -2 * mu, dPdF);
-    add_scaled_rotational_derivative_2x2(R, S, -T(2.) * config::MU<T>, dPdF);
-
-    // addScaledCofactorMatrixDerivative(s.F, lambda * (s.J - (T)1), dPdF);
-    add_scaled_cofactor_matrix_derivative_2x2(F, config::LAMBDA<T> * (J - T(1.)), dPdF);
-}
-
+/**
+   \param[in] F \in 2x2
+   \param[in] dF \in 2x2
+   \param[out] dP \in 2x2
+*/
 template<typename T>
 __device__ __host__
 inline void fixed_corotated_PK1_differential_2D(const T *F, const T* dF, T* dP) {
@@ -147,6 +123,10 @@ inline void fixed_corotated_PK1_differential_2D(const T *F, const T* dF, T* dP) 
     add_scaled_cofactor_matrix_differential_2x2(F, dF, config::LAMBDA<T> * (J - T(1.)), dP);
 }
 
+/**
+   \param[in] F \in 3x3
+   \param[out] dphi_dF \in 3x3
+*/
 template<typename T>
 __device__ __host__
 inline void first_piola(const T* F, T* dphi_dF) {
@@ -215,6 +195,11 @@ inline void first_piola(const T* F, T* dphi_dF) {
     dphi_dF[8] = P_plane[8] + P_nonplane[8];
 }
 
+/**
+   \param[in] F \in 3x3
+   \param[in] dF \in 3x3
+   \param[out] dP \in 3x3
+*/
 // Phat = Phat(R)
 // P(F) = Q(F) Phat(R) = Q(F) Phat(R(F))
 // dP(F) = dQ(F) Phat(R(F)) + Q(F) dPhatdR(R(F)):dRdF(F):dF
