@@ -496,6 +496,98 @@ __global__ void calc_fem_state_and_force_kernel(
     }
 }
 
+template<typename T>
+__global__ void calc_implicit_fem_state_and_differential_kernel(
+    const size_t n_faces,
+    const int* indices,
+    const int* index_mappings,
+    const T* volumes,
+    const T* Dm_inverses,
+    const T* deformation_gradients,
+    
+    // implicit states
+    const T* dvs,
+    const T* gradDvs,
+    T *dforces,
+    T* dtaus) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    int face_pid = index_mappings[idx];
+    if (idx < n_faces) {
+        int v0 = index_mappings[indices[idx * 3 + 0]];
+        int v1 = index_mappings[indices[idx * 3 + 1]];
+        int v2 = index_mappings[indices[idx * 3 + 2]];
+
+        const T* F_n = &deformation_gradients[idx * 9];
+        const T* gradDv = &gradDvs[face_pid * 9];
+
+        // tangent_dF
+        T d0[3], d1[3];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            d0[i] = dvs[v1 * 3 + i] - dvs[v0 * 3 + i];
+            d1[i] = dvs[v2 * 3 + i] - dvs[v0 * 3 + i];
+        }
+        T ds[6] {
+            d0[0], d1[0],
+            d0[1], d1[1],
+            d0[2], d1[2]
+        };
+
+        T tangent_dF[6];
+        const T* Dm_inverse = &Dm_inverses[idx * 4];
+        matmul<3, 2, 2>(ds, Dm_inverse, tangent_dF);
+
+        // cotangent_dF
+        T ctF_n_c2[3] = { F_n[2], F_n[5], F_n[8] };
+        T ct_dF[3];
+        matmul<3, 3, 1, T>(gradDv, ctF_n_c2, ct_dF);
+
+        // dF
+        // dF << t_dF, ct_dF;
+        T dF[9] = {
+            tangent_dF[0], tangent_dF[1], ct_dF[0],
+            tangent_dF[2], tangent_dF[3], ct_dF[1],
+            tangent_dF[4], tangent_dF[5], ct_dF[2]
+        };
+
+        T VdP_local[9];
+        first_piola_differential(F_n, dF, VdP_local);
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            VdP_local[i] *= volumes[face_pid];
+        }
+
+        // technical document .(15) part 2
+        T VdP_local_c2[3] = { VdP_local[2], VdP_local[5], VdP_local[8] };
+        outer_product<3, T>(VdP_local_c2, ct_dF, &dtaus[face_pid * 9]);
+
+        T grad_N_hat[6] = {
+            T(-1.), T(1.), T(0.),
+            T(-1.), T(0.), T(1.)
+        };
+        T grad_N[6];
+        T Dm_inverse_T[4];
+        transpose<2, 2, T>(Dm_inverse, Dm_inverse_T);
+        matmul<2, 2, 3, T>(Dm_inverse_T, grad_N_hat, grad_N);
+        T VdP_local_c01[6] = { 
+            VdP_local[0], VdP_local[1],
+            VdP_local[3], VdP_local[4],
+            VdP_local[6], VdP_local[7]
+        };
+
+        T G[9];
+        matmul<3, 2, 3, T>(VdP_local_c01, grad_N, G);
+
+        // technical document .(15) part 1
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            atomicAdd(&dforces[v0 * 3 + i], -G[i * 3 + 0]);
+            atomicAdd(&dforces[v1 * 3 + i], -G[i * 3 + 1]);
+            atomicAdd(&dforces[v2 * 3 + i], -G[i * 3 + 2]);
+        }
+    }
+}
+
 __device__ __host__
 inline std::uint32_t contract_bits(std::uint32_t v) noexcept {
     v &= 0x09249249u;
@@ -618,7 +710,7 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     }
 }
 
-template<typename T, int BLOCK_DIM, bool APPLY_GRAVITY=true, bool APPLY_ELASTICITY=true>
+template<typename T, int BLOCK_DIM, bool APPLY_GRAVITY=true, bool APPLY_ELASTICITY=true, bool APPLY_KDV=false>
 __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
@@ -683,10 +775,13 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
         T B[9];
         const T* C = &affine_matrices[idx * 9];
-        const T* stress = &taus[idx * 9];
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            if constexpr (APPLY_ELASTICITY) {
+            if constexpr (APPLY_KDV) {
+                const T* dstress = &taus[idx * 9];
+                B[i] = (-config::G_D_INV<T>) * dstress[i];
+            } else if constexpr (APPLY_ELASTICITY) {
+                const T* stress = &taus[idx * 9];
                 B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
             } else {
                 B[i] = C[i] * mass;
@@ -709,10 +804,17 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
-                    val[0] = mass * weight;
-                    val[1] = vel[0] * val[0];
-                    val[2] = vel[1] * val[0];
-                    val[3] = vel[2] * val[0];
+                    if constexpr (!APPLY_KDV) {
+                        val[0] = mass * weight;
+                        val[1] = vel[0] * val[0];
+                        val[2] = vel[1] * val[0];
+                        val[3] = vel[2] * val[0];
+                    } else {
+                        val[0] = 0;
+                        val[1] = 0;
+                        val[2] = 0;
+                        val[3] = 0;
+                    }
                     // apply gravity
                     if constexpr (APPLY_GRAVITY) {
                         val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
@@ -721,6 +823,12 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
                     val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
                     val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
+                    if constexpr (APPLY_KDV) {
+                        const T* dforce = &forces[idx * 3];
+                        val[1] += dforce[0] * weight;
+                        val[2] += dforce[1] * weight;
+                        val[3] += dforce[2] * weight;
+                    }
                     if constexpr (APPLY_ELASTICITY) {
                         const T* force = &forces[idx * 3];
                         val[1] += force[0] * dt * weight;
@@ -742,7 +850,9 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                         const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
                         const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
                         g_touched_flags[target_grid_index] = 1;
-                        atomicAdd(&(g_masses[target_cell_index]), val[0]);
+                        if constexpr (!APPLY_KDV) {
+                            atomicAdd(&(g_masses[target_cell_index]), val[0]);
+                        }
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[1]);
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 1]), val[2]);
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 2]), val[3]);
@@ -837,6 +947,20 @@ __global__ void clean_grid_contact_kernel(
         for (int i = 0; i < 9; ++i) g_Hess[cell_idx * 9 + i] = 0;
         g_E0[cell_idx] = 0;
         g_E1[cell_idx] = 0;
+    }
+}
+
+template<typename T>
+__global__ void clean_grid_Kdv_kernel(
+    const uint32_t touched_cells_cnt,
+    const uint32_t* g_touched_ids,
+    T* g_Kdv) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) g_Kdv[cell_idx * 3 + i] = 0;
     }
 }
 
@@ -1179,6 +1303,106 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
             // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
         }
+    }
+}
+
+template<typename T, int BLOCK_DIM>
+__global__ void grid_to_particle_dv_transfer_kernel(const size_t n_particles,
+    const T* positions, 
+    T* dvs,
+    T* gradDvs,
+    const T* g_momentum,
+    const T* g_Dir,
+    const T* g_v_star,
+    const T global_alpha) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    // In [Fei et.al 2021],
+    // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
+    // (instead of registers), although none of them is shared between threads. 
+    // This choice increases performance, particularly when the number of threads is large (§6.2.5).
+    __shared__ T weights[BLOCK_DIM][3][3];
+
+    if (idx < n_particles) {
+        uint32_t base[3] = {
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+        };
+        T fx[3] = {
+            positions[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+        };
+        // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            weights[threadIdx.x][0][i] = T(0.5) * (T(1.5) - fx[i]) * (T(1.5) - fx[i]);
+            weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
+            weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
+        }
+
+        T dv[3];
+        T gradDv[9];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            dv[i] = 0;
+        }
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            gradDv[i] = 0;
+        }
+
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            #pragma unroll
+            for (int j = 0; j < 3; ++j) {
+                #pragma unroll
+                for (int k = 0; k < 3; ++k) {
+                    T xi_minus_xp[3] = {
+                        (i - fx[0]),
+                        (j - fx[1]),
+                        (k - fx[2])
+                    };
+
+                    const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                    const T g_v[3] = {
+                        g_momentum[target_cell_index * 3 + 0] + global_alpha * g_Dir[target_cell_index * 3 + 0],
+                        g_momentum[target_cell_index * 3 + 1] + global_alpha * g_Dir[target_cell_index * 3 + 1],
+                        g_momentum[target_cell_index * 3 + 2] + global_alpha * g_Dir[target_cell_index * 3 + 2]
+                    };
+
+                    T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
+
+                    dv[0] += weight * (g_v[0] - g_v_star[target_cell_index * 3 + 0]);
+                    dv[1] += weight * (g_v[1] - g_v_star[target_cell_index * 3 + 1]);
+                    dv[2] += weight * (g_v[2] - g_v_star[target_cell_index * 3 + 2]);
+
+                    gradDv[0] += 4 * config::G_DX_INV<T> * weight * (g_v[0] - g_v_star[target_cell_index * 3 + 0]) * xi_minus_xp[0];
+                    gradDv[1] += 4 * config::G_DX_INV<T> * weight * (g_v[0] - g_v_star[target_cell_index * 3 + 0]) * xi_minus_xp[1];
+                    gradDv[2] += 4 * config::G_DX_INV<T> * weight * (g_v[0] - g_v_star[target_cell_index * 3 + 0]) * xi_minus_xp[2];
+                    gradDv[3] += 4 * config::G_DX_INV<T> * weight * (g_v[1] - g_v_star[target_cell_index * 3 + 1]) * xi_minus_xp[0];
+                    gradDv[4] += 4 * config::G_DX_INV<T> * weight * (g_v[1] - g_v_star[target_cell_index * 3 + 1]) * xi_minus_xp[1];
+                    gradDv[5] += 4 * config::G_DX_INV<T> * weight * (g_v[1] - g_v_star[target_cell_index * 3 + 1]) * xi_minus_xp[2];
+                    gradDv[6] += 4 * config::G_DX_INV<T> * weight * (g_v[2] - g_v_star[target_cell_index * 3 + 2]) * xi_minus_xp[0];
+                    gradDv[7] += 4 * config::G_DX_INV<T> * weight * (g_v[2] - g_v_star[target_cell_index * 3 + 2]) * xi_minus_xp[1];
+                    gradDv[8] += 4 * config::G_DX_INV<T> * weight * (g_v[2] - g_v_star[target_cell_index * 3 + 2]) * xi_minus_xp[2];
+                }
+            }
+        }
+
+        dvs[idx * 3 + 0] = dv[0];
+        dvs[idx * 3 + 1] = dv[1];
+        dvs[idx * 3 + 2] = dv[2];
+
+        gradDvs[idx * 9 + 0] = gradDv[0];
+        gradDvs[idx * 9 + 1] = gradDv[1];
+        gradDvs[idx * 9 + 2] = gradDv[2];
+        gradDvs[idx * 9 + 3] = gradDv[3];
+        gradDvs[idx * 9 + 4] = gradDv[4];
+        gradDvs[idx * 9 + 5] = gradDv[5];
+        gradDvs[idx * 9 + 6] = gradDv[6];
+        gradDvs[idx * 9 + 7] = gradDv[7];
+        gradDvs[idx * 9 + 8] = gradDv[8];
     }
 }
 
@@ -1841,12 +2065,15 @@ __global__ void update_global_energy_grid_kernel(
     const T* g_v_star,
     T* g_momentum,
     const T* g_Dir,
+    const T* g_Kdv0,
+    const T* g_Kdv,
     T* global_E0,
     T* global_E1,
     T* global_dE1,
     T* global_d2E1,
     const uint32_t g_color_mask,
     const T global_alpha,
+    const T dt,
     const bool eval_E0) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
@@ -1878,10 +2105,17 @@ __global__ void update_global_energy_grid_kernel(
             }
             if (eval_E0) {
                 atomicAdd(global_E0, T(0.5) * mass * norm_sqr<3>(v_current_rel));
+                // elasticity energy: 1/2 dt^2 ||dv||^2_K = 1/2 dt^2 * dv^T Kdv
+                const T* Kdv0 = &g_Kdv0[cell_idx * 3];
+                atomicAdd(global_E0, T(0.5) * dt * dt * dot<3>(v_current_rel, Kdv0));
             }
 
             // (1/2) * ||v_i - v_i^*||_M^2
             atomicAdd(global_E1, T(0.5) * mass * norm_sqr<3>(v_next_rel));
+            // elasticity energy: 1/2 dt^2 ||dv||^2_K = 1/2 dt^2 * dv^T Kdv
+            const T* Kdv = &g_Kdv[cell_idx * 3];
+            atomicAdd(global_E1, T(0.5) * dt * dt * dot<3>(v_next_rel, Kdv));
+
             if constexpr(SOLVE_DF_DDF) {
                 atomicAdd(global_dE1,  mass * dot<3>(v_next_rel, Dir));
                 atomicAdd(global_d2E1, mass * norm_sqr<3>(Dir));

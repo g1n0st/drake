@@ -78,6 +78,17 @@ public:
     const T* taus() const { return d_taus_; }
     T* deformation_gradients() { return d_deformation_gradients_; }
     const T* deformation_gradients() const { return d_deformation_gradients_; }
+
+    // NOTE (changyu): Implicit states
+    T* dforces() { return d_dforces_; }
+    const T* dforces() const { return d_dforces_; }
+    T* dtaus() { return d_dtaus_; }
+    const T* dtaus() const { return d_dtaus_; }
+    T* dvs() { return d_dvs_; }
+    const T* dvs() const { return d_dvs_; }
+    T* gradDvs() { return d_gradDvs_; }
+    const T* gradDvs() const { return d_gradDvs_; }
+
     T* Dm_inverses() { return d_Dm_inverses_; }
     const T* Dm_inverses() const { return d_Dm_inverses_; }
     int* indices() { return d_indices_; }
@@ -103,6 +114,8 @@ public:
     }
 
     T* grid_Hess() { return d_g_Hess_; }
+    T* grid_Kdv0() { return d_g_Kdv0_; }
+    T* grid_Kdv() { return d_g_Kdv_; }
     T* grid_Grad() { return d_g_Grad_; }
     T* grid_Dir() { return d_g_Dir_; }
     T* grid_alpha() { return d_g_alpha_; }
@@ -181,6 +194,10 @@ private:
     // scratch data
     T* d_forces_ = nullptr;       // size: n_faces + n_verts, NO sort
     T* d_taus_ = nullptr;         // size: n_faces + n_verts, NO sort
+    T* d_dforces_ = nullptr;       // size: n_faces + n_verts, NO sort
+    T* d_dtaus_ = nullptr;        // size: n_faces + n_verts, NO sort
+    T* d_dvs_ = nullptr;           // size: n_faces + n_verts, NO sort
+    T* d_gradDvs_ = nullptr;      // size: n_faces + n_verts, NO sort
     // NOTE (changyu): when particle data get sorted, 
     // the index mapping from element/vertex index to particle index will be changed,
     // need to be updated in `compute_sorted_state_kernel`.
@@ -255,6 +272,8 @@ private:
 
     // Grid device ptrs for solving coordinate descent
     T* d_g_Hess_ = nullptr;
+    T* d_g_Kdv0_ = nullptr;
+    T* d_g_Kdv_ = nullptr;
     T* d_g_Grad_ = nullptr;
     T* d_g_Dir_  = nullptr;
     T* d_g_alpha_ = nullptr;
