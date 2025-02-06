@@ -1314,7 +1314,8 @@ __global__ void grid_to_particle_dv_transfer_kernel(const size_t n_particles,
     const T* g_momentum,
     const T* g_Dir,
     const T* g_v_star,
-    const T global_alpha) {
+    const T global_alpha,
+    const bool apply_dir) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -1365,27 +1366,33 @@ __global__ void grid_to_particle_dv_transfer_kernel(const size_t n_particles,
                     };
 
                     const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-                    const T g_v[3] = {
-                        g_momentum[target_cell_index * 3 + 0] + global_alpha * g_Dir[target_cell_index * 3 + 0],
-                        g_momentum[target_cell_index * 3 + 1] + global_alpha * g_Dir[target_cell_index * 3 + 1],
-                        g_momentum[target_cell_index * 3 + 2] + global_alpha * g_Dir[target_cell_index * 3 + 2]
-                    };
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
-                    dv[0] += weight * (g_v[0] - g_v_star[target_cell_index * 3 + 0]);
-                    dv[1] += weight * (g_v[1] - g_v_star[target_cell_index * 3 + 1]);
-                    dv[2] += weight * (g_v[2] - g_v_star[target_cell_index * 3 + 2]);
+                    T g_v[3];
+                    if (apply_dir) {
+                        g_v[0] = g_Dir[target_cell_index * 3 + 0];
+                        g_v[1] = g_Dir[target_cell_index * 3 + 1];
+                        g_v[2] = g_Dir[target_cell_index * 3 + 2];
+                    } else {
+                        g_v[0] = (g_momentum[target_cell_index * 3 + 0] + global_alpha * g_Dir[target_cell_index * 3 + 0]) - g_v_star[target_cell_index * 3 + 0];
+                        g_v[1] = (g_momentum[target_cell_index * 3 + 1] + global_alpha * g_Dir[target_cell_index * 3 + 1]) - g_v_star[target_cell_index * 3 + 1];
+                        g_v[2] = (g_momentum[target_cell_index * 3 + 2] + global_alpha * g_Dir[target_cell_index * 3 + 2]) - g_v_star[target_cell_index * 3 + 2];
+                    }
 
-                    gradDv[0] += 4 * config::G_DX_INV<T> * weight * (g_v[0] - g_v_star[target_cell_index * 3 + 0]) * xi_minus_xp[0];
-                    gradDv[1] += 4 * config::G_DX_INV<T> * weight * (g_v[0] - g_v_star[target_cell_index * 3 + 0]) * xi_minus_xp[1];
-                    gradDv[2] += 4 * config::G_DX_INV<T> * weight * (g_v[0] - g_v_star[target_cell_index * 3 + 0]) * xi_minus_xp[2];
-                    gradDv[3] += 4 * config::G_DX_INV<T> * weight * (g_v[1] - g_v_star[target_cell_index * 3 + 1]) * xi_minus_xp[0];
-                    gradDv[4] += 4 * config::G_DX_INV<T> * weight * (g_v[1] - g_v_star[target_cell_index * 3 + 1]) * xi_minus_xp[1];
-                    gradDv[5] += 4 * config::G_DX_INV<T> * weight * (g_v[1] - g_v_star[target_cell_index * 3 + 1]) * xi_minus_xp[2];
-                    gradDv[6] += 4 * config::G_DX_INV<T> * weight * (g_v[2] - g_v_star[target_cell_index * 3 + 2]) * xi_minus_xp[0];
-                    gradDv[7] += 4 * config::G_DX_INV<T> * weight * (g_v[2] - g_v_star[target_cell_index * 3 + 2]) * xi_minus_xp[1];
-                    gradDv[8] += 4 * config::G_DX_INV<T> * weight * (g_v[2] - g_v_star[target_cell_index * 3 + 2]) * xi_minus_xp[2];
+                    dv[0] += weight * g_v[0];
+                    dv[1] += weight * g_v[1];
+                    dv[2] += weight * g_v[2];
+
+                    gradDv[0] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[0];
+                    gradDv[1] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[1];
+                    gradDv[2] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[2];
+                    gradDv[3] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[0];
+                    gradDv[4] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[1];
+                    gradDv[5] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[2];
+                    gradDv[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
+                    gradDv[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
+                    gradDv[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
                 }
             }
         }
@@ -2067,6 +2074,7 @@ __global__ void update_global_energy_grid_kernel(
     const T* g_Dir,
     const T* g_Kdv0,
     const T* g_Kdv,
+    const T* g_Kdir,
     T* global_E0,
     T* global_E1,
     T* global_dE1,
@@ -2117,8 +2125,13 @@ __global__ void update_global_energy_grid_kernel(
             atomicAdd(global_E1, T(0.5) * dt * dt * dot<3>(v_next_rel, Kdv));
 
             if constexpr(SOLVE_DF_DDF) {
+                const T* Kdir = &g_Kdir[cell_idx * 3];
+
                 atomicAdd(global_dE1,  mass * dot<3>(v_next_rel, Dir));
+                atomicAdd(global_dE1, T(0.5) * dt * dt * dot<3>(v_next_rel, Kdir));
+
                 atomicAdd(global_d2E1, mass * norm_sqr<3>(Dir));
+                atomicAdd(global_d2E1, T(0.5) * dt * dt * dot<3>(Dir, Kdir));
             }
         }
     }

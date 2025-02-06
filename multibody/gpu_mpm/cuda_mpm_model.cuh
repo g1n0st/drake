@@ -115,6 +115,7 @@ public:
 
     T* grid_Hess() { return d_g_Hess_; }
     T* grid_Kdv0() { return d_g_Kdv0_; }
+    T* grid_Kdir() { return d_g_Kdir_; }
     T* grid_Kdv() { return d_g_Kdv_; }
     T* grid_Grad() { return d_g_Grad_; }
     T* grid_Dir() { return d_g_Dir_; }
@@ -273,6 +274,7 @@ private:
     // Grid device ptrs for solving coordinate descent
     T* d_g_Hess_ = nullptr;
     T* d_g_Kdv0_ = nullptr;
+    T* d_g_Kdir_ = nullptr;
     T* d_g_Kdv_ = nullptr;
     T* d_g_Grad_ = nullptr;
     T* d_g_Dir_  = nullptr;
