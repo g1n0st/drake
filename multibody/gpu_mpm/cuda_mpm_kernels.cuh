@@ -1103,15 +1103,15 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                         new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
                         new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
                         if constexpr (POST_CONTACT) {
-                            old_C[0] += 4 * config::G_DX_INV<T> * weight * g_v_star[0] * xi_minus_xp[0];
-                            old_C[1] += 4 * config::G_DX_INV<T> * weight * g_v_star[0] * xi_minus_xp[1];
-                            old_C[2] += 4 * config::G_DX_INV<T> * weight * g_v_star[0] * xi_minus_xp[2];
-                            old_C[3] += 4 * config::G_DX_INV<T> * weight * g_v_star[1] * xi_minus_xp[0];
-                            old_C[4] += 4 * config::G_DX_INV<T> * weight * g_v_star[1] * xi_minus_xp[1];
-                            old_C[5] += 4 * config::G_DX_INV<T> * weight * g_v_star[1] * xi_minus_xp[2];
-                            old_C[6] += 4 * config::G_DX_INV<T> * weight * g_v_star[2] * xi_minus_xp[0];
-                            old_C[7] += 4 * config::G_DX_INV<T> * weight * g_v_star[2] * xi_minus_xp[1];
-                            old_C[8] += 4 * config::G_DX_INV<T> * weight * g_v_star[2] * xi_minus_xp[2];
+                            old_C[0] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[0];
+                            old_C[1] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[1];
+                            old_C[2] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[2];
+                            old_C[3] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[0];
+                            old_C[4] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[1];
+                            old_C[5] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[2];
+                            old_C[6] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[0];
+                            old_C[7] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[1];
+                            old_C[8] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[2];
                         }
                     }
                 }
