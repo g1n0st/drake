@@ -1306,6 +1306,15 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
     }
 }
 
+// NOTE(changyu): same as:
+// 
+// template <class T, int dim>
+// void MpmForceBase<T, dim>::computeDvAndGradDv(const TVStack& dv) const
+// {
+//     ZIRAN_QUIET_TIMER();
+//     evalInterpolantAndGradient([&](int node_id) -> TV { return dv.col(node_id); }, scratch_vp, scratch_gradV);
+// }
+// 
 template<typename T, int BLOCK_DIM>
 __global__ void grid_to_particle_dv_transfer_kernel(const size_t n_particles,
     const T* positions, 
