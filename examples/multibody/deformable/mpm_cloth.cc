@@ -55,7 +55,8 @@ DEFINE_string(contact_approximation, "sap",
 // NOTE (changyu): here we choose k=100 for smaller amount of penetration (0.01mm or 1e-5m).
 DEFINE_double(stiffness, 10.0, "Contact Stiffness.");
 DEFINE_double(friction, 0.0, "Contact Friction.");
-DEFINE_double(damping, 1e-5,
+DEFINE_double(margin, 1.0, "MPM-Rigid Margin.");
+DEFINE_double(damping, 1e-2,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
 DEFINE_bool(exact_line_search, false, "Enable exact_line_search for contact solving.");
@@ -207,11 +208,23 @@ int do_main() {
     std::vector<int> indices;
     for (int i = 0; i < length; ++i) {
       for (int j = 0; j < width; ++j) {
-        double z = FLAGS_testcase == 100 ? 0.051 : (FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
+        double z = (FLAGS_testcase == 100 || FLAGS_testcase == 111) ? 0.051 : (FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
         if (FLAGS_testcase == 2) z = 0.27;
         if (FLAGS_testcase == 5) z = 0.18;
-        inital_pos.emplace_back((0.5 - 0.5 * l) + i * dx + k * 0.01, (0.5 - 0.5 * l) + j * dx + k * 0.01, z);
-        inital_vel.emplace_back(0., 0., 0.);
+        double x = (0.5 - 0.5 * l) + i * dx + k * 0.01;
+        double y = (0.5 - 0.5 * l) + j * dx + k * 0.01;
+        inital_pos.emplace_back(x, y, z);
+
+        if (FLAGS_testcase == 111 || FLAGS_testcase == 222) {
+          double omega = 50.0;
+          double vx = -omega * (y - 0.5);
+          double vy = omega * (x - 0.5);
+          double vz = 0.0;
+
+          inital_vel.emplace_back(vx, vy, vz);
+        } else {
+          inital_vel.emplace_back(0., 0., 0.);
+        }
       }
     }
 
@@ -239,6 +252,7 @@ int do_main() {
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.exact_line_search = FLAGS_exact_line_search;
+  mpm_config.margin = FLAGS_margin;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   /* All rigid and deformable models have been added. Finalize the plant. */
@@ -301,7 +315,7 @@ int do_main() {
       meshcat->StopRecording();
       meshcat->PublishRecording();
 
-      std::ofstream htmlFile("/home/changyu/Desktop/cloth.html");
+      std::ofstream htmlFile("/home/changyu/drake/cloth.html");
       htmlFile << meshcat->StaticHtml();
       htmlFile.close();
   }

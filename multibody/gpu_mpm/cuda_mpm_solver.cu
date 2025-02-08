@@ -70,21 +70,31 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
 }
 
 template<typename T>
-void GpuMpmSolver<T>::CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt) const {
+void GpuMpmSolver<T>::CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt, const bool post_contact) const {
     CUDA_SAFE_CALL(cudaMemset(state->forces(), 0, sizeof(Vec3<T>) * state->n_particles()));
     CUDA_SAFE_CALL(cudaMemset(state->taus(), 0, sizeof(Mat3<T>) * state->n_particles()));
 
-    CUDA_SAFE_CALL((
-        calc_fem_state_and_force_kernel<<<
-        (state->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_faces(), state->indices(), state->index_mappings(), state->current_volumes(), state->current_affine_matrices(), state->Dm_inverses(),
-         state->current_positions(), state->current_velocities(), state->deformation_gradients(),
-         state->forces(), state->taus(), dt)
-        ));
+    if (post_contact) {
+        CUDA_SAFE_CALL((
+            calc_fem_state_and_force_kernel<T, /*POST_CONTACT=*/true><<<
+            (state->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_faces(), state->indices(), state->index_mappings(), state->current_volumes(), state->current_affine_matrices(), state->current_affine_matrices_star(), 
+            state->Dm_inverses(), state->current_positions(), state->current_velocities(), state->deformation_gradients(),
+            state->forces(), state->taus(), dt)
+            ));
+    } else {
+        CUDA_SAFE_CALL((
+            calc_fem_state_and_force_kernel<T, /*POST_CONTACT=*/false><<<
+            (state->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_faces(), state->indices(), state->index_mappings(), state->current_volumes(), state->current_affine_matrices(), nullptr, 
+            state->Dm_inverses(), state->current_positions(), state->current_velocities(), state->deformation_gradients(),
+            state->forces(), state->taus(), dt)
+            ));
+    }
 }
 
 template<typename T>
-void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
+void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt, bool apply_gravity, bool apply_elasticity) const {
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
     const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
     if (touched_cells_cnt > 0) {
@@ -94,14 +104,50 @@ void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
         (touched_cells_cnt, state->grid_touched_ids(), state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
         ));
     }
-    CUDA_SAFE_CALL((
-        particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
-        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
-         state->forces(), state->taus(),
-         state->current_sort_keys(),
-         state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
-        ));
+
+    if (!apply_gravity && !apply_elasticity) {
+        CUDA_SAFE_CALL((
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/false, /*APPLY_ELASTICITY=*/false, /*APPLY_KDV=*/false><<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->forces(), state->taus(),
+            state->current_sort_keys(),
+            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            ));
+    }
+
+    if (apply_gravity && !apply_elasticity) {
+        CUDA_SAFE_CALL((
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/true, /*APPLY_ELASTICITY=*/false, /*APPLY_KDV=*/false><<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->forces(), state->taus(),
+            state->current_sort_keys(),
+            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            ));
+    }
+
+    if (!apply_gravity && apply_elasticity) {
+        CUDA_SAFE_CALL((
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/false, /*APPLY_ELASTICITY=*/true, /*APPLY_KDV=*/false><<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->forces(), state->taus(),
+            state->current_sort_keys(),
+            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            ));
+    }
+
+    if (apply_gravity && apply_elasticity) {
+        CUDA_SAFE_CALL((
+            particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/true, /*APPLY_ELASTICITY=*/true, /*APPLY_KDV=*/false><<<
+            (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+            state->forces(), state->taus(),
+            state->current_sort_keys(),
+            state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
+            ));
+    }
 }
 
 template<typename T>
@@ -153,10 +199,20 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state, int mpm_bc) const {
 template<typename T>
 void GpuMpmSolver<T>::GridToParticle(GpuMpmState<T> *state, const T& dt) const {
     CUDA_SAFE_CALL((
-        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false><<<
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false, /*POST_CONTACT=*/false><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
-         state->grid_masses(), state->grid_momentum(), dt)
+        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(), nullptr,
+         state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
+        ));
+}
+
+template<typename T>
+void GpuMpmSolver<T>::ContactGridToParticle(GpuMpmState<T> *state, const T& dt) const {
+    CUDA_SAFE_CALL((
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false, /*POST_CONTACT=*/true><<<
+        (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(), state->current_affine_matrices_star(),
+         state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
         ));
 }
 
@@ -231,13 +287,18 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
     
-    const int max_newton_iterations = 2000;
+    const int max_newton_iterations = 500;
+    const int max_line_search_iterations = 100;
     constexpr bool use_jacobi = true;
     const T kTol = 1e-4;
 
     bool enable_line_search = true;
     const T jacobi_relax_coeff = 0.3;
     const bool global_line_search = use_jacobi;
+    if (!global_line_search) {
+        printf("Currently only support global line search!!!\n");
+        throw;
+    }
     int count = 0;
 
     T norm_dir = 1e10;
@@ -264,11 +325,12 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
 
     // NOTE (changyu): pre-compute contact particle velocity `contact_vel_star` after p2g2g before contact handling
     // then the dv changed by the implicit contact optimization problem can be extacted by `dv = contact_vel - contact_vel_star`.
+    // also, for strong coupling scheme, we track `contact_vel_star` to handle the penetration distance estimation correctly.
     CUDA_SAFE_CALL((
-        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+        grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true, /*POST_CONTACT=*/false><<<
         (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (n_contacts, state->contact_pos(), state->contact_vel_star(), nullptr,
-        state->grid_masses(), state->grid_momentum(), dt)
+        (n_contacts, state->contact_pos(), state->contact_vel_star(), nullptr, nullptr,
+        state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
         ));
 
     while (norm_dir > kTol && count < max_newton_iterations) {
@@ -293,7 +355,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                 (n_contacts, 
                 state->contact_pos(), 
                 state->contact_vel(), 
-                state->current_velocities(),
+                state->contact_vel_star(),
                 state->current_volumes(),
                 state->contact_mpm_id(), 
                 state->contact_dist(), 
@@ -318,6 +380,46 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
             CUDA_SAFE_CALL(cudaDeviceSynchronize());
             CUDA_SAFE_CALL(cudaMemcpy(&total_grid_DoFs, total_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
             // printf("color(%u) total_grid_DoFs=%u\n", color_mask, total_grid_DoFs);
+
+            // NOTE (changyu): when apply_dir flag is on, 
+            // it computes the differential form Kdv with respect to the search direction
+            // used for exact line search to get grad/hess of energy with respect to the step size.
+            const auto &update_Kdv = [&](T *Kdv_ptr, const T alpha, bool apply_dir=false) {
+                // elasticity line search
+                // STEP 1. dv_i -> dv_p, gradDv_p
+                CUDA_SAFE_CALL((
+                    grid_to_particle_dv_transfer_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
+                    (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                    (state->n_particles(), state->current_positions(), state->dvs(), state->gradDvs(), 
+                    state->grid_momentum(), state->grid_Dir(), state->grid_v_star(), alpha, apply_dir)
+                    ));
+                
+                
+                // STEP 2. dv_p -> dF_p -> dP_p -> dstress_p, dforce_p
+                CUDA_SAFE_CALL(cudaMemset(state->dforces(), 0, sizeof(Vec3<T>) * state->n_particles()));
+                CUDA_SAFE_CALL(cudaMemset(state->dtaus(), 0, sizeof(Mat3<T>) * state->n_particles()));
+                CUDA_SAFE_CALL((
+                calc_implicit_fem_state_and_differential_kernel<<<
+                    (state->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                    (state->n_faces(), state->indices(), state->index_mappings(), state->current_volumes(), state->Dm_inverses(), state->deformation_gradients(),
+                    state->dvs(), state->gradDvs(), state->dforces(), state->dtaus())
+                    ));
+                
+                // STEP 3. dstress_p, dforce_p -> Kdv
+                CUDA_SAFE_CALL((
+                    clean_grid_Kdv_kernel<<<
+                    (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                    (touched_cells_cnt, state->grid_touched_ids(), Kdv_ptr)
+                    ));
+                CUDA_SAFE_CALL((
+                    particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*APPLY_GRAVITY=*/false, /*APPLY_ELASTICITY=*/false, /*APPLY_Kdv=*/true><<<
+                    (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+                    (state->n_particles(), state->current_positions(), nullptr, state->current_volumes(), nullptr,
+                    state->dforces(), state->dtaus(),
+                    state->current_sort_keys(),
+                    state->grid_touched_flags(), nullptr, Kdv_ptr, dt)
+                    ));
+            };
             
             // line search
             const auto & line_search = [&](const T current_alpha) {
@@ -330,7 +432,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     (n_contacts, 
                     state->contact_pos(), 
                     state->contact_vel(), 
-                    state->current_velocities(),
+                    state->contact_vel_star(),
                     state->current_volumes(),
                     state->contact_mpm_id(), 
                     state->contact_dist(), 
@@ -348,13 +450,14 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     global_line_search,
                     current_alpha)
                     ));
+                update_Kdv(state->grid_Kdv(), current_alpha, /*apply_dir=*/false);  // elasticity energy defined for E1
                 CUDA_SAFE_CALL((
                     update_global_energy_grid_kernel<T, true, /*SOLVE_DF_DDF=*/true><<<
                     (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                     (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
-                    state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
+                    state->grid_v_star(), state->grid_momentum(), state->grid_Dir(), nullptr, state->grid_Kdv(), state->grid_Kdir(),
                     nullptr, global_E1_d, global_dE1_d, global_d2E1_d,
-                    /*color_mask*/ 0, current_alpha, /*eval_E0=*/ false)
+                    /*color_mask*/ 0, current_alpha, dt, /*eval_E0=*/ false)
                     ));
                 CUDA_SAFE_CALL(cudaDeviceSynchronize());
                 T E, dE, d2E;
@@ -437,7 +540,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     }
 
                     // Exit if f(root) is close to zero.
-                    if (abs(std::get<1>(f_root)) < f_tolerance) {
+                    if (abs(std::get<1>(f_root)) < f_tolerance || line_search_cnt >= max_line_search_iterations) {
                         global_line_search_satisfied = true;
                     }
 
@@ -477,7 +580,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                         (n_contacts, 
                         state->contact_pos(), 
                         state->contact_vel(), 
-                        state->current_velocities(),
+                        state->contact_vel_star(),
                         state->current_volumes(),
                         state->contact_mpm_id(), 
                         state->contact_dist(), 
@@ -504,13 +607,20 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                             global_alpha = root;
                         }
                     } else {
+                        if (line_search_cnt == 0) {
+                            update_Kdv(state->grid_Kdv0(), 0, /*apply_dir=*/false); // elasticity energy defined for E0
+                            update_Kdv(state->grid_Kdir(), 0, /*apply_dir=*/true); // elasticity energy defined for E0, with respect to the search direction
+                        }
+                        update_Kdv(state->grid_Kdv(), global_alpha, /*apply_dir=*/false);  // elasticity energy defined for E1
+
+                        // STEP 4. 1/2 ||dv||^2_A = 1/2 ||dv||^2_(M+dt^2K) = 1/2 ||dv||^2_M + 1/2 dt^2 ||dv||^2_K
                         CUDA_SAFE_CALL((
                             update_global_energy_grid_kernel<T, use_jacobi, /*SOLVE_DF_DDF=*/false><<<
                             (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                             (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
-                            state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
+                            state->grid_v_star(), state->grid_momentum(), state->grid_Dir(), state->grid_Kdv0(), state->grid_Kdv(), state->grid_Kdir(),
                             global_E0_d, global_E1_d, nullptr, nullptr,
-                            color_mask, global_alpha, /*eval_E0=*/line_search_cnt == 0)
+                            color_mask, global_alpha, dt, /*eval_E0=*/line_search_cnt == 0)
                             ));
                         CUDA_SAFE_CALL(cudaDeviceSynchronize());
                         CUDA_SAFE_CALL(cudaMemcpy(&global_E0, global_E0_d, sizeof(T), cudaMemcpyDeviceToHost));
@@ -534,7 +644,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                             (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
                             (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                             state->grid_momentum(), state->grid_Dir(),
-                            color_mask, global_alpha)
+                            color_mask, global_alpha, dt)
                             ));
                         CUDA_SAFE_CALL(cudaDeviceSynchronize());
                     }
@@ -555,10 +665,10 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
             }
             
             CUDA_SAFE_CALL((
-                grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
+                grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true, /*POST_CONTACT=*/false><<<
                 (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-                (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
-                state->grid_masses(), state->grid_momentum(), dt)
+                (n_contacts, state->contact_pos(), state->contact_vel(), nullptr, nullptr,
+                state->grid_masses(), state->grid_momentum(), state->grid_v_star(), dt)
                 ));
             // throw;
             grid_DoFs += total_grid_DoFs;

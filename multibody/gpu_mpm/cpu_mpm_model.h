@@ -23,6 +23,7 @@ struct MpmConfigParams {
     int contact_query_frequency{1};
     int mpm_bc{-1};
     bool exact_line_search {false};
+    T margin{static_cast<T>(1.0)};
 };
 
 // NOTE(changyu): `CpuMpmModel` is responsive to store the initial config in `DeformableModel`,

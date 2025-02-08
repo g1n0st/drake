@@ -69,6 +69,10 @@ __global__ void initialize_fem_state_kernel(
     }
 }
 
+/**
+   \param[in] F \in 2x2
+   \param[out] dphi_dF \in 2x2
+*/
 template<typename T>
 __device__ __host__
 inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
@@ -77,17 +81,55 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
     T R[4];
     matmulT<2, 2, 2, T>(U, V, R);
     T J = determinant2(F);
-    T Finv[4];
-    inverse2(F, Finv);
-    dphi_dF[0] = T(2.) * config::MU<T> * (F[0] - R[0]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[0];
-    dphi_dF[1] = T(2.) * config::MU<T> * (F[1] - R[1]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[2];
-    dphi_dF[2] = T(2.) * config::MU<T> * (F[2] - R[2]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[1];
-    dphi_dF[3] = T(2.) * config::MU<T> * (F[3] - R[3]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[3];
+    T JFinvT[4];
+    cofactor_matrix_2x2(F, JFinvT);
+
+    // P.noalias() = (T)2 * mu * (s.F - s.R) + lambda * (s.J - 1) * s.JFinvT;
+    dphi_dF[0] = T(2.) * config::MU<T> * (F[0] - R[0]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[0];
+    dphi_dF[1] = T(2.) * config::MU<T> * (F[1] - R[1]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[1];
+    dphi_dF[2] = T(2.) * config::MU<T> * (F[2] - R[2]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[2];
+    dphi_dF[3] = T(2.) * config::MU<T> * (F[3] - R[3]) + config::LAMBDA<T> * (J - T(1.)) * JFinvT[3];
 }
 
+/**
+   \param[in] F \in 2x2
+   \param[in] dF \in 2x2
+   \param[out] dP \in 2x2
+*/
 template<typename T>
 __device__ __host__
-inline void compute_dphi_dF(const T* F, T* dphi_dF) {
+inline void fixed_corotated_PK1_differential_2D(const T *F, const T* dF, T* dP) {
+    T U[4], sig[4], V[4];
+    svd2x2(F, U, sig, V);
+    T R[4], S[4], tmp[4];
+    matmulT<2, 2, 2, T>(U, V, R);
+    matmul<2, 2, 2, T>(V, sig, tmp);
+    matmulT<2, 2, 2, T>(tmp, V, S);
+    T J = determinant2(F);
+    T JFinvT[4];
+    cofactor_matrix_2x2(F, JFinvT);
+
+    // dP.noalias() = lambda * s.JFinvT.cwiseProduct(dF).sum() * s.JFinvT;
+    T JFinvT_cwiseProduct_dF_sum = JFinvT[0] * dF[0] + JFinvT[1] * dF[1] + JFinvT[2] * dF[2] + JFinvT[3] * dF[3];
+    for (int i = 0; i < 4; ++i) dP[i] = config::LAMBDA<T> * JFinvT_cwiseProduct_dF_sum * JFinvT[i];
+
+    // dP += 2 * mu * dF;
+    for (int i = 0; i < 4; ++i) dP[i] += T(2.) * config::MU<T> * dF[i];
+
+    // addScaledRotationalDifferential(s.R, s.S, dF, -2 * mu, dP);
+    add_scaled_rotational_differential_2x2(R, S, dF, -T(2.) * config::MU<T>, dP);
+
+    // addScaledCofactorMatrixDifferential(s.F, dF, lambda * (s.J - (T)1), dP);
+    add_scaled_cofactor_matrix_differential_2x2(F, dF, config::LAMBDA<T> * (J - T(1.)), dP);
+}
+
+/**
+   \param[in] F \in 3x3
+   \param[out] dphi_dF \in 3x3
+*/
+template<typename T>
+__device__ __host__
+inline void first_piola(const T* F, T* dphi_dF) {
     // A00=0, A01=1, A02=2
     // A10=3, A11=4, A12=5
     // A20=6, A21=7, A22=8
@@ -153,6 +195,145 @@ inline void compute_dphi_dF(const T* F, T* dphi_dF) {
     dphi_dF[8] = P_plane[8] + P_nonplane[8];
 }
 
+/**
+   \param[in] F \in 3x3
+   \param[in] dF \in 3x3
+   \param[out] dP \in 3x3
+*/
+// Phat = Phat(R)
+// P(F) = Q(F) Phat(R) = Q(F) Phat(R(F))
+// dP(F) = dQ(F) Phat(R(F)) + Q(F) dPhatdR(R(F)):dRdF(F):dF
+//       = dQ(F) Phat(R(F)) + Q(F) (dPhatdR(R(F)):dR)
+//       = dQ(F) Phat(R(F)) + Q(F) dPhat(R(F))
+template<typename T>
+__device__ __host__
+inline void first_piola_differential(const T* F, const T* dF, T* dP) {
+    // updateScratch(const TM& new_F, Scratch& s) { ...
+    // A00=0, A01=1, A02=2
+    // A10=3, A11=4, A12=5
+    // A20=6, A21=7, A22=8
+    T Q[9], R[9];
+    givens_QR<3, 3, T>(F, Q, R);
+    T R_hat[4] = {
+        R[0], R[1],
+        R[3], R[4]
+    };
+    T dphi_dF_2x2[4];
+    fixed_corotated_PK1_2D(R_hat, dphi_dF_2x2);
+    T P_hat[9] = {
+        dphi_dF_2x2[0], dphi_dF_2x2[1], 0,
+        dphi_dF_2x2[2], dphi_dF_2x2[3], 0,
+        0             ,              0, 0
+    };
+    T P_plane[9];
+    matmul<3, 3, 3, T>(Q, P_hat, P_plane);
+
+    T rr = R[2] * R[2] + R[5] * R[5];
+    T g = config::GAMMA<T> * rr;
+    T gp = config::GAMMA<T>;
+    T fp = 0;
+    if (R[8] < T(1.)) {
+        fp = -config::K<T> * (T(1.) - R[8]) * (T(1.) - R[8]);
+    }
+
+    T A[9];
+    // TM A = TM::Zero();
+    // A(0, 0) = gp * sqr(s.R(0, 2));
+    // A(0, 1) = gp * s.R(0, 2) * s.R(1, 2);
+    // A(0, 2) = gp * s.R(2, 2) * s.R(0, 2);
+    // A(1, 1) = gp * sqr(s.R(1, 2));
+    // A(1, 2) = gp * s.R(2, 2) * s.R(1, 2);
+    // A(2, 2) = fp * s.R(2, 2);
+    // A(1, 0) = A(0, 1);
+    // A(2, 0) = A(0, 2);
+    // A(2, 1) = A(1, 2);
+    A[0] = gp * R[2] * R[2];
+    A[1] = gp * R[2] * R[5];
+    A[2] = gp * R[8] * R[2];
+    A[4] = gp * R[5] * R[5];
+    A[5] = gp * R[8] * R[5];
+    A[8] = fp * R[8];
+    A[3] = A[1];
+    A[6] = A[2];
+    A[7] = A[5];
+
+    T P_nonplane[9];
+    T Rinv[9], QA[9];
+    inverse3(R, Rinv);
+    matmul<3, 3, 3, T>(Q, A, QA);
+    matmulT<3, 3, 3, T>(QA, Rinv, P_nonplane);
+    // ... }
+
+    // TM dQ, dR;
+    // EIGEN_EXT::QRDifferential(s.Q, s.R, dF, dQ, dR);
+    T dQ[9], dR[9];
+    QR_differential_3x3(Q, R, dF, dQ, dR);
+
+    // Matrix<T, 2, 2> dPhat;
+    // corotated.firstPiolaDifferential(s.corotated_scratch, dR.template topLeftCorner<2, 2>(), dPhat);
+    T dPhat[4];
+    T dR_hat[4] = {
+        dR[0], dR[1],
+        dR[3], dR[4]
+    };
+    fixed_corotated_PK1_differential_2D(R_hat, dR_hat, dPhat);
+
+    // TM dPhat_full = TM::Zero();
+    T dPhat_full[9];
+    for (int i = 0; i < 9; ++i) dPhat_full[i] = 0;
+
+    // dPhat_full.template topLeftCorner<2, 2>() = dPhat;
+    dPhat_full[0] = dPhat[0];
+    dPhat_full[1] = dPhat[1];
+    dPhat_full[3] = dPhat[2];
+    dPhat_full[4] = dPhat[3];
+
+    // dP = s.Q * dPhat_full + dQ * s.Phat;
+    T QdPhat_full[9], dQPhat[9];
+    matmul<3, 3, 3, T>(Q, dPhat_full, QdPhat_full);
+    matmul<3, 3, 3, T>(dQ, P_hat, dQPhat);
+    for (int i = 0; i < 9; ++i) dP[i] = QdPhat_full[i] + dQPhat[i];
+
+    // TM dA;
+    T dA[9];
+
+    // T gp = gamma; // dgp = 0;
+    // T fp = 0, dfp = 0;
+    // if (s.R(2, 2) < (T)1) {
+    //     T zz = 1 - s.R(2, 2);
+    //     fp = -k * sqr(zz);
+    //     dfp = 2 * k * zz * dR(2, 2);
+    // }
+    T dfp = 0; // NOTE: others defined above
+    if (R[8] < T(1.)) {
+        T zz = T(1.) - R[8];
+        dfp = T(2.) * config::K<T> * zz * dR[8];
+    }
+
+    dA[0] = gp * T(2.) * R[2] * dR[2];
+    dA[1] = gp * (dR[2] * R[5] + R[2] * dR[5]);
+    dA[2] = gp * (dR[8] * R[2] + R[8] * dR[2]);
+    dA[4] = gp * T(2.) * R[5] * dR[5];
+    dA[5] = gp * (dR[8] * R[5] + R[8] * dR[5]);
+    dA[8] = dfp * R[8] + fp * dR[8];
+    dA[3] = dA[1];
+    dA[6] = dA[2];
+    dA[7] = dA[5];
+    
+    // dP += (s.Q * dA - s.P_nonplane * dR.transpose()) * s.R_inverse.transpose() - s.Q * dQ.transpose() * s.P_nonplane;
+    T Q_dA[9], P_nonplane_dRT[9], Q_dA_minus_P_nonplane_dRt[9], Q_dA_minus_P_nonplane_dRt_RinvT[9];
+    matmul<3, 3, 3, T>(Q, dA, Q_dA);
+    matmulT<3, 3, 3, T>(P_nonplane, dR, P_nonplane_dRT);
+    for (int i = 0; i < 9; ++i) Q_dA_minus_P_nonplane_dRt[i] = Q_dA[i] -  P_nonplane_dRT[i];
+    matmulT<3, 3, 3, T>(Q_dA_minus_P_nonplane_dRt, Rinv, Q_dA_minus_P_nonplane_dRt_RinvT);
+
+    T Q_dQT[9], Q_dQT_P_nonplane[9];
+    matmulT<3, 3, 3, T>(Q, dQ, Q_dQT);
+    matmul<3, 3, 3, T>(Q_dQT, P_nonplane, Q_dQT_P_nonplane);
+
+    for (int i = 0; i < 9; ++i) dP[i] += Q_dA_minus_P_nonplane_dRt_RinvT[i] - Q_dQT_P_nonplane[i];
+}
+
 template<typename T>
 __device__ __host__
 inline void project_strain(T* F) {
@@ -190,13 +371,14 @@ inline void project_strain(T* F) {
     matmul<3, 3, 3, T>(Q, R, F);
 }
 
-template<typename T>
+template<typename T, bool POST_CONTACT>
 __global__ void calc_fem_state_and_force_kernel(
     const size_t n_faces,
     const int* indices,
     const int* index_mappings,
     const T* volumes,
     const T* affine_matrices,
+    const T* affine_matrices_star,
     const T* Dm_inverses,
     T* positions, 
     T* velocities,
@@ -217,7 +399,18 @@ __global__ void calc_fem_state_and_force_kernel(
         }
 
         T* F = &deformation_gradients[idx * 9];
-        const T* C = &affine_matrices[face_pid * 9];
+        T C[9];
+        if constexpr(POST_CONTACT) {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                C[i] = (affine_matrices[face_pid * 9 + i] - affine_matrices_star[face_pid * 9 + i]);
+            }
+        } else {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                C[i] = affine_matrices[face_pid * 9 + i];
+            }
+        }
         T ctF[9]; // cotangent F
 
         // Eq.4 in Jiang et.al 2017, dE_p, β(x̂) = (∇x̂)p dE,n_p, β
@@ -265,7 +458,7 @@ __global__ void calc_fem_state_and_force_kernel(
         }
 
         T VP_local[9];
-        compute_dphi_dF(ctF, VP_local);
+        first_piola(ctF, VP_local);
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             VP_local[i] *= volumes[face_pid];
@@ -299,6 +492,98 @@ __global__ void calc_fem_state_and_force_kernel(
             atomicAdd(&forces[v0 * 3 + i], -G[i * 3 + 0]);
             atomicAdd(&forces[v1 * 3 + i], -G[i * 3 + 1]);
             atomicAdd(&forces[v2 * 3 + i], -G[i * 3 + 2]);
+        }
+    }
+}
+
+template<typename T>
+__global__ void calc_implicit_fem_state_and_differential_kernel(
+    const size_t n_faces,
+    const int* indices,
+    const int* index_mappings,
+    const T* volumes,
+    const T* Dm_inverses,
+    const T* deformation_gradients,
+    
+    // implicit states
+    const T* dvs,
+    const T* gradDvs,
+    T *dforces,
+    T* dtaus) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    int face_pid = index_mappings[idx];
+    if (idx < n_faces) {
+        int v0 = index_mappings[indices[idx * 3 + 0]];
+        int v1 = index_mappings[indices[idx * 3 + 1]];
+        int v2 = index_mappings[indices[idx * 3 + 2]];
+
+        const T* F_n = &deformation_gradients[idx * 9];
+        const T* gradDv = &gradDvs[face_pid * 9];
+
+        // tangent_dF
+        T d0[3], d1[3];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            d0[i] = dvs[v1 * 3 + i] - dvs[v0 * 3 + i];
+            d1[i] = dvs[v2 * 3 + i] - dvs[v0 * 3 + i];
+        }
+        T ds[6] {
+            d0[0], d1[0],
+            d0[1], d1[1],
+            d0[2], d1[2]
+        };
+
+        T tangent_dF[6];
+        const T* Dm_inverse = &Dm_inverses[idx * 4];
+        matmul<3, 2, 2>(ds, Dm_inverse, tangent_dF);
+
+        // cotangent_dF
+        T ctF_n_c2[3] = { F_n[2], F_n[5], F_n[8] };
+        T ct_dF[3];
+        matmul<3, 3, 1, T>(gradDv, ctF_n_c2, ct_dF);
+
+        // dF
+        // dF << t_dF, ct_dF;
+        T dF[9] = {
+            tangent_dF[0], tangent_dF[1], ct_dF[0],
+            tangent_dF[2], tangent_dF[3], ct_dF[1],
+            tangent_dF[4], tangent_dF[5], ct_dF[2]
+        };
+
+        T VdP_local[9];
+        first_piola_differential(F_n, dF, VdP_local);
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            VdP_local[i] *= volumes[face_pid];
+        }
+
+        // technical document .(15) part 2
+        T VdP_local_c2[3] = { VdP_local[2], VdP_local[5], VdP_local[8] };
+        outer_product<3, T>(VdP_local_c2, ct_dF, &dtaus[face_pid * 9]);
+
+        T grad_N_hat[6] = {
+            T(-1.), T(1.), T(0.),
+            T(-1.), T(0.), T(1.)
+        };
+        T grad_N[6];
+        T Dm_inverse_T[4];
+        transpose<2, 2, T>(Dm_inverse, Dm_inverse_T);
+        matmul<2, 2, 3, T>(Dm_inverse_T, grad_N_hat, grad_N);
+        T VdP_local_c01[6] = { 
+            VdP_local[0], VdP_local[1],
+            VdP_local[3], VdP_local[4],
+            VdP_local[6], VdP_local[7]
+        };
+
+        T G[9];
+        matmul<3, 2, 3, T>(VdP_local_c01, grad_N, G);
+
+        // technical document .(15) part 1
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            atomicAdd(&dforces[v0 * 3 + i], -G[i * 3 + 0]);
+            atomicAdd(&dforces[v1 * 3 + i], -G[i * 3 + 1]);
+            atomicAdd(&dforces[v2 * 3 + i], -G[i * 3 + 2]);
         }
     }
 }
@@ -425,7 +710,7 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     }
 }
 
-template<typename T, int BLOCK_DIM>
+template<typename T, int BLOCK_DIM, bool APPLY_GRAVITY=true, bool APPLY_ELASTICITY=true, bool APPLY_KDV=false>
 __global__ void particle_to_grid_kernel(const size_t n_particles,
     const T* positions, 
     const T* velocities,
@@ -490,10 +775,17 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
         T B[9];
         const T* C = &affine_matrices[idx * 9];
-        const T* stress = &taus[idx * 9];
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
+            if constexpr (APPLY_KDV) {
+                const T* dstress = &taus[idx * 9];
+                B[i] = (-config::G_D_INV<T>) * dstress[i];
+            } else if constexpr (APPLY_ELASTICITY) {
+                const T* stress = &taus[idx * 9];
+                B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
+            } else {
+                B[i] = C[i] * mass;
+            }
         }
 
         T val[4];
@@ -512,20 +804,37 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
-                    val[0] = mass * weight;
-                    val[1] = vel[0] * val[0];
-                    val[2] = vel[1] * val[0];
-                    val[3] = vel[2] * val[0];
+                    if constexpr (!APPLY_KDV) {
+                        val[0] = mass * weight;
+                        val[1] = vel[0] * val[0];
+                        val[2] = vel[1] * val[0];
+                        val[3] = vel[2] * val[0];
+                    } else {
+                        val[0] = 0;
+                        val[1] = 0;
+                        val[2] = 0;
+                        val[3] = 0;
+                    }
                     // apply gravity
-                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
+                    if constexpr (APPLY_GRAVITY) {
+                        val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
+                    }
 
                     val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
                     val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
                     val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
-                    const T* force = &forces[idx * 3];
-                    val[1] += force[0] * dt * weight;
-                    val[2] += force[1] * dt * weight;
-                    val[3] += force[2] * dt * weight;
+                    if constexpr (APPLY_KDV) {
+                        const T* dforce = &forces[idx * 3];
+                        val[1] += dforce[0] * weight;
+                        val[2] += dforce[1] * weight;
+                        val[3] += dforce[2] * weight;
+                    }
+                    if constexpr (APPLY_ELASTICITY) {
+                        const T* force = &forces[idx * 3];
+                        val[1] += force[0] * dt * weight;
+                        val[2] += force[1] * dt * weight;
+                        val[3] += force[2] * dt * weight;
+                    }
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[4]; 
@@ -541,7 +850,9 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                         const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
                         const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
                         g_touched_flags[target_grid_index] = 1;
-                        atomicAdd(&(g_masses[target_cell_index]), val[0]);
+                        if constexpr (!APPLY_KDV) {
+                            atomicAdd(&(g_masses[target_cell_index]), val[0]);
+                        }
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[1]);
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 1]), val[2]);
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 2]), val[3]);
@@ -636,6 +947,20 @@ __global__ void clean_grid_contact_kernel(
         for (int i = 0; i < 9; ++i) g_Hess[cell_idx * 9 + i] = 0;
         g_E0[cell_idx] = 0;
         g_E1[cell_idx] = 0;
+    }
+}
+
+template<typename T>
+__global__ void clean_grid_Kdv_kernel(
+    const uint32_t touched_cells_cnt,
+    const uint32_t* g_touched_ids,
+    T* g_Kdv) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < touched_cells_cnt) {
+        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) g_Kdv[cell_idx * 3 + i] = 0;
     }
 }
 
@@ -805,13 +1130,15 @@ __global__ void update_grid_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
+template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER, bool POST_CONTACT>
 __global__ void grid_to_particle_kernel(const size_t n_particles,
     T* positions, 
     T* velocities,
     T* affine_matrices,
+    T* affine_matrices_star,
     const T* g_masses,
     const T* g_momentum,
+    const T* g_v_star,
     const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
@@ -839,15 +1166,19 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
+        T old_v[3];
         T new_v[3];
         T new_C[9], new_CT[9];
+        T old_C[9], old_CT[9];
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
             new_v[i] = 0;
+            old_v[i] = 0;
         }
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             new_C[i] = 0;
+            old_C[i] = 0;
         }
 
         #pragma unroll
@@ -875,6 +1206,11 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                         new_v[0] += weight * g_v[0];
                         new_v[1] += weight * g_v[1];
                         new_v[2] += weight * g_v[2];
+                        if constexpr (POST_CONTACT) {
+                            old_v[0] += weight * g_v_star[target_cell_index * 3 + 0];
+                            old_v[1] += weight * g_v_star[target_cell_index * 3 + 1];
+                            old_v[2] += weight * g_v_star[target_cell_index * 3 + 2];
+                        }
                         // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
 
                         // printf("i=%d j=%d k=%d\n", i, j, k);
@@ -890,6 +1226,17 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                         new_C[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
                         new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
                         new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
+                        if constexpr (POST_CONTACT) {
+                            old_C[0] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[0];
+                            old_C[1] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[1];
+                            old_C[2] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[2];
+                            old_C[3] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[0];
+                            old_C[4] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[1];
+                            old_C[5] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[2];
+                            old_C[6] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[0];
+                            old_C[7] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[1];
+                            old_C[8] += 4 * config::G_DX_INV<T> * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[2];
+                        }
                     }
                 }
             }
@@ -905,20 +1252,49 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             velocities[idx * 3 + 2] = new_v[2];
 
             transpose<3, 3, T>(new_C, new_CT);
-            affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
-            affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
-            affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
-            affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
-            affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
-            affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
-            affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
-            affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
-            affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
-
             // Advection
-            positions[idx * 3 + 0] += new_v[0] * dt;
-            positions[idx * 3 + 1] += new_v[1] * dt;
-            positions[idx * 3 + 2] += new_v[2] * dt;
+            if constexpr (POST_CONTACT) {
+                transpose<3, 3, T>(old_C, old_CT);
+
+                affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
+                affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
+                affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
+                affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
+                affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
+                affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
+                affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
+                affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
+                affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
+
+                affine_matrices_star[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * old_C[0] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[0];
+                affine_matrices_star[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * old_C[1] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[1];
+                affine_matrices_star[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * old_C[2] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[2];
+                affine_matrices_star[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * old_C[3] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[3];
+                affine_matrices_star[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * old_C[4] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[4];
+                affine_matrices_star[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * old_C[5] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[5];
+                affine_matrices_star[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * old_C[6] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[6];
+                affine_matrices_star[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * old_C[7] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[7];
+                affine_matrices_star[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * old_C[8] + ((config::V<T> - T(1.)) * T(.5)) * old_CT[8];
+
+                positions[idx * 3 + 0] += (new_v[0] - old_v[0]) * dt;
+                positions[idx * 3 + 1] += (new_v[1] - old_v[1]) * dt;
+                positions[idx * 3 + 2] += (new_v[2] - old_v[2]) * dt;
+            }
+            else {
+                affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
+                affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
+                affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
+                affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
+                affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
+                affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
+                affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
+                affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
+                affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
+
+                positions[idx * 3 + 0] += new_v[0] * dt;
+                positions[idx * 3 + 1] += new_v[1] * dt;
+                positions[idx * 3 + 2] += new_v[2] * dt;
+            }
 
             // printf("v=\n");
             // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);
@@ -927,6 +1303,122 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
             // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
             // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
         }
+    }
+}
+
+// NOTE(changyu): same as:
+// 
+// template <class T, int dim>
+// void MpmForceBase<T, dim>::computeDvAndGradDv(const TVStack& dv) const
+// {
+//     ZIRAN_QUIET_TIMER();
+//     evalInterpolantAndGradient([&](int node_id) -> TV { return dv.col(node_id); }, scratch_vp, scratch_gradV);
+// }
+// 
+template<typename T, int BLOCK_DIM>
+__global__ void grid_to_particle_dv_transfer_kernel(const size_t n_particles,
+    const T* positions, 
+    T* dvs,
+    T* gradDvs,
+    const T* g_momentum,
+    const T* g_Dir,
+    const T* g_v_star,
+    const T global_alpha,
+    const bool apply_dir) {
+    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+    // In [Fei et.al 2021],
+    // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
+    // (instead of registers), although none of them is shared between threads. 
+    // This choice increases performance, particularly when the number of threads is large (§6.2.5).
+    __shared__ T weights[BLOCK_DIM][3][3];
+
+    if (idx < n_particles) {
+        uint32_t base[3] = {
+            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+        };
+        T fx[3] = {
+            positions[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+        };
+        // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            weights[threadIdx.x][0][i] = T(0.5) * (T(1.5) - fx[i]) * (T(1.5) - fx[i]);
+            weights[threadIdx.x][1][i] = T(0.75) - (fx[i] - T(1.0)) * (fx[i] - T(1.0));
+            weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
+        }
+
+        T dv[3];
+        T gradDv[9];
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            dv[i] = 0;
+        }
+        #pragma unroll
+        for (int i = 0; i < 9; ++i) {
+            gradDv[i] = 0;
+        }
+
+        #pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            #pragma unroll
+            for (int j = 0; j < 3; ++j) {
+                #pragma unroll
+                for (int k = 0; k < 3; ++k) {
+                    T xi_minus_xp[3] = {
+                        (i - fx[0]),
+                        (j - fx[1]),
+                        (k - fx[2])
+                    };
+
+                    const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+
+                    T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
+
+                    T g_v[3];
+                    if (apply_dir) {
+                        g_v[0] = g_Dir[target_cell_index * 3 + 0];
+                        g_v[1] = g_Dir[target_cell_index * 3 + 1];
+                        g_v[2] = g_Dir[target_cell_index * 3 + 2];
+                    } else {
+                        g_v[0] = (g_momentum[target_cell_index * 3 + 0] + global_alpha * g_Dir[target_cell_index * 3 + 0]) - g_v_star[target_cell_index * 3 + 0];
+                        g_v[1] = (g_momentum[target_cell_index * 3 + 1] + global_alpha * g_Dir[target_cell_index * 3 + 1]) - g_v_star[target_cell_index * 3 + 1];
+                        g_v[2] = (g_momentum[target_cell_index * 3 + 2] + global_alpha * g_Dir[target_cell_index * 3 + 2]) - g_v_star[target_cell_index * 3 + 2];
+                    }
+
+                    dv[0] += weight * g_v[0];
+                    dv[1] += weight * g_v[1];
+                    dv[2] += weight * g_v[2];
+
+                    gradDv[0] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[0];
+                    gradDv[1] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[1];
+                    gradDv[2] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[2];
+                    gradDv[3] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[0];
+                    gradDv[4] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[1];
+                    gradDv[5] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[2];
+                    gradDv[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
+                    gradDv[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
+                    gradDv[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
+                }
+            }
+        }
+
+        dvs[idx * 3 + 0] = dv[0];
+        dvs[idx * 3 + 1] = dv[1];
+        dvs[idx * 3 + 2] = dv[2];
+
+        gradDvs[idx * 9 + 0] = gradDv[0];
+        gradDvs[idx * 9 + 1] = gradDv[1];
+        gradDvs[idx * 9 + 2] = gradDv[2];
+        gradDvs[idx * 9 + 3] = gradDv[3];
+        gradDvs[idx * 9 + 4] = gradDv[4];
+        gradDvs[idx * 9 + 5] = gradDv[5];
+        gradDvs[idx * 9 + 6] = gradDv[6];
+        gradDvs[idx * 9 + 7] = gradDv[7];
+        gradDvs[idx * 9 + 8] = gradDv[8];
     }
 }
 
@@ -963,38 +1455,9 @@ __device__ __host__ inline void get_color_coordinates(UINT x, UINT y, UINT z, UI
 // SAP model
 template<typename T>
 __device__ void compute_contact_grad_and_hess(
-    const T phi0, const T dt, const T stiffness, const T damping, const T friction_mu, 
-    const T *v0, const T *v_next,
+    const T phi_star, const T dt, const T stiffness, const T damping, const T friction_mu, 
+    const T *v_star, const T *v_next,
     T *C_Hess, T *C_Grad) {
-    /* Solves the contact problem for a single particle against a rigid body
-        assuming the rigid body has infinite mass and inertia.
-
-        Let phi be the penetration distance (positive when penetration occurs) and vn
-        be the relative velocity of the particle with respect to the rigid body in the
-        normal direction (vn>0 when separting). Then we have phi_dot = -vn.
-
-        In the normal direction, the contact force is modeled as a linear elastic system
-        with Hunt-Crossley dissipation.
-
-        f = k * phi_+ * (1 + d * phi_dot)_+
-
-        where phi_+ = max(0, phi)
-
-        The momentum balance in the normal direction becomes
-
-        m(vn_next - vn) = k * dt * (phi0 - dt * vn_next)_+ * (1 - d * vn_next)_+
-
-        where we used the fact that phi = phi0 - dt * vn_next. This is a quadratic
-        equation in vn_next, and we solve it to get the next velocity vn_next.
-
-        The quadratic equation is ax^2 + bx + c = 0, where
-
-        a = k * d * dt^2
-        b = -m - (k * dt * (dt + d * phi0))
-        c = k * dt * phi0 + m * vn
-
-        After solving for vn_next, we check if the friction force lies in the friction
-        cone, if not, we project the velocity back into the friction cone. */
     constexpr int kZAxis = 2;
 
     // NOTE: follow the pattern in https://github.com/RobotLocomotion/drake/blob/master/multibody/contact_solvers/sap/sap_hunt_crossley_constraint.cc
@@ -1003,8 +1466,8 @@ __device__ void compute_contact_grad_and_hess(
 
     // NOTE (changyu): in math eqns from (https://arxiv.org/pdf/2312.03908) and in code,
     // ϕ differs by a sign.
-    const T phi = phi0 - dt * v_next[kZAxis];
-    // If (-ϕ0 - δt vn)+ or (1 − dvn)+ equals zero, no impulse should be applied
+    const T phi = phi_star - dt * (v_next[kZAxis] - v_star[kZAxis]);
+    // If (-ϕ* - δt (vn - v*))+ or (1 − dvn)+ equals zero, no impulse should be applied
     if (T(1.) - damping * v_next[kZAxis] <= 0 || phi <= 0) { // Quick exits
         #pragma unroll
         for (int i = 0; i < 9; ++i) C_Hess[i] = 0;
@@ -1014,32 +1477,35 @@ __device__ void compute_contact_grad_and_hess(
     else {
         // normal component (Compliant Contact)
         // fn(ϕ, vn) = k (−ϕ)+ (1 − dvn)+
-        // γn(vn) = n(vn; ϕ0) = δt fn(ϕ0 + δt vn, vn)
-        //        = δt k (-ϕ0 - δt vn)+ (1 − dvn)+
-        const T yn = dt * stiffness * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
+        // γn(vn) = n(vn; ϕ*) = δt fn(ϕ* + δt (vn - v*), vn)
+        //        = δt k (-ϕ* - δt (vn - v*))+ (1 − dvn)+
+        const T yn = dt * stiffness * (phi_star - dt * (v_next[kZAxis] - v_star[kZAxis])) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
 
         // ∂²ln / ∂vn² = - δt ∂ fn / ∂vn
-        //               = - δt ∂ fn(ϕ0 + δt vn, vn) / ∂vn
-        //               = - δt k ∂ (-ϕ0 - δt vn)+ (1 − dvn)+ / ∂vn
-        // when both (-ϕ0 - δt vn) > 0 and (1 − dvn) > 0 satisfied
-        //               = - δt k ∂ (-ϕ0 - δt vn) (1 − dvn) / ∂vn
-        //               = - δt k ∂ (-ϕ0 - δt vn + ϕ0 dvn + d δt vn²) / ∂vn
-        //               = - δt k (- δt + ϕ0 d + 2 d δt vn)
-        const T d2lndvn2 = - dt * stiffness * (-dt -phi0 * damping + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
+        //               = - δt ∂ fn(ϕ* + δt (vn - v*), vn) / ∂vn
+        //               = - δt k ∂ (-ϕ* - δt (vn - v*))+ (1 − dvn)+ / ∂vn
+        // when both (-ϕ* - δt (vn - v*)) > 0 and (1 − dvn) > 0 satisfied
+        //               = - δt k ∂ (-ϕ* - δt vn + δt v*) (1 − dvn) / ∂vn
+        //               = - δt k ∂ (-ϕ* - δt vn + δt v* + ϕ* d vn + d δt vn² - d δt v* vn) / ∂vn
+        //               = - δt k (- δt + ϕ* d + 2 d δt vn - d δt v*)
+        const T d2lndvn2 = -dt * stiffness * (-dt 
+                                              + (-phi_star) * damping 
+                                              + T(2.) * damping * dt * v_next[kZAxis] 
+                                              - damping * dt * v_star[kZAxis]); // Eq. 8
 
         // frictional component (Lagged Model)
         // For a physical model of compliance for which γn is only a function of vn
 
-        // γn0 = δt fn(ϕ0, vn0) = δt k (−ϕ0)+ (1 − dvn0)+
-        const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
+        // γn* = δt fn(ϕ*, vn*) = δt k (−ϕ*)+ (1 − dvn*)+
+        const T yn_star = max(stiffness * dt * phi_star * (T(1.) - damping * v_star[kZAxis]), T(0.));
 
         const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + config::epsv<T> * config::epsv<T>);
         const T ts_hat[2] = {v_next[0] / ts_coeff, v_next[1] / ts_coeff}; // Eq. 18
 
-        // γt = -μ * γn0 * t̂_s 
+        // γt = -μ * γn* * t̂_s 
         const T yt[2] = {
-            -friction_mu * yn0 * ts_hat[0], 
-            -friction_mu * yn0 * ts_hat[1]
+            -friction_mu * yn_star * ts_hat[0], 
+            -friction_mu * yn_star * ts_hat[1]
         }; // Eq. 33
 
         T P_ts_hat[4];
@@ -1048,8 +1514,8 @@ __device__ void compute_contact_grad_and_hess(
             T(1.) - P_ts_hat[0], -P_ts_hat[1],
             -P_ts_hat[2], T(1.) - P_ts_hat[3]
         };
-        const T d2ltdvt2_coeff = friction_mu * yn0 / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
-        // ∂²lt / ∂vt² = μ * γn0 * (P⊥(t̂_s) / (||v_t||_s + ε_s))
+        const T d2ltdvt2_coeff = friction_mu * yn_star / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
+        // ∂²lt / ∂vt² = μ * γn* * (P⊥(t̂_s) / (||v_t||_s + ε_s))
         const T d2ltdvt2[4] = {
             d2ltdvt2_coeff * P_perp_ts_hat[0],
             d2ltdvt2_coeff * P_perp_ts_hat[1],
@@ -1079,7 +1545,7 @@ template<typename T, int BLOCK_DIM, bool JACOBI>
 __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
-    const T* velocities,
+    const T* contact_vel_star,
     const T* volumes,
     const uint32_t* contact_mpm_id,
     const T* contact_dist,
@@ -1141,26 +1607,16 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         }
 
         const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
-        const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
+        const T* particle_v_star = &contact_vel_star[idx * 3];
         const T* particle_v = &contact_vel[idx * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
-        // TODO (changyu): const GpuT phi0 = -(
-        // static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
-        //     (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
-        //     mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
-        //   );
-        T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-        if (phi0 < 0) {
-            printf("IMPOSSIBLE!!!\n");
-        }
-#endif
+        T phi_star = -contact_dist[idx];
 
-        T vn_rel_W[3] = {
-            particle_vn[0] - contact_rigid_v[idx * 3 + 0],
-            particle_vn[1] - contact_rigid_v[idx * 3 + 1],
-            particle_vn[2] - contact_rigid_v[idx * 3 + 2]
+        T v_star_rel_W[3] = {
+            particle_v_star[0] - contact_rigid_v[idx * 3 + 0],
+            particle_v_star[1] - contact_rigid_v[idx * 3 + 1],
+            particle_v_star[2] - contact_rigid_v[idx * 3 + 2]
         };
         T v_rel_W[3] = {
             particle_v[0] - contact_rigid_v[idx * 3 + 0],
@@ -1173,12 +1629,12 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
         transpose<3, 3, T>(R_WC, R_CW);
 
-        T vn_C[3], v_next_C[3]; // in the contact local coordinate
-        matmul<3, 3, 1, T>(R_CW, vn_rel_W, vn_C);
+        T v_star_C[3], v_next_C[3]; // in the contact local coordinate
+        matmul<3, 3, 1, T>(R_CW, v_star_rel_W, v_star_C);
         matmul<3, 3, 1, T>(R_CW, v_rel_W, v_next_C);
 
         T lc_Hess_C[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-        compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
+        compute_contact_grad_and_hess(phi_star, dt, stiffness, damping, friction_mu, v_star_C, v_next_C, lc_Hess_C, lc_Grad_C);
         
         
         // hess and grad in the world local coordinate
@@ -1326,7 +1782,7 @@ template<typename T, int BLOCK_DIM, bool JACOBI, bool SOLVE_DF_DDF>
 __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
-    const T* velocities,
+    const T* contact_vel_star,
     const T* volumes,
     const uint32_t* contact_mpm_id,
     const T* contact_dist,
@@ -1435,20 +1891,15 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
         }
 
         const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
-        const T* v_p_n = &velocities[contact_mpm_id[idx] * 3];
+        const T* v_p_star = &contact_vel_star[idx * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
-        T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-        if (phi0 < 0) {
-            printf("IMPOSSIBLE!!!\n");
-        }
-#endif
+        T phi_star = -contact_dist[idx];
 
-        T vn_rel_W[3] = {
-            v_p_n[0] - contact_rigid_v[idx * 3 + 0],
-            v_p_n[1] - contact_rigid_v[idx * 3 + 1],
-            v_p_n[2] - contact_rigid_v[idx * 3 + 2]
+        T v_star_rel_W[3] = {
+            v_p_star[0] - contact_rigid_v[idx * 3 + 0],
+            v_p_star[1] - contact_rigid_v[idx * 3 + 1],
+            v_p_star[2] - contact_rigid_v[idx * 3 + 2]
         };
         T v_current_rel_W[3] = {
             v_p_current[0] - contact_rigid_v[idx * 3 + 0],
@@ -1467,39 +1918,53 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
         make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
         transpose<3, 3, T>(R_WC, R_CW);
 
-        T vn_C[3], v_current_C[3], v_next_C[3]; // in the contact local coordinate
-        matmul<3, 3, 1, T>(R_CW, vn_rel_W, vn_C);
+        T v_star_C[3], v_current_C[3], v_next_C[3]; // in the contact local coordinate
+        matmul<3, 3, 1, T>(R_CW, v_star_rel_W, v_star_C);
         matmul<3, 3, 1, T>(R_CW, v_current_rel_W, v_current_C);
         matmul<3, 3, 1, T>(R_CW, v_next_rel_W, v_next_C);
 
         // lc(v_p(v_i))
-        auto lc = [&](const T* v, const T* v0) {
+        auto lc = [&](const T* v, const T* v_star) {
             // frictional component (Lagged Model)
-            // lt(v_t) = μ * γn0 * ||v_t||_s
-            const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
-            const T lt = friction_mu * yn0 * (sqrt(v[0] * v[0] + v[1] * v[1] + config::epsv<T> * config::epsv<T>) - config::epsv<T>); // Eq. 33
+            // lt(v_t) = μ * (γn*) * ||v_t||_s
+            const T yn_star = max(stiffness * dt * phi_star * (T(1.) - damping * v_star[kZAxis]), T(0.));
+            const T lt = friction_mu * yn_star * (sqrt(v[0] * v[0] + v[1] * v[1] + config::epsv<T> * config::epsv<T>) - config::epsv<T>); // Eq. 33
 
             // normal component (Compliant Contact)
 
-            // vˆ = min(−ϕ0 / δt, 1 / d),
-            T v_hat = min(phi0 / dt, T(1.) / damping);
+            // we need to find the v such that −ϕ = 0
+            // Starting with −ϕ = −ϕ* - dt * (v - v*)
+            // Setting -ϕ = 0 and solving for v, we get v = (-ϕ*) / dt + v*
+            // vˆ = min(−ϕ* / δt, 1 / d),
+            T v_hat = min(phi_star / dt + v_star[kZAxis], T(1.) / damping);
 
-            // N(vn) = N+(min(vn, vˆ); f0)
+            // N(vn) = N+(min(vn, vˆ); f*)
             const T min_vn_v_hat = min(v_hat, v[kZAxis]);
 
-            // N+(vn; ϕ0) = δt k [−vn (ϕ0 + 1/2 δt vn) + d vn²/2 (ϕ0 + 2/3 δt vn)]
-            //            = δt k [−ϕ0 vn  - 1/2 δt vn² + 1/2 d ϕ0 vn² + 1/3 d δt vn³]
-            //            = δt k [1/3 d δt vn³ + 1/2 (d ϕ0 - δt) vn² - ϕ0 vn]
-            //            = ln_A vn³ + ln_B vn² + ln_C vn
+            // N+(vn; ϕ*) = ∫ n(vn; ϕ*) ∂vn
+            //            = ∫ δt fn(ϕ* + δt (vn - v*), vn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt (vn - v*))+ (1 − dvn)+ ∂vn
+
+            // when both (-ϕ* - δt (vn - v*)) > 0 and (1 − dvn) > 0 satisfied
+            //            = ∫ δt k (-ϕ* - δt (vn - v*)) (1 − dvn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt vn + δt v*) (1 − dvn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt vn + δt v* + d ϕ* vn + d δt vn² - d δt v* vn) ∂vn
+
+            //            = ∫ δt k (d δt vn² + d ϕ* vn - δt vn - d δt v* vn -ϕ* + δt v*) ∂vn
+            //            = ∫ δt k [ d δt vn² + (d ϕ* - δt - d δt v*) vn -ϕ* + δt v*] ∂vn
+            //            = δt k [ 1/3 d δt vn³ + 1/2 (d ϕ* - δt - d δt v*) vn² + (-ϕ* + δt v*) vn]
+            //            = 1/3 δt² k d vn³ + 1/2 δt k (d ϕ* - δt - d δt v*) + δt k (-ϕ* + δt v*) vn
+            //            = N_A vn³ + N_B vn² + N_C vn
+
             // where N_A = 1/3 δt² k d,
-            //       N_B = 1/2 δt k (d ϕ0 - δt) 
-            //       N_C = δt k * (-ϕ0)
+            //       N_B = 1/2 δt k (d ϕ* - δt - d δt v*) 
+            //       N_C = δt k * (-ϕ* + δt v*)
             const T N_A = T(1. / 3.) * dt * dt * stiffness * damping;
-            const T N_B = T(1. / 2.) * dt * stiffness * (-damping * phi0 - dt);
-            const T N_C = dt * stiffness * phi0;
+            const T N_B = T(1. / 2.) * dt * stiffness * (-damping * phi_star - dt - damping * dt * v_star[kZAxis]);
+            const T N_C = dt * stiffness * (phi_star + dt * v_star[kZAxis]);
             const T N_vn = N_A * min_vn_v_hat * min_vn_v_hat * min_vn_v_hat 
-                       + N_B * min_vn_v_hat * min_vn_v_hat 
-                       + N_C * min_vn_v_hat;
+                         + N_B * min_vn_v_hat * min_vn_v_hat 
+                         + N_C * min_vn_v_hat;
             
             // ln(vn) = −N(vn),
             const T ln = -N_vn; 
@@ -1515,10 +1980,10 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
             }
         }
         if (global_line_search) {
-            atomicAdd(g_E1, lc(v_next_C, vn_C));
+            atomicAdd(g_E1, lc(v_next_C, v_star_C));
             if constexpr (SOLVE_DF_DDF) {
                 T lc_Hess_C[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-                compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
+                compute_contact_grad_and_hess(phi_star, dt, stiffness, damping, friction_mu, v_star_C, v_next_C, lc_Hess_C, lc_Grad_C);
                 T global_dir_C[3];
                 matmul<3, 3, 1, T>(R_CW, vp_search_dir_W, global_dir_C);
                 atomicAdd(g_dE1, dot<3>(lc_Grad_C, global_dir_C));
@@ -1530,16 +1995,16 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
             if constexpr (JACOBI) {
                 printf("ERROR, JACOBI CANNOT USE LOCAL LINE-SEARCH!!!!!!!!!!!!!!!!!!!!!!!\n");
             }
-            atomicAdd(&g_E1[color_index], lc(v_next_C, vn_C));
+            atomicAdd(&g_E1[color_index], lc(v_next_C, v_star_C));
         }
         if (eval_E0) {
             if (global_line_search) {
-                atomicAdd(g_E0, lc(v_current_C, vn_C));
+                atomicAdd(g_E0, lc(v_current_C, v_star_C));
             } else {
                 if constexpr (JACOBI) {
                     printf("ERROR, JACOBI CANNOT USE LOCAL LINE-SEARCH!!!!!!!!!!!!!!!!!!!!!!!\n");
                 }
-                atomicAdd(&g_E0[color_index], lc(v_current_C, vn_C));
+                atomicAdd(&g_E0[color_index], lc(v_current_C, v_star_C));
             }
         }
     }
@@ -1616,12 +2081,16 @@ __global__ void update_global_energy_grid_kernel(
     const T* g_v_star,
     T* g_momentum,
     const T* g_Dir,
+    const T* g_Kdv0,
+    const T* g_Kdv,
+    const T* g_Kdir,
     T* global_E0,
     T* global_E1,
     T* global_dE1,
     T* global_d2E1,
     const uint32_t g_color_mask,
     const T global_alpha,
+    const T dt,
     const bool eval_E0) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
@@ -1653,13 +2122,25 @@ __global__ void update_global_energy_grid_kernel(
             }
             if (eval_E0) {
                 atomicAdd(global_E0, T(0.5) * mass * norm_sqr<3>(v_current_rel));
+                // elasticity energy: 1/2 dt^2 ||dv||^2_K = 1/2 dt^2 * dv^T Kdv
+                const T* Kdv0 = &g_Kdv0[cell_idx * 3];
+                atomicAdd(global_E0, T(0.5) * dt * dt * dot<3>(v_current_rel, Kdv0));
             }
 
             // (1/2) * ||v_i - v_i^*||_M^2
             atomicAdd(global_E1, T(0.5) * mass * norm_sqr<3>(v_next_rel));
+            // elasticity energy: 1/2 dt^2 ||dv||^2_K = 1/2 dt^2 * dv^T Kdv
+            const T* Kdv = &g_Kdv[cell_idx * 3];
+            atomicAdd(global_E1, T(0.5) * dt * dt * dot<3>(v_next_rel, Kdv));
+
             if constexpr(SOLVE_DF_DDF) {
+                const T* Kdir = &g_Kdir[cell_idx * 3];
+
                 atomicAdd(global_dE1,  mass * dot<3>(v_next_rel, Dir));
+                atomicAdd(global_dE1, dt * dt * dot<3>(v_next_rel, Kdir));
+
                 atomicAdd(global_d2E1, mass * norm_sqr<3>(Dir));
+                atomicAdd(global_d2E1, dt * dt * dot<3>(Dir, Kdir));
             }
         }
     }
@@ -1673,7 +2154,8 @@ __global__ void apply_global_line_search_grid_kernel(
     T* g_momentum,
     const T* g_Dir,
     const uint32_t g_color_mask,
-    const T global_alpha) {
+    const T global_alpha,
+    const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
@@ -1686,6 +2168,14 @@ __global__ void apply_global_line_search_grid_kernel(
             g_vel[0] += global_alpha * Dir[0];
             g_vel[1] += global_alpha * Dir[1];
             g_vel[2] += global_alpha * Dir[2];
+            
+            // NOTE (changyu): check CFL condition here
+#if (DEBUG)
+            const T CFL_dt = config::G_DX<T> / (norm<3>(g_vel) + 1e-10);
+            if (dt > CFL_dt) {
+                printf("dt exceds CFL dt limit (%lf)!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dt / CFL_dt);
+            }
+#endif
         }
     }
 }

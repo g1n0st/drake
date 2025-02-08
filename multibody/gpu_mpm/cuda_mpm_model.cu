@@ -50,6 +50,7 @@ void GpuMpmState<T>::Finalize() {
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_velocities, sizeof(Vec3<T>) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_volumes, sizeof(T) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_affine_matrices, sizeof(Mat3<T>) * n_particles_));
+        CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_affine_matrices_star, sizeof(Mat3<T>) * n_particles_));
 
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_pids, sizeof(int) * n_particles_));
         CUDA_SAFE_CALL(cudaMalloc(&particle_buffer_[i].d_sort_keys, sizeof(uint32_t) * n_particles_));
@@ -75,12 +76,17 @@ void GpuMpmState<T>::Finalize() {
                                       cudaMemcpyHostToDevice));
             CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_volumes, 0, sizeof(T) * n_particles_));
             CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_affine_matrices, 0, sizeof(Mat3<T>) * n_particles_));
+            CUDA_SAFE_CALL(cudaMemset(particle_buffer_[i].d_affine_matrices_star, 0, sizeof(Mat3<T>) * n_particles_));
         }
     }
     
     // scratch data
     CUDA_SAFE_CALL(cudaMalloc(&d_forces_, sizeof(Vec3<T>) * n_particles_));
     CUDA_SAFE_CALL(cudaMalloc(&d_taus_, sizeof(Mat3<T>) * n_particles_));
+    CUDA_SAFE_CALL(cudaMalloc(&d_dforces_, sizeof(Vec3<T>) * n_particles_));
+    CUDA_SAFE_CALL(cudaMalloc(&d_dtaus_, sizeof(Mat3<T>) * n_particles_));
+    CUDA_SAFE_CALL(cudaMalloc(&d_dvs_, sizeof(Vec3<T>) * n_particles_));
+    CUDA_SAFE_CALL(cudaMalloc(&d_gradDvs_, sizeof(Mat3<T>) * n_particles_));
     CUDA_SAFE_CALL(cudaMalloc(&d_index_mappings_, sizeof(int) * n_particles_));
     std::vector<int> initial_index_mappings(n_particles_);
     std::iota(initial_index_mappings.begin(), initial_index_mappings.end(), 0);
@@ -103,6 +109,9 @@ void GpuMpmState<T>::Finalize() {
     CUDA_SAFE_CALL(cudaMemset(grid_buffer_.d_g_touched_cnt, 0, sizeof(uint32_t)));
 
     CUDA_SAFE_CALL(cudaMalloc(&d_g_Hess_, config::G_DOMAIN_VOLUME * sizeof(Mat3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Kdv0_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Kdir_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Kdv_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_Grad_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_Dir_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_alpha_, config::G_DOMAIN_VOLUME * sizeof(T)));
@@ -128,6 +137,7 @@ void GpuMpmState<T>::Destroy() {
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_velocities));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_volumes));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_affine_matrices));
+        CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_affine_matrices_star));
 
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_pids));
         CUDA_SAFE_CALL(cudaFree(particle_buffer_[i].d_sort_keys));
@@ -138,6 +148,7 @@ void GpuMpmState<T>::Destroy() {
         particle_buffer_[i].d_velocities = nullptr;
         particle_buffer_[i].d_volumes = nullptr;
         particle_buffer_[i].d_affine_matrices = nullptr;
+        particle_buffer_[i].d_affine_matrices_star = nullptr;
         particle_buffer_[i].d_pids = nullptr;
         particle_buffer_[i].d_sort_keys = nullptr;
         particle_buffer_[i].d_sort_ids = nullptr;
@@ -145,12 +156,20 @@ void GpuMpmState<T>::Destroy() {
 
     CUDA_SAFE_CALL(cudaFree(d_forces_));
     CUDA_SAFE_CALL(cudaFree(d_taus_));
+    CUDA_SAFE_CALL(cudaFree(d_dforces_));
+    CUDA_SAFE_CALL(cudaFree(d_dtaus_));
+    CUDA_SAFE_CALL(cudaFree(d_dvs_));
+    CUDA_SAFE_CALL(cudaFree(d_gradDvs_));
     CUDA_SAFE_CALL(cudaFree(d_index_mappings_));
     CUDA_SAFE_CALL(cudaFree(d_deformation_gradients_));
     CUDA_SAFE_CALL(cudaFree(d_Dm_inverses_));
     CUDA_SAFE_CALL(cudaFree(d_indices_));
     d_forces_ = nullptr;
     d_taus_ = nullptr;
+    d_dforces_ = nullptr;
+    d_dtaus_ = nullptr;
+    d_dvs_ = nullptr;
+    d_gradDvs_ = nullptr;
     d_index_mappings_ = nullptr;
     d_deformation_gradients_ = nullptr;
     d_Dm_inverses_ = nullptr;
@@ -168,6 +187,9 @@ void GpuMpmState<T>::Destroy() {
     grid_buffer_.d_g_touched_cnt = nullptr;
 
     CUDA_SAFE_CALL(cudaFree(d_g_Hess_));
+    CUDA_SAFE_CALL(cudaFree(d_g_Kdv0_));
+    CUDA_SAFE_CALL(cudaFree(d_g_Kdir_));
+    CUDA_SAFE_CALL(cudaFree(d_g_Kdv_));
     CUDA_SAFE_CALL(cudaFree(d_g_Grad_));
     CUDA_SAFE_CALL(cudaFree(d_g_Dir_));
     CUDA_SAFE_CALL(cudaFree(d_g_alpha_));
@@ -175,6 +197,9 @@ void GpuMpmState<T>::Destroy() {
     CUDA_SAFE_CALL(cudaFree(d_g_E0_));
     CUDA_SAFE_CALL(cudaFree(d_g_E1_));
     d_g_Hess_ = nullptr;
+    d_g_Kdv0_ = nullptr;
+    d_g_Kdir_ = nullptr;
+    d_g_Kdv_ = nullptr;
     d_g_Grad_ = nullptr;
     d_g_Dir_ = nullptr;
     d_g_alpha_ = nullptr;
