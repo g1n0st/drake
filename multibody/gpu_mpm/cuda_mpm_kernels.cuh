@@ -2128,10 +2128,10 @@ __global__ void update_global_energy_grid_kernel(
                 const T* Kdir = &g_Kdir[cell_idx * 3];
 
                 atomicAdd(global_dE1,  mass * dot<3>(v_next_rel, Dir));
-                atomicAdd(global_dE1, T(0.5) * dt * dt * dot<3>(v_next_rel, Kdir));
+                atomicAdd(global_dE1, dt * dt * dot<3>(v_next_rel, Kdir));
 
                 atomicAdd(global_d2E1, mass * norm_sqr<3>(Dir));
-                atomicAdd(global_d2E1, T(0.5) * dt * dt * dot<3>(Dir, Kdir));
+                atomicAdd(global_d2E1, dt * dt * dot<3>(Dir, Kdir));
             }
         }
     }
