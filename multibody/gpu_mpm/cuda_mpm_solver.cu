@@ -447,7 +447,6 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     global_line_search,
                     current_alpha)
                     ));
-                update_Kdv(state->grid_Kdv(), current_alpha, true);  // elasticity energy defined for E1, with respect to the direction
                 update_Kdv(state->grid_Kdv(), current_alpha, false);  // elasticity energy defined for E1
                 CUDA_SAFE_CALL((
                     update_global_energy_grid_kernel<T, true, /*SOLVE_DF_DDF=*/true><<<
