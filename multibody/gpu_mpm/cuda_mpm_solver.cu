@@ -381,6 +381,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
             CUDA_SAFE_CALL(cudaMemcpy(&total_grid_DoFs, total_grid_DoFs_d, sizeof(uint32_t), cudaMemcpyDeviceToHost));
             // printf("color(%u) total_grid_DoFs=%u\n", color_mask, total_grid_DoFs);
 
+            // NOTE (changyu): when apply_dir flag is on, 
+            // it computes the differential form Kdv with respect to the search direction
+            // used for exact line search to get grad/hess of energy with respect to the step size.
             const auto &update_Kdv = [&](T *Kdv_ptr, const T alpha, bool apply_dir=false) {
                 // elasticity line search
                 // STEP 1. dv_i -> dv_p, gradDv_p
@@ -447,7 +450,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                     global_line_search,
                     current_alpha)
                     ));
-                update_Kdv(state->grid_Kdv(), current_alpha, false);  // elasticity energy defined for E1
+                update_Kdv(state->grid_Kdv(), current_alpha, /*apply_dir=*/false);  // elasticity energy defined for E1
                 CUDA_SAFE_CALL((
                     update_global_energy_grid_kernel<T, true, /*SOLVE_DF_DDF=*/true><<<
                     (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
@@ -605,10 +608,10 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
                         }
                     } else {
                         if (line_search_cnt == 0) {
-                            update_Kdv(state->grid_Kdv0(), 0, false); // elasticity energy defined for E0
-                            update_Kdv(state->grid_Kdir(), 0, true); // elasticity energy defined for E0, with respect to the search direction
+                            update_Kdv(state->grid_Kdv0(), 0, /*apply_dir=*/false); // elasticity energy defined for E0
+                            update_Kdv(state->grid_Kdir(), 0, /*apply_dir=*/true); // elasticity energy defined for E0, with respect to the search direction
                         }
-                        update_Kdv(state->grid_Kdv(), global_alpha, false);  // elasticity energy defined for E1
+                        update_Kdv(state->grid_Kdv(), global_alpha, /*apply_dir=*/false);  // elasticity energy defined for E1
 
                         // STEP 4. 1/2 ||dv||^2_A = 1/2 ||dv||^2_(M+dt^2K) = 1/2 ||dv||^2_M + 1/2 dt^2 ||dv||^2_K
                         CUDA_SAFE_CALL((
