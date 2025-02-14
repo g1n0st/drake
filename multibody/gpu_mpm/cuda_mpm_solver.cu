@@ -248,10 +248,10 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
         (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
 
-    // If we don't converge in 2000 iterations, we probably will never converge anyway...    
-    const int max_newton_iterations = 2000;
+    // If we don't converge in 4000 iterations, we probably will never converge anyway...    
+    const int max_newton_iterations = 4000;
     constexpr bool use_jacobi = true;
-    const T kRelTol = 5e-2;
+    const T kRelTol = 1e-2;
     // Set the absolute tolerance close to machine epsilon so that we almost always exit based on the relative tolerance.
     const T kAbsTol = 16 * std::numeric_limits<T>::epsilon();
 
@@ -610,21 +610,20 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
         s_times.push_back(T((after_ts-before_ts) / 1e3));
     }
     // throw;
-    std::cout << "Iteration count :" <<  count 
-              << ", residual: " << norm_dir 
-              << ", relative tol: " << kRelTol * norm_impulse_initial
-              << ", n_contacts " << n_contacts 
-              << ", grid_DoFs " << grid_DoFs 
-              << ", line_search_cnt_aver " << static_cast<T>(std::accumulate(s_line_search_cnts.begin(), s_line_search_cnts.end(), 0)) / s_line_search_cnts.size()
-              << std::endl;
+    // std::cout << "Iteration count :" <<  count 
+    //           << ", residual: " << norm_dir 
+    //           << ", relative tol: " << kRelTol * norm_impulse_initial
+    //           << ", n_contacts " << n_contacts 
+    //           << ", grid_DoFs " << grid_DoFs 
+    //           << ", line_search_cnt_aver " << static_cast<T>(std::accumulate(s_line_search_cnts.begin(), s_line_search_cnts.end(), 0)) / s_line_search_cnts.size()
+            //   << std::endl;
     if (count == max_newton_iterations) {
-        std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Newton iterations did not converge!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+        std::cout << "reltol = " << (norm_dir / norm_impulse_initial) << std::endl;
     }
     CUDA_SAFE_CALL(cudaFree(norm_dir_d));
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
-
-    if (dump) {
+    if (false) {
         std::ofstream file("/home/changyu/drake/mpm-data/" 
                            + std::string(use_jacobi ? "jacobi" : "colored_gs") 
                            + "_iter_" + std::to_string(max_newton_iterations)

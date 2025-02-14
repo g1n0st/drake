@@ -326,7 +326,7 @@ __global__ void calc_fem_state_and_force_kernel(
     }
 }
 
-template<typename T, bool PLASTICITY=true, bool LINEAR_COROTATED=false>
+template<typename T, bool PLASTICITY=true, bool LINEAR_COROTATED=true>
 __global__ void calc_particle_state_and_force_kernel(
     const size_t n_particles,
     const T* volumes,

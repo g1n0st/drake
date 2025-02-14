@@ -46,7 +46,7 @@ namespace config {
 	template<> constexpr double GRID_BLOCK_SPACING<double> = 1.;
 
 	constexpr int BLOCK_BITS			 = 2; // BLOCK 4x4x4
-	constexpr int DOMAIN_BITS			 = 7; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
+	constexpr int DOMAIN_BITS			 = 5; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
 	template<class T> constexpr T DXINV	 = (GRID_BLOCK_SPACING<T> * (1 << DOMAIN_BITS));
 
 	constexpr int G_DOMAIN_BITS			 = DOMAIN_BITS;
@@ -80,8 +80,8 @@ namespace config {
 	// shake use 100
 	// roll use 1000
 	template<class T> constexpr T DENSITY;
-	template<> constexpr float DENSITY<float> = 1000.f;
-	template<> constexpr double DENSITY<double> = 1000.;
+	template<> constexpr float DENSITY<float> = 100.f;
+	template<> constexpr double DENSITY<double> = 100.;
 
 	template<class T> constexpr T GAMMA;
 	template<> constexpr float GAMMA<float> = 0.f;
@@ -98,8 +98,8 @@ namespace config {
 	// for tshirt/cloth folding demo, V=0.8
 	// for bagging demo, K=0.2
 	template<class T> constexpr T V;
-	template<> constexpr float V<float> = .8f;
-	template<> constexpr double V<double> = .8;
+	template<> constexpr float V<float> = .5f;
+	template<> constexpr double V<double> = .5;
 
 	template<class T> constexpr T c_F;
 	template<> constexpr float c_F<float> = .0f;
@@ -159,8 +159,8 @@ namespace config {
 	template<> constexpr double PARTICLE_YIELD_STRESS<double> = 1e9;
 
 	template<class T> constexpr T PARTICLE_YOUNGS_MODULUS;
-	template<> constexpr float PARTICLE_YOUNGS_MODULUS<float> = 5e5f;
-	template<> constexpr double PARTICLE_YOUNGS_MODULUS<double> = 5e5;
+	template<> constexpr float PARTICLE_YOUNGS_MODULUS<float> = 5e6f;
+	template<> constexpr double PARTICLE_YOUNGS_MODULUS<double> = 5e6;
 
 	template<class T> constexpr T PARTICLE_POISSON_RATIO;
 	template<> constexpr float PARTICLE_POISSON_RATIO<float> = .4f;
