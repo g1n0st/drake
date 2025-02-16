@@ -615,6 +615,21 @@ struct pack<Eigen::Matrix<Scalar, RowsAtCompileTime, ColsAtCompileTime, Options,
 };
 
 template <>
+struct pack<std::vector<float>> {
+  template <typename Stream>
+  packer<Stream>& operator()(
+      // NOLINTNEXTLINE(runtime/references) cpplint disapproves of msgpack.
+      msgpack::packer<Stream>& o,
+      const std::vector<float>& values) const {
+    const int8_t ext = 0x17;
+    const size_t s = values.size() * sizeof(float);
+    o.pack_ext(s, ext);
+    o.pack_ext_body(reinterpret_cast<const char*>(&values[0]), s);
+    return o;
+  }
+};
+
+template <>
 struct pack<drake::geometry::Meshcat::OrthographicCamera> {
   template <typename Stream>
   packer<Stream>& operator()(

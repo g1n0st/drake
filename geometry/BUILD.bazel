@@ -566,6 +566,22 @@ drake_cc_binary(
     ],
 )
 
+drake_cc_binary(
+    name = "meshcat_modify_vertex_positions_test",
+    testonly = True,
+    srcs = ["test/meshcat_modify_vertex_positions_test.cc"],
+    data = [
+        ":test_obj_files",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":meshcat",
+        "//common:add_text_logging_gflags",
+        "//common/test_utilities:maybe_pause_for_user",
+        "//geometry/proximity:obj_to_surface_mesh",
+    ],
+)
+
 drake_py_binary(
     name = "meshcat_websocket_client",
     testonly = True,
@@ -764,6 +780,9 @@ filegroup(
         "test/non_convex_mesh.obj",
         "test/octahedron.mtl",
         "test/octahedron.obj",
+        "test/planet.jpg",
+        "test/planet.mtl",
+        "test/planet.obj",
         "test/quad_cube.mtl",
         "test/quad_cube.obj",
     ],

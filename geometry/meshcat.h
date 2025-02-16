@@ -631,6 +631,9 @@ class Meshcat {
                    const std::vector<double>& value,
                    std::optional<double> time_in_recording = std::nullopt);
 
+  void SetProperty(std::string_view path, std::string property,
+                   const std::vector<float>& value);
+
   /** Sets the *environment* texture. For objects with physically-based
    rendering (PBR) material properties (e.g., metallic surfaces), this defines
    the luminance environment, contributing to total illumination and appearing

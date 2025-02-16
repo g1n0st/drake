@@ -59,6 +59,25 @@ MeshcatVisualizer<T>::MeshcatVisualizer(std::shared_ptr<Meshcat> meshcat,
     alpha_value_ = params_.initial_alpha_slider_value;
     meshcat_->AddSlider(alpha_slider_name_, 0.02, 1.0, 0.02, alpha_value_);
   }
+
+  const auto tshirt =
+      FindResourceOrThrow("drake/examples/multibody/deformable/tshirt.obj");
+  const auto tshirt_reversed = FindResourceOrThrow(
+      "drake/examples/multibody/deformable/tshirt_reversed.obj");
+  meshcat_->SetObject("tshirt", Mesh(tshirt, 1.0));
+  meshcat_->SetObject("tshirt_reversed", Mesh(tshirt_reversed, 1.0));
+  const RigidTransformd X_WTshirt(Vector3d{0, 0, 0});
+  meshcat_->SetTransform("tshirt", X_WTshirt);
+  meshcat_->SetTransform("tshirt_reversed", X_WTshirt);
+  // This is a constant used by THREE.js in the "usage" attribute to give hints
+  // as to how often a given BufferGeometry will be updated. Since we plan on
+  // updating each time step we will set it to `StreamDrawUsage`.
+  // See:
+  // https://threejs.org/docs/index.html#api/en/constants/BufferAttributeUsage
+  constexpr double StreamDrawUsage = 35040;
+  meshcat_->SetProperty("/drake/model/<object>",
+                        "geometry.attributes.position.usage", StreamDrawUsage);
+  meshcat_->Flush();
 }
 
 template <typename T>
@@ -195,6 +214,30 @@ void MeshcatVisualizer<T>::SetMpmObjects(
     }
     const TriangleSurfaceMesh<double> mesh(std::move(triangles),
                                            std::move(vertices));
+
+    const std::vector<Vector3d>& vertices = mesh.vertices();
+    std::vector<Vector3d> soup_vertices;
+    soup_vertices.reserve(mesh.num_elements() * 3);
+
+    // VERY annoyingly, the obj loader used in meshcat loads the obj as a
+    // triangle soup. So we have to duplicate vertices in out buffer message in
+    // order to match what javascript is storing in memory. Luckily it doesn't
+    // seem to do any re-ordering of the face indices, so we may assume they are
+    // in the same order as in the file, and thus the same order as Drake parses
+    // them.
+    for (int i = 0; i < mesh.num_elements(); ++i) {
+      const auto element = mesh.element(i);
+      soup_vertices.emplace_back(vertices[element.vertex(0)]);
+      soup_vertices.emplace_back(vertices[element.vertex(1)]);
+      soup_vertices.emplace_back(vertices[element.vertex(2)]);
+    }
+    std::vector<float> positions(soup_vertices.size() * 3);
+    for (size_t i = 0; i < soup_vertices.size(); ++i) {
+      positions[i * 3 + 0] = soup_vertices[i][0];
+      positions[i * 3 + 1] = soup_vertices[i][1];
+      positions[i * 3 + 2] = soup_vertices[i][2];
+    }
+
     const Rgba rgba = params_.default_color;
 
     std::string current_path;
@@ -205,15 +248,21 @@ void MeshcatVisualizer<T>::SetMpmObjects(
     {
       current_path = params_.prefix + "/mpm_object_visual/" +
                      std::to_string(current_frame);
-      meshcat_->SetObject(current_path, mesh, rgba);
+      // meshcat_->SetObject(current_path, mesh, rgba);
       meshcat_->SetProperty(current_path, "visible", false, 0);
       meshcat_->SetProperty(current_path, "visible", true, time);
+      meshcat_->SetProperty(current_path, "geometry.attributes.position.array",
+                            positions);
+      meshcat_->SetProperty(current_path,
+                            "geometry.attributes.position.needsUpdate", true);
+      meshcat_->Flush();
       if (current_frame >= 1) {
         std::string prev_path = params_.prefix + "/mpm_object_visual/" +
                                 std::to_string(current_frame - 1);
         meshcat_->SetProperty(prev_path, "visible", false, time);
       }
     }
+
     {
       current_path = params_.prefix + "/mpm_object_visual/" +
                      std::to_string(current_frame) + "_wireframe";
@@ -223,10 +272,10 @@ void MeshcatVisualizer<T>::SetMpmObjects(
       meshcat_->SetProperty(current_path, "visible", true, time);
       if (current_frame >= 1) {
         std::string prev_path = params_.prefix + "/mpm_object_visual/" +
-                                std::to_string(current_frame - 1) + "_wireframe";
+                                std::to_string(current_frame - 1) +
+                                "_wireframe";
         meshcat_->SetProperty(prev_path, "visible", false, time);
       }
-
     }
   }
 }
