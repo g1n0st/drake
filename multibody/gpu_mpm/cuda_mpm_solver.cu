@@ -220,7 +220,12 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const MpmParticleC
 template<typename T>
 void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, const int substep, const T& dt, const T& friction_mu, const T& stiffness, const T& damping, const bool dump, const bool exact_line_search) const {
     const auto &n_contacts = state->num_contacts();
-    if (!n_contacts) return;
+    if (!n_contacts) {
+        if (frame == 1000) throw;
+        if (frame == 1100) throw;
+        return;
+    }
+    if (frame == 1170) throw;
 
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
     const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
@@ -238,7 +243,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
         ));
 
     // If we don't converge in 2000 iterations, we probably will never converge anyway...    
-    const int max_newton_iterations = 2000;
+    const int max_newton_iterations = 20;
     constexpr bool use_jacobi = true;
     const T kRelTol = 1e-2;
     // Set the absolute tolerance close to machine epsilon so that we almost always exit based on the relative tolerance.
