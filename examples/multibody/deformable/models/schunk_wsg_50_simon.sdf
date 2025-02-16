@@ -62,7 +62,7 @@
       <visual name="visual">
         <geometry>
           <box>
-            <size>0.016 0.095 0.07</size>
+            <size>0.020 0.095 0.06</size>
           </box>
         </geometry>
         <material>
@@ -75,7 +75,7 @@
       <collision name="collision">
         <geometry>
           <box>
-            <size>0.016 0.095 0.07</size>
+            <size>0.020 0.095 0.06</size>
           </box>
         </geometry>
         <drake:proximity_properties>
@@ -104,7 +104,7 @@
       <visual name="visual">
         <geometry>
           <box>
-            <size>0.016 0.095 0.06</size>
+            <size>0.020 0.095 0.06</size>
           </box>
         </geometry>
         <material>
@@ -117,7 +117,7 @@
       <collision name="collision">
         <geometry>
           <box>
-            <size>0.016 0.095 0.06</size>
+            <size>0.020 0.095 0.06</size>
           </box>
         </geometry>
         <drake:proximity_properties>

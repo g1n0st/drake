@@ -29,12 +29,12 @@
 #include "drake/systems/primitives/multiplexer.h"
 #include "drake/examples/multibody/deformable/mpm_cloth_shared.h"
 
-DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
+DEFINE_bool(write_files, true, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 13.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
 DEFINE_double(res, 50, "Cloth Res");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 1e-2,
+DEFINE_double(time_step, 2e-3,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(substep, 5e-4,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
@@ -139,8 +139,8 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     closed_state_2_(0) = -0.0041;
     closed_state_2_(1) = 0.0041;
     closed_state_3_ = Eigen::VectorXd::Zero(4);
-    closed_state_3_(0) = -0.002;
-    closed_state_3_(1) = 0.002;
+    closed_state_3_(0) = -0.003;
+    closed_state_3_(1) = 0.003;
     this->DeclareVectorOutputPort(
         "WsgDesiredState", drake::systems::BasicVector<double>(size_),
         &HandPoseController::CalcDesiredState, {this->time_ticket()});
@@ -301,16 +301,26 @@ class IiwaController : public drake::systems::LeafSystem<double> {
     } else if (context.get_time() <= 8.0) {
       // try to unfold
         if (is_left_) {
-            dX(5) = -std::min(0.0032 * rate, current_state_values(5) - 0.2455);  // move
-            dX(4) = -std::min(0.00454 * rate, current_state_values(4) - 0.258); // move, grasp the edge of the cloth
+            // dX(5) = -std::min(0.0032 * rate, current_state_values(5) - 0.2455);  // move
+            // dX(4) = -std::min(0.00454 * rate, current_state_values(4) - 0.258); // move, grasp the edge of the cloth
+            dX(5) = -std::min(0.0034 * rate, current_state_values(5) - 0.245);  // move
+            dX(4) = -std::min(0.00454 * rate, current_state_values(4) - 0.278); // move, grasp the edge of the cloth
+            dX(0) = -0.007 * rate;  // turn
         }
+    } else if (context.get_time() <= 8.3) {
+      if (is_left_) {
+          dX.setZero(); // hold
+          dX(5) -= 0.0003 * rate;  // move
+          dX(4) += 0.0035 * rate;  // move
+      }
     } else if (context.get_time() <= 8.5) {
       if (is_left_) {
           dX.setZero(); // hold
       }
     } else if (context.get_time() <= 9.5) {
       if (is_left_) {
-        dX(5) = +0.0032 * rate;  // up
+        dX(5) = +0.0036 * rate;  // up
+        dX(0) = 0.007 * rate;  // turn
       }
     } else if (context.get_time() <= 10.2) {
       if (is_left_) {
@@ -414,7 +424,7 @@ int do_main() {
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   // AddCloth(&deformable_model, FLAGS_res, 0.01, -0.2, 0.25);
-  AddClothFromFile(&deformable_model, "/home/changyu/Desktop/tshirt.obj", 0.05, -0.2, -0.1, 1);
+  AddClothFromFile(&deformable_model, "/home/xuchenhan/drake/tshirt.obj", 0.05, -0.2, -0.1, 1);
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
@@ -613,7 +623,7 @@ int do_main() {
     simulator.AdvanceTo(FLAGS_simulation_time);
     meshcat->StopRecording();
     meshcat->PublishRecording();
-    std::ofstream htmlFile("/home/changyu/drake/dual_arm_folding.html");
+    std::ofstream htmlFile("/home/xuchenhan/drake/dual_arm_folding.html");
     htmlFile << meshcat->StaticHtml();
     htmlFile.close();
   } else {
