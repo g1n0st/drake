@@ -30,7 +30,7 @@
 #include "drake/examples/multibody/deformable/mpm_cloth_shared.h"
 
 DEFINE_bool(write_files, true, "Enable dumping MPM data to files.");
-DEFINE_double(simulation_time, 13.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 17.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
 DEFINE_double(res, 50, "Cloth Res");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
@@ -116,8 +116,12 @@ class LeftGripperRotator : public systems::LeafSystem<double> {
     VectorX<double> dX = Eigen::VectorXd::Zero(7);
     if ((t >= 2.0) && (t <= 3.0)) {
         dX[6] = (t - 2.0) * 1.5708;
-    } else if (t >= 3.0) {
+    } else if (t >= 3.0 && t <= 11.5) {
         dX[6] = 1.5708;
+    } else if (t >= 11.5 && t <= 12.5) {
+        dX[6] = (12.5 - t) * 1.5708;
+    } else {
+        dX[6] = 0;
     }
     output->set_value(dX + robot_state);
   }
@@ -133,14 +137,17 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     open_state_(0) = -0.08;
     open_state_(1) = 0.08;
     closed_state_ = Eigen::VectorXd::Zero(4);
-    closed_state_(0) = -0.002;
-    closed_state_(1) = 0.002;
+    closed_state_(0) = -0.003;
+    closed_state_(1) = 0.003;
     closed_state_2_ = Eigen::VectorXd::Zero(4);
     closed_state_2_(0) = -0.0041;
     closed_state_2_(1) = 0.0041;
     closed_state_3_ = Eigen::VectorXd::Zero(4);
-    closed_state_3_(0) = -0.003;
-    closed_state_3_(1) = 0.003;
+    closed_state_3_(0) = -0.0035;
+    closed_state_3_(1) = 0.0035;
+    closed_state_4_ = Eigen::VectorXd::Zero(4);
+    closed_state_4_(0) = -0.0035;
+    closed_state_4_(1) = 0.0035;
     this->DeclareVectorOutputPort(
         "WsgDesiredState", drake::systems::BasicVector<double>(size_),
         &HandPoseController::CalcDesiredState, {this->time_ticket()});
@@ -186,8 +193,8 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     
     // third
     else if (context.get_time() < 9.0) {
-      // gripper gripping from 8.0 to 8.3, then hold until 10.0
-      double t = std::max(std::min((context.get_time() - 8.0) / (0.3), 1.0), 0.0);
+      // gripper gripping from 8.0 to 8.5, then hold until 10.0
+      double t = std::max(std::min((context.get_time() - 8.0) / (0.5), 1.0), 0.0);
       Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
                                 std::min(t, 1.0) * closed_state_3_;
       output->set_value(q_and_v);
@@ -195,6 +202,21 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
       // gripper opening from 11.0 to 11.5
       double t = std::max(std::min((context.get_time() - 11.0) / (0.5), 1.0), 0.0);
       Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * closed_state_3_ +
+                                std::min(t, 1.0) * open_state_;
+      output->set_value(q_and_v);
+    }
+
+    // fourth
+    else if (context.get_time() < 14.0) {
+      // gripper gripping from 13.0 to 13.5, then hold until 15.0
+      double t = std::max(std::min((context.get_time() - 13.0) / (0.5), 1.0), 0.0);
+      Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
+                                std::min(t, 1.0) * closed_state_4_;
+      output->set_value(q_and_v);
+    } else if (context.get_time() < 16.0) {
+      // gripper opening from 15.4 to 15.9
+      double t = std::max(std::min((context.get_time() - 15.4) / (0.5), 1.0), 0.0);
+      Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * closed_state_4_ +
                                 std::min(t, 1.0) * open_state_;
       output->set_value(q_and_v);
     }
@@ -214,6 +236,7 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
   Eigen::VectorXd closed_state_;
   Eigen::VectorXd closed_state_2_;
   Eigen::VectorXd closed_state_3_;
+  Eigen::VectorXd closed_state_4_;
 };
 
 class IiwaController : public drake::systems::LeafSystem<double> {
@@ -266,6 +289,7 @@ class IiwaController : public drake::systems::LeafSystem<double> {
       dX(3) = -0.004 * rate;  // move
       dX(5) = -0.002 * rate;  // move
     } else if (context.get_time() <= 3.0) {
+      // std::cout << current_state_values(3) << std::endl; throw;
       // retarget for next fold
       if (!is_left_) {
         dX(4) = -0.006 * rate;
@@ -331,6 +355,36 @@ class IiwaController : public drake::systems::LeafSystem<double> {
         dX(4) = +0.0035 * rate;  // shake to unfold it
         dX(5) = -0.0025 * rate;  // put 1-fold cloth on the ground
       }
+    } else if (context.get_time() <= 11.5) {
+      // stay
+    } 
+    else if (context.get_time() <= 12.5) {
+      // recenter for final unfold
+      if (is_left_) {
+        if (context.get_time() <= 11.55) {
+          dX(4) = 0.0075 * rate;
+        }
+        dX(3) = std::min(0.003 * rate, 0.43 - current_state_values(3)); // move-x, grasp the edge of the cloth
+      } else {
+        dX(4) = std::min(0.0075 * rate, 0.64 - current_state_values(4)); // move-y
+        dX(3) = std::min(0.003 * rate, 0.43 - current_state_values(3)); // move-x, grasp the edge of the cloth
+      }
+    } else if (context.get_time() <= 13.0) {
+      dX(5) = -std::min(0.0034 * rate, current_state_values(5) - 0.245);  // move down
+      dX(1) = -0.007 * rate;  // turn
+      // dX(3) = +0.003 * rate;  // pre-shovel
+    } else if (context.get_time() <= 13.5) {
+      // hold
+      dX(3) = -0.002 * rate;  // shovel
+    } else if (context.get_time() <= 14.0) {
+      // move up
+      dX(5) = +0.004 * rate;  // up
+      dX(1) = +0.007 * rate;  // turn
+    } else if (context.get_time() <= 15.0) {
+      dX(3) = +0.002 * rate;  // move-x
+    } else if (context.get_time() <= 15.5) {
+      dX(3) = -0.003 * rate;  // move-x
+      dX(5) = -0.002 * rate;  // up
     }
 
     auto new_value = current_state_values + dX;
@@ -424,7 +478,8 @@ int do_main() {
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   // AddCloth(&deformable_model, FLAGS_res, 0.01, -0.2, 0.25);
-  AddClothFromFile(&deformable_model, "/home/xuchenhan/drake/tshirt.obj", 0.05, -0.2, -0.1, 1);
+  AddClothFromFile(&deformable_model, "/home/changyu/Desktop/tshirt.obj", 0.05, -0.2, -0.1, 1);
+  // deformable_model.RegisterMpmParticle({Vector3d(0)}, {Vector3d(0)}, 1.0);
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
@@ -623,7 +678,7 @@ int do_main() {
     simulator.AdvanceTo(FLAGS_simulation_time);
     meshcat->StopRecording();
     meshcat->PublishRecording();
-    std::ofstream htmlFile("/home/xuchenhan/drake/dual_arm_folding.html");
+    std::ofstream htmlFile("/home/changyu/drake/dual_arm_folding.html");
     htmlFile << meshcat->StaticHtml();
     htmlFile.close();
   } else {
