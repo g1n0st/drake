@@ -137,8 +137,8 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     open_state_(0) = -0.08;
     open_state_(1) = 0.08;
     closed_state_ = Eigen::VectorXd::Zero(4);
-    closed_state_(0) = -0.003;
-    closed_state_(1) = 0.003;
+    closed_state_(0) = -0.0026;
+    closed_state_(1) = 0.0026;
     closed_state_2_ = Eigen::VectorXd::Zero(4);
     closed_state_2_(0) = -0.0041;
     closed_state_2_(1) = 0.0041;
@@ -146,8 +146,8 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     closed_state_3_(0) = -0.0035;
     closed_state_3_(1) = 0.0035;
     closed_state_4_ = Eigen::VectorXd::Zero(4);
-    closed_state_4_(0) = -0.0035;
-    closed_state_4_(1) = 0.0035;
+    closed_state_4_(0) = -0.003;
+    closed_state_4_(1) = 0.003;
     this->DeclareVectorOutputPort(
         "WsgDesiredState", drake::systems::BasicVector<double>(size_),
         &HandPoseController::CalcDesiredState, {this->time_ticket()});
@@ -216,8 +216,8 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
 
     // fourth
     else if (context.get_time() < 14.0) {
-      // gripper gripping from 13.0 to 13.5, then hold until 15.0
-      double t = std::max(std::min((context.get_time() - 13.0) / (0.5), 1.0), 0.0);
+      // gripper gripping from 13.0 to 13.3, then hold until 15.0
+      double t = std::max(std::min((context.get_time() - 13.0) / (0.3), 1.0), 0.0);
       Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
                                 std::min(t, 1.0) * closed_state_4_;
       output->set_value(q_and_v);
@@ -379,7 +379,7 @@ class IiwaController : public drake::systems::LeafSystem<double> {
         dX(3) = std::min(0.003 * rate, 0.43 - current_state_values(3)); // move-x, grasp the edge of the cloth
       }
     } else if (context.get_time() <= 13.0) {
-      dX(5) = -std::min(0.0034 * rate, current_state_values(5) - (is_left_ ? 0.245 : 0.243));  // move down
+      dX(5) = -std::min(0.0034 * rate, current_state_values(5) - (is_left_ ? 0.245 : 0.245));  // move down
       dX(1) = -0.007 * rate;  // turn
       // dX(3) = +0.003 * rate;  // pre-shovel
     } else if (context.get_time() <= 13.5) {
