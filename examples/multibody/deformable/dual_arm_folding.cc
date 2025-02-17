@@ -370,16 +370,16 @@ class IiwaController : public drake::systems::LeafSystem<double> {
     else if (context.get_time() <= 12.5) {
       // recenter for final unfold
       if (is_left_) {
-        if (context.get_time() <= 11.55) {
+        if (context.get_time() <= 11.58) {
           dX(4) = 0.0075 * rate;
         }
         dX(3) = std::min(0.003 * rate, 0.43 - current_state_values(3)); // move-x, grasp the edge of the cloth
       } else {
-        dX(4) = std::min(0.0075 * rate, 0.64 - current_state_values(4)); // move-y
+        dX(4) = std::min(0.0075 * rate, 0.66 - current_state_values(4)); // move-y
         dX(3) = std::min(0.003 * rate, 0.43 - current_state_values(3)); // move-x, grasp the edge of the cloth
       }
     } else if (context.get_time() <= 13.0) {
-      dX(5) = -std::min(0.0034 * rate, current_state_values(5) - 0.245);  // move down
+      dX(5) = -std::min(0.0034 * rate, current_state_values(5) - (is_left_ ? 0.245 : 0.243));  // move down
       dX(1) = -0.007 * rate;  // turn
       // dX(3) = +0.003 * rate;  // pre-shovel
     } else if (context.get_time() <= 13.5) {
