@@ -254,7 +254,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           deformable_model_->cpu_mpm_model().config.contact_stiffness, 
           deformable_model_->cpu_mpm_model().config.contact_damping,
           deformable_model_->cpu_mpm_model().config.write_files,
-          deformable_model_->cpu_mpm_model().config.exact_line_search);
+          deformable_model_->cpu_mpm_model().config.exact_line_search,
+          deformable_model_->cpu_mpm_model().config.mdv_as_impulse);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc, /*ENFORCE_BC_ONLY=*/true);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         substep += 1;

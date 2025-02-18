@@ -1891,29 +1891,96 @@ __global__ void apply_global_line_search_grid_kernel(
     }
 }
 
-template<typename T>
+template<typename T, bool MDV_AS_IMPULSE>
 __global__ void apply_contact_impulse_to_rigid_bodies(
     const size_t n_contacts,
     const T* contact_pos,
     const T* contact_vel_star,
     const T* contact_vel,
     const T* volumes,
+    const T* velocities,
+    const T* contact_dist,
+    const T* contact_normal,
+    const T* contact_rigid_v,
     const uint32_t* contact_mpm_id,
     const uint32_t* contact_rigid_id,
     const T* contact_rigid_p_WB,
     T* F_Bq_W_tau,
-    T* F_Bq_W_f) {
+    T* F_Bq_W_f,
+    const T dt,
+    const T friction_mu,
+    const T stiffness,
+    const T damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_contacts) {
-        T dv[3] = {
-            contact_vel[idx * 3 + 0] - contact_vel_star[idx * 3 + 0],
-            contact_vel[idx * 3 + 1] - contact_vel_star[idx * 3 + 1],
-            contact_vel[idx * 3 + 2] - contact_vel_star[idx * 3 + 2]
-        };
-        T m = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
-        // We negate the sign of the grid node's momentum change to get
-        //  the impulse applied to the rigid body at the grid node.
-        T l_WN_W[3] = {m * -dv[0], m * -dv[1], m * -dv[2]};
+        T l_WN_W[3] = {0, 0, 0};
+        if constexpr (MDV_AS_IMPULSE) {
+            T dv[3] = {
+                contact_vel[idx * 3 + 0] - contact_vel_star[idx * 3 + 0],
+                contact_vel[idx * 3 + 1] - contact_vel_star[idx * 3 + 1],
+                contact_vel[idx * 3 + 2] - contact_vel_star[idx * 3 + 2]
+            };
+            T m = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+
+            // We negate the sign of the grid node's momentum change to get
+            //  the impulse applied to the rigid body at the grid node.
+            l_WN_W[0] = m * -dv[0];
+            l_WN_W[1] = m * -dv[1];
+            l_WN_W[2] = m * -dv[2];
+        } else {
+            // Use negative contact energy gradient as the impulse 
+            // instead of particle mdv when accumulating impulses on rigid bodies
+            const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+            const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
+            const T* particle_v = &contact_vel[idx * 3];
+
+            T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
+            T phi0 = -contact_dist[idx];
+#ifdef DEBUG
+            if (phi0 < 0) {
+                printf("IMPOSSIBLE!!!\n");
+            }
+#endif
+
+            T vn_rel_W[3] = {
+                particle_vn[0] - contact_rigid_v[idx * 3 + 0],
+                particle_vn[1] - contact_rigid_v[idx * 3 + 1],
+                particle_vn[2] - contact_rigid_v[idx * 3 + 2]
+            };
+            T v_rel_W[3] = {
+                particle_v[0] - contact_rigid_v[idx * 3 + 0],
+                particle_v[1] - contact_rigid_v[idx * 3 + 1],
+                particle_v[2] - contact_rigid_v[idx * 3 + 2]
+            };
+
+            constexpr int kZAxis = 2;
+            T R_WC[9], R_CW[9]; // for each contact pair, Ji = R_CWp * wip
+            make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
+            transpose<3, 3, T>(R_WC, R_CW);
+
+            T vn_C[3], v_next_C[3]; // in the contact local coordinate
+            matmul<3, 3, 1, T>(R_CW, vn_rel_W, vn_C);
+            matmul<3, 3, 1, T>(R_CW, v_rel_W, v_next_C);
+
+            T lc_Hess_C_unused[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
+            compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C_unused, lc_Grad_C);
+            
+            
+            // grad in the world local coordinate
+            T lc_Grad_W[3];
+
+            // Grad for lc(vp(vi))
+            matmul<3, 3, 1, T>(R_WC, lc_Grad_C, lc_Grad_W); // J^T Grad
+
+            // NOTE (changyu): we have two negative signs here 
+            // (1): we negate the sign of the gradient of lc() to get the impulse(gamma) applied to the grid node.
+            // (2): we negate (1) again to compute the reaction force to the rigid body, in accordance with Newton's Third Law.
+            // finally we have no sign here
+            l_WN_W[0] = lc_Grad_W[0];
+            l_WN_W[1] = lc_Grad_W[1];
+            l_WN_W[2] = lc_Grad_W[2];
+        }
+
         const T* p_WN = &contact_pos[idx * 3];
         const T* p_WB = &contact_rigid_p_WB[idx * 3];
         const T p_BN_W[3] = {

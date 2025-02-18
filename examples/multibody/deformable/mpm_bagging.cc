@@ -222,6 +222,8 @@ int do_main() {
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.contact_query_frequency = 8;
   mpm_config.mpm_bc = -1;
+  mpm_config.ignore_face_contact = true;
+  mpm_config.mdv_as_impulse = false;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   const auto& gripper_instance = BaggingGripperController::AddGripperInstance(&plant, rigid_proximity_props);

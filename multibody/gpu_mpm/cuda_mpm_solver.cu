@@ -218,7 +218,16 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const MpmParticleC
 }
 
 template<typename T>
-void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, const int substep, const T& dt, const T& friction_mu, const T& stiffness, const T& damping, const bool dump, const bool exact_line_search) const {
+void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, 
+    const int frame, 
+    const int substep, 
+    const T& dt, 
+    const T& friction_mu, 
+    const T& stiffness, 
+    const T& damping, 
+    const bool dump, 
+    const bool exact_line_search,
+    const bool mdv_as_impulse) const {
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
 
@@ -641,12 +650,28 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const int frame, cons
     }
 
     // NOTE (changyu): two-way coupling part, apply contact impulse back to the rigid part
-    CUDA_SAFE_CALL((apply_contact_impulse_to_rigid_bodies<T><<<
-        (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (n_contacts, state->contact_pos(), state->contact_vel_star(), state->contact_vel(), 
-        state->current_volumes(), state->contact_mpm_id(), state->contact_rigid_id(), 
-        state->contact_rigid_p_WB(), state->F_Bq_W_tau(), state->F_Bq_W_f())
-        ));
+    if (mdv_as_impulse) {
+        CUDA_SAFE_CALL((apply_contact_impulse_to_rigid_bodies<T, /*MDV_AS_IMPULSE=*/true><<<
+            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (n_contacts, state->contact_pos(), state->contact_vel_star(), state->contact_vel(), 
+            state->current_volumes(), state->current_velocities(),
+            state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
+            state->contact_mpm_id(), state->contact_rigid_id(), 
+            state->contact_rigid_p_WB(), state->F_Bq_W_tau(), state->F_Bq_W_f(),
+            dt, friction_mu, stiffness, damping)
+            ));
+    } else {
+        // NOTE: Use negative contact energy gradient as the impulse instead of particle mdv when accumulating impulses on rigid bodies
+        CUDA_SAFE_CALL((apply_contact_impulse_to_rigid_bodies<T, /*MDV_AS_IMPULSE=*/false><<<
+            (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (n_contacts, state->contact_pos(), state->contact_vel_star(), state->contact_vel(), 
+            state->current_volumes(), state->current_velocities(),
+            state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
+            state->contact_mpm_id(), state->contact_rigid_id(), 
+            state->contact_rigid_p_WB(), state->F_Bq_W_tau(), state->F_Bq_W_f(),
+            dt, friction_mu, stiffness, damping)
+            ));
+    }
 }
 
 template class GpuMpmSolver<config::GpuT>;

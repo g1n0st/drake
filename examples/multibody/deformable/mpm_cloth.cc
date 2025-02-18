@@ -239,6 +239,8 @@ int do_main() {
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.exact_line_search = FLAGS_exact_line_search;
+  mpm_config.ignore_face_contact = true;
+  mpm_config.mdv_as_impulse = false;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   /* All rigid and deformable models have been added. Finalize the plant. */
