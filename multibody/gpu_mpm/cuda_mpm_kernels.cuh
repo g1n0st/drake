@@ -326,7 +326,7 @@ __global__ void calc_fem_state_and_force_kernel(
     }
 }
 
-template<typename T, bool PLASTICITY=true>
+template<typename T, bool PLASTICITY=true, bool LINEAR_COROTATED=false>
 __global__ void calc_particle_state_and_force_kernel(
     const size_t n_particles,
     const T* volumes,
@@ -369,76 +369,124 @@ __global__ void calc_particle_state_and_force_kernel(
             V[i] = Vf[i];
         }
 
-        if constexpr(PLASTICITY) {
-            T b_trial[3] = {
-                sigma[0] * sigma[0],
-                sigma[4] * sigma[4],
-                sigma[8] * sigma[8]
-            };
+        T *stress = &taus[idx * 9];
+        if constexpr(LINEAR_COROTATED) {
+            // Matrix3<T> R0;
+            // Matrix3<T> strain;
+            // Matrix3<T> unused_S;
+            // fem::internal::PolarDecompose<T>(F0, &R0, &unused_S);
+            // const Matrix3<T> corotated_F = R0.transpose() * FE;
+            // strain =
+            //     0.5 * (corotated_F + corotated_F.transpose()) - Matrix3<T>::Identity();
+            // T trace_strain = strain.trace();
+            // return {R0, strain, trace_strain};
+            T tmp[9];
+            T R[9], S[9];
+            matmulT<3, 3, 3, T>(U, V, R);
+            matmul<3, 3, 3, T>(V, sigma, tmp);
+            matmulT<3, 3, 3, T>(tmp, V, S);
+            T Rt[9];
+            transpose<3, 3, T>(R, Rt);
+            T corotated_F[9];
+            matmul<3, 3, 3, T>(Rt, F, corotated_F);
+            T strain[9];
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j) {
+                    strain[i * 3 + j] = T(0.5) * (corotated_F[i * 3 + j] + corotated_F[j * 3 + i]) - T(i == j ? 1. : 0.);
+                }
+            T trace_strain = strain[0 * 3 + 0] + strain[1 * 3 + 1] + strain[2 * 3 + 2];
 
-            T epsilon[3] = {
-                log(sigma[0]),
-                log(sigma[4]),
-                log(sigma[8])
-            };
+            T R_strain[9];
+            matmul<3, 3, 3, T>(R, strain, R_strain);
 
-            T trace_epsilon = epsilon[0] + epsilon[1] + epsilon[2];
-            T epsilon_hat[3] = {
-                epsilon[0] - (trace_epsilon / T(3.)),
-                epsilon[1] - (trace_epsilon / T(3.)),
-                epsilon[2] - (trace_epsilon / T(3.))
-            };
-            T s_trial[3] = {
-                T(2.) * config::PARTICLE_MU<T> * epsilon_hat[0],
-                T(2.) * config::PARTICLE_MU<T> * epsilon_hat[1],
-                T(2.) * config::PARTICLE_MU<T> * epsilon_hat[2],
-            };
-            T s_trial_norm = norm<3>(s_trial) + T(1e-8);
-            T y = s_trial_norm - sqrt(T(2./3.)) * config::PARTICLE_YIELD_STRESS<T>;
-            if (y > 0) {
-                T mu_hat = config::PARTICLE_MU<T> * (b_trial[0] + b_trial[1] + b_trial[2]) / T(3.);
-                T s_new_norm = s_trial_norm - y;
-                T s_new[3] = {
-                    (s_new_norm / s_trial_norm) * s_trial[0],
-                    (s_new_norm / s_trial_norm) * s_trial[1],
-                    (s_new_norm / s_trial_norm) * s_trial[2]
-                };
-                T H[3] = {
-                    s_new[0] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.),
-                    s_new[1] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.),
-                    s_new[2] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.)
-                };
-
-                sigma[0 * 3 + 0] = exp(H[0]);
-                sigma[1 * 3 + 1] = exp(H[1]);
-                sigma[2 * 3 + 2] = exp(H[2]);
+            // StrainData data = ComputeStrainData(F0, FE);
+            // (*P) = 2.0 * this->mu() * data.R0 * data.strain + this->lambda() * data.trace_strain * data.R0;
+            T P[9];
+            for (int i = 0; i < 9; ++i) {
+                P[i] = T(2.) * config::PARTICLE_MU<T> * R_strain[i] + config::PARTICLE_LAMBDA<T> * trace_strain * R[i];
             }
 
-            T tmp[9];
-            matmul<3, 3, 3, T>(U, sigma, tmp);
-            matmulT<3, 3, 3, T>(tmp, V, F);
-        }
-        
-        // TODO (changyu): many register used here. Most of them could be reused to optimize performance.
-        T J = determinant3(F);
-        T *stress = &taus[idx * 9];
-        T R[9];
-        matmulT<3, 3, 3, T>(U, V, R);
-        
-        T *two_mu_F_minus_R = R;
-        #pragma unroll
-        for (int i = 0; i < 9; ++i) {
-            two_mu_F_minus_R[i] = T(2.) * config::PARTICLE_MU<T> * (F[i] - R[i]);
-        }
-        matmulT<3, 3, 3, T>(two_mu_F_minus_R, F, stress);
-        #pragma unroll
-        for (int i = 0; i < 3; ++i) {
-            stress[i * 3 + i] += config::PARTICLE_LAMBDA<T> * J * (J - T(1.));
-        }
+            // Matrix3<T> P;
+            // CalcFirstPiolaStress(F0, FE, &P);
+            // (*tau) = P * FE.transpose();
+            matmulT<3, 3, 3, T>(P, F, stress);
 
-        #pragma unroll
-        for (int i = 0; i < 9; ++i) {
-            stress[i] *= volumes[idx];
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                stress[i] *= volumes[idx];
+            }
+        }
+        else {
+            if constexpr(PLASTICITY) {
+                T b_trial[3] = {
+                    sigma[0] * sigma[0],
+                    sigma[4] * sigma[4],
+                    sigma[8] * sigma[8]
+                };
+
+                T epsilon[3] = {
+                    log(sigma[0]),
+                    log(sigma[4]),
+                    log(sigma[8])
+                };
+
+                T trace_epsilon = epsilon[0] + epsilon[1] + epsilon[2];
+                T epsilon_hat[3] = {
+                    epsilon[0] - (trace_epsilon / T(3.)),
+                    epsilon[1] - (trace_epsilon / T(3.)),
+                    epsilon[2] - (trace_epsilon / T(3.))
+                };
+                T s_trial[3] = {
+                    T(2.) * config::PARTICLE_MU<T> * epsilon_hat[0],
+                    T(2.) * config::PARTICLE_MU<T> * epsilon_hat[1],
+                    T(2.) * config::PARTICLE_MU<T> * epsilon_hat[2],
+                };
+                T s_trial_norm = norm<3>(s_trial) + T(1e-8);
+                T y = s_trial_norm - sqrt(T(2./3.)) * config::PARTICLE_YIELD_STRESS<T>;
+                if (y > 0) {
+                    T mu_hat = config::PARTICLE_MU<T> * (b_trial[0] + b_trial[1] + b_trial[2]) / T(3.);
+                    T s_new_norm = s_trial_norm - y;
+                    T s_new[3] = {
+                        (s_new_norm / s_trial_norm) * s_trial[0],
+                        (s_new_norm / s_trial_norm) * s_trial[1],
+                        (s_new_norm / s_trial_norm) * s_trial[2]
+                    };
+                    T H[3] = {
+                        s_new[0] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.),
+                        s_new[1] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.),
+                        s_new[2] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.)
+                    };
+
+                    sigma[0 * 3 + 0] = exp(H[0]);
+                    sigma[1 * 3 + 1] = exp(H[1]);
+                    sigma[2 * 3 + 2] = exp(H[2]);
+                }
+
+                T tmp[9];
+                matmul<3, 3, 3, T>(U, sigma, tmp);
+                matmulT<3, 3, 3, T>(tmp, V, F);
+            }
+            
+            // TODO (changyu): many register used here. Most of them could be reused to optimize performance.
+            T J = determinant3(F);
+            T R[9];
+            matmulT<3, 3, 3, T>(U, V, R);
+            
+            T *two_mu_F_minus_R = R;
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                two_mu_F_minus_R[i] = T(2.) * config::PARTICLE_MU<T> * (F[i] - R[i]);
+            }
+            matmulT<3, 3, 3, T>(two_mu_F_minus_R, F, stress);
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) {
+                stress[i * 3 + i] += config::PARTICLE_LAMBDA<T> * J * (J - T(1.));
+            }
+
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                stress[i] *= volumes[idx];
+            }
         }
     }
 }
