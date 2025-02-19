@@ -136,6 +136,7 @@ void GpuMpmState<T>::Finalize() {
     CUDA_SAFE_CALL(cudaMalloc(&d_g_Dir_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_alpha_, config::G_DOMAIN_VOLUME * sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_v_star_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_v0_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_E0_, config::G_DOMAIN_VOLUME * sizeof(T)));
     CUDA_SAFE_CALL(cudaMalloc(&d_g_E1_, config::G_DOMAIN_VOLUME * sizeof(T)));
 
@@ -212,6 +213,7 @@ void GpuMpmState<T>::Destroy() {
     CUDA_SAFE_CALL(cudaFree(d_g_Dir_));
     CUDA_SAFE_CALL(cudaFree(d_g_alpha_));
     CUDA_SAFE_CALL(cudaFree(d_g_v_star_));
+    CUDA_SAFE_CALL(cudaFree(d_g_v0_));
     CUDA_SAFE_CALL(cudaFree(d_g_E0_));
     CUDA_SAFE_CALL(cudaFree(d_g_E1_));
     d_g_Hess_ = nullptr;
@@ -219,6 +221,7 @@ void GpuMpmState<T>::Destroy() {
     d_g_Dir_ = nullptr;
     d_g_alpha_ = nullptr;
     d_g_v_star_ = nullptr;
+    d_g_v0_ = nullptr;
     d_g_E0_ = nullptr;
     d_g_E1_ = nullptr;
 

@@ -625,6 +625,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
     uint32_t* g_touched_flags,
     T* g_masses,
     T* g_momentum,
+    T* g_v0,
     const T dt) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
@@ -685,6 +686,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         }
 
         T val[4];
+        T val0[3];
 
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
@@ -704,16 +706,29 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     val[1] = vel[0] * val[0];
                     val[2] = vel[1] * val[0];
                     val[3] = vel[2] * val[0];
+                    val0[0] = vel[0] * val[0];
+                    val0[1] = vel[1] * val[0];
+                    val0[2] = vel[2] * val[0];
+
                     // apply gravity
                     val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
 
                     val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
                     val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
                     val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
+                    val0[0] += (C[0] * xi_minus_xp[0] + C[1] * xi_minus_xp[1] + C[2] * xi_minus_xp[2]) * weight * mass;
+                    val0[1] += (C[3] * xi_minus_xp[0] + C[4] * xi_minus_xp[1] + C[5] * xi_minus_xp[2]) * weight * mass;
+                    val0[2] += (C[6] * xi_minus_xp[0] + C[7] * xi_minus_xp[1] + C[8] * xi_minus_xp[2]) * weight * mass;
                     const T* force = &forces[idx * 3];
                     val[1] += force[0] * dt * weight;
                     val[2] += force[1] * dt * weight;
                     val[3] += force[2] * dt * weight;
+
+                    const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                    const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
+                    atomicAdd(&(g_v0[target_cell_index * 3 + 0]), val0[0]);
+                    atomicAdd(&(g_v0[target_cell_index * 3 + 1]), val0[1]);
+                    atomicAdd(&(g_v0[target_cell_index * 3 + 2]), val0[2]);
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[4]; 
@@ -726,8 +741,6 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     }
 
                     if (boundary) {
-                        const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-                        const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
                         g_touched_flags[target_grid_index] = 1;
                         atomicAdd(&(g_masses[target_cell_index]), val[0]);
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[1]);
@@ -786,7 +799,8 @@ __global__ void clean_grid_kernel(
     const uint32_t* g_touched_ids,
     uint32_t* g_touched_flags,
     T* g_masses,
-    T* g_momentum) {
+    T* g_momentum,
+    T* g_v0) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
@@ -796,6 +810,9 @@ __global__ void clean_grid_kernel(
         g_momentum[cell_idx * 3 + 0] = 0;
         g_momentum[cell_idx * 3 + 1] = 0;
         g_momentum[cell_idx * 3 + 2] = 0;
+        g_v0[cell_idx * 3 + 0] = 0;
+        g_v0[cell_idx * 3 + 1] = 0;
+        g_v0[cell_idx * 3 + 2] = 0;
     }
 }
 
@@ -834,19 +851,26 @@ __global__ void update_grid_kernel(
     T* g_masses,
     T* g_momentum,
     T* g_v_star,
-    const T times_elapsed) {
+    T* g_v0,
+    const T times_elapsed,
+    const bool v0_as_inital_guess) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
         if (g_masses[cell_idx] > T(0.)) {
             T *g_vel = &g_momentum[cell_idx * 3];
+            T *g_vn = &g_v0[cell_idx * 3];
 
             if constexpr (!ENFORCE_BC_ONLY) {
                 // printf("m=%lf mv=(%lf %lf %lf)\n", g_masses[cell_idx], g_vel[0], g_vel[1], g_vel[2]);
                 g_vel[0] /= g_masses[cell_idx];
                 g_vel[1] /= g_masses[cell_idx];
                 g_vel[2] /= g_masses[cell_idx];
+
+                g_vn[0] /= g_masses[cell_idx];
+                g_vn[1] /= g_masses[cell_idx];
+                g_vn[2] /= g_masses[cell_idx];
             }
             else {
 
@@ -1232,6 +1256,11 @@ __global__ void update_grid_kernel(
                 g_v_star[cell_idx * 3 + 0] = g_vel[0];
                 g_v_star[cell_idx * 3 + 1] = g_vel[1];
                 g_v_star[cell_idx * 3 + 2] = g_vel[2];
+                if (v0_as_inital_guess) {
+                    g_vel[0] = g_vn[0];
+                    g_vel[1] = g_vn[1];
+                    g_vel[2] = g_vn[2];
+                }
             }
         }
     }

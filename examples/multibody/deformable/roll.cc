@@ -353,6 +353,8 @@ int do_main() {
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.exact_line_search = FLAGS_exact_line_search;
+  mpm_config.mdv_as_impulse = false;
+  mpm_config.v0_as_inital_guess = true;
   if (use_mpm_ground) {
     mpm_config.mpm_bc = 111;
   }
