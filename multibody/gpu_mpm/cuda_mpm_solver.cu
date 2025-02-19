@@ -249,14 +249,14 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
         ));
 
     // If we don't converge in 2000 iterations, we probably will never converge anyway...    
-    const int max_newton_iterations = 2000;
+    const int max_newton_iterations = 40000;
     constexpr bool use_jacobi = true;
-    const T kRelTol = 5e-2;
+    const T kRelTol = 1e-5;
     // Set the absolute tolerance close to machine epsilon so that we almost always exit based on the relative tolerance.
     const T kAbsTol = 16 * std::numeric_limits<T>::epsilon();
 
     bool enable_line_search = true;
-    const T jacobi_relax_coeff = 0.3;
+    const T jacobi_relax_coeff = 1.0;
     const bool global_line_search = use_jacobi;
     int count = 0;
 
@@ -300,7 +300,10 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
     // `norm_dir_initial` and `norm_impulse_initial` will be set to the initial norm values after the first iteration.
     T norm_dir_initial = 1e-8;
     T norm_impulse_initial = 1e-8;
-    while (norm_dir > (kAbsTol + kRelTol * norm_impulse_initial) && count < max_newton_iterations) {
+    bool cost_satisfied = false;
+    T cost_reltol = 1e-10;
+    T cost_abstol = std::numeric_limits<T>::epsilon();
+    while (norm_dir > (kAbsTol + kRelTol * norm_impulse_initial) && !cost_satisfied && count < max_newton_iterations) {
         long long before_ts = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         CUDA_SAFE_CALL(cudaMemset(norm_dir_d, 0, sizeof(T)));
         CUDA_SAFE_CALL(cudaMemset(norm_impulse_d, 0, sizeof(T)));
@@ -592,8 +595,11 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
                 ));
             // throw;
             grid_DoFs += total_grid_DoFs;
+            T ell_scale = 0.5 * (abs(global_E1) + abs(global_E0));
+            T ell_decrement = abs(global_E0 - global_E1);
+            cost_satisfied = ell_decrement < cost_abstol + cost_reltol * ell_scale;
         }
-
+        
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
         CUDA_SAFE_CALL(cudaMemcpy(&norm_dir, norm_dir_d, sizeof(T), cudaMemcpyDeviceToHost));
         CUDA_SAFE_CALL(cudaMemcpy(&norm_impulse, norm_impulse_d, sizeof(T), cudaMemcpyDeviceToHost));
@@ -624,7 +630,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
 
-    if (dump) {
+    if (false) {
         std::ofstream file("/home/changyu/drake/mpm-data/" 
                            + std::string(use_jacobi ? "jacobi" : "colored_gs") 
                            + "_iter_" + std::to_string(max_newton_iterations)

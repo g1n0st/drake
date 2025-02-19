@@ -46,7 +46,7 @@ namespace config {
 	template<> constexpr double GRID_BLOCK_SPACING<double> = 1.;
 
 	constexpr int BLOCK_BITS			 = 2; // BLOCK 4x4x4
-	constexpr int DOMAIN_BITS			 = 7; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
+	constexpr int DOMAIN_BITS			 = 6; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
 	template<class T> constexpr T DXINV	 = (GRID_BLOCK_SPACING<T> * (1 << DOMAIN_BITS));
 
 	constexpr int G_DOMAIN_BITS			 = DOMAIN_BITS;
@@ -128,7 +128,7 @@ namespace config {
 	template<> constexpr double epsv<double> = 1e-3;
 
 	// Particle parameters
-#define PARTICLE_EXAMPLE 2 // dual_arm=0, roll=1, shake=2
+#define PARTICLE_EXAMPLE 1 // dual_arm=0, roll=1, shake=2
 #if PARTICLE_EXAMPLE == 0
 	template<class T> constexpr T PARTICLE_YIELD_STRESS;
 	template<> constexpr float PARTICLE_YIELD_STRESS<float> = 6e3f;
