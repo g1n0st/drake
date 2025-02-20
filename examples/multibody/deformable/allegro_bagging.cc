@@ -30,14 +30,14 @@
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 14.0, "Desired duration of the simulation [s].");
-DEFINE_int32(res, 69, "Cloth Resolution.");
+DEFINE_int32(res, 30, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 5e-3,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(substep, 5e-4,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
-DEFINE_double(stiffness, 100.0, "Contact Stiffness.");
-DEFINE_double(friction, 0.3, "Contact Friction.");
+DEFINE_double(stiffness, 1000.0, "Contact Stiffness.");
+DEFINE_double(friction, 0.2, "Contact Friction.");
 DEFINE_double(damping, 1.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
@@ -231,7 +231,7 @@ class IiwaController : public drake::systems::LeafSystem<double> {
      } else if (t < 1.0) {
        // hold
      } else if (t < 1.5) {
-      dX(5) += 0.002 * rate * uprt; // move up
+      dX(5) += 0.00225 * rate * uprt; // move up
      } else if (t < 2.5) {
       dX(5) += 0.002 * rate * uprt; // move up
       dX(4) -= 0.0042 * rate; // move left
@@ -251,24 +251,24 @@ class IiwaController : public drake::systems::LeafSystem<double> {
         dX(3) += 0.0009 * rate / 1.5 * 5; // move outward
       }
      } else if (t < 4.5) {
-      dX(5) -= 0.0021 * rate * uprt; // move down
+      dX(5) -= 0.00225 * rate * uprt; // move down
      } else if (t < 5.0) {
       // hold
      } else if (t < 5.5) {
       dX(5) += 0.003 * rate * uprt; // move up
      } else if (t < 6.5) {
-        dX(5) += 0.0019 * rate * uprt; // move up 
+        dX(5) += 0.0018 * rate * uprt; // move up 
         dX(4) -= 0.0048 * rate; // move left
-        dX(4) -= 0.002 * rate; // move extra 20cm
-        dX(3) -= 0.0008 * rate; // move inward
+        dX(4) -= 0.0018 * rate; // move extra 18cm
+        dX(3) -= 0.0005 * rate; // move inward
      } else if (t < 7.0) {
         // hold
      } else if (t < 9.0) {
-      if (t < 8.0) {
-        dX(5) += 0.002 * rate / 4.0;
-      } else {
-        dX(5) -= 0.002 * rate / 4.0;
-      }
+      // if (t < 8.0) {
+      //   dX(5) += 0.002 * rate / 4.0;
+      // } else {
+      //   dX(5) -= 0.002 * rate / 4.0;
+      // }
       dX(4) += 0.0084 * rate / 4.0; // move right
       dX(4) += 0.004 * rate / 4.0; // move extra 20cm to get right up of the blue box
       dX(3) += 0.0015 * rate / 4.0; // move outward
