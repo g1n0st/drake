@@ -539,7 +539,7 @@ int do_main() {
     Box ground{10, 10, 10};
     const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -5 + 0.02});
     plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground,
-                                    "ground_collision", rigid_proximity_props);
+                                    "ground_collision", ground_proximity_props);
   }
   multibody::Parser ground_parser(&plant, "ground");
   const std::string table_file = FindResourceOrThrow(
