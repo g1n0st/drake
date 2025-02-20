@@ -257,9 +257,9 @@ class IiwaController : public drake::systems::LeafSystem<double> {
      } else if (t < 5.5) {
       dX(5) += 0.003 * rate * uprt; // move up
      } else if (t < 6.5) {
-        dX(5) += 0.0018 * rate * uprt; // move up 
+        dX(5) += 0.0017 * rate * uprt; // move up 
         dX(4) -= 0.0048 * rate; // move left
-        dX(4) -= 0.0018 * rate; // move extra 18cm
+        dX(4) -= 0.0017 * rate; // move extra 17cm
         dX(3) -= 0.0005 * rate; // move inward
      } else if (t < 7.0) {
         // hold
