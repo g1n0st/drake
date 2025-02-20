@@ -348,6 +348,43 @@ drake_cc_binary(
 )
 
 drake_cc_binary(
+    name = "allegro_bagging_cloth",
+    srcs = [
+        "allegro_bagging_cloth.cc",
+    ],
+    add_test_rule = 1,
+    data = [
+        "@drake_models//:iiwa_description",
+        "@drake_models//:allegro_hand_description",
+        "@drake_models//:wsg_50_description",
+        "@drake_models//:manipulation_station",
+        ":models",
+    ],
+    test_rule_args = [
+        "-simulation_time=0.1",
+        "-realtime_rate=0.0",
+    ],
+    deps = [
+        ":mpm_cloth_shared",
+        "//geometry:drake_visualizer",
+        "//geometry:scene_graph",
+        "//multibody/parsing",
+        "//multibody/plant",
+        "//systems/analysis:simulator",
+        "//systems/framework:diagram",
+        "@gflags",
+        "//manipulation/kuka_iiwa:iiwa_constants",
+        "//multibody/inverse_kinematics:differential_inverse_kinematics",
+        "//multibody/inverse_kinematics:differential_inverse_kinematics_integrator",
+        "//systems/primitives:multiplexer",
+        "//systems/primitives:constant_vector_source",
+        "//systems/primitives:matrix_gain",
+        "//geometry",
+        "//visualization",
+    ],
+)
+
+drake_cc_binary(
     name = "roll",
     srcs = [
         "roll.cc",
