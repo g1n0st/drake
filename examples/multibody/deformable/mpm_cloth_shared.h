@@ -60,10 +60,10 @@ using Eigen::Vector4d;
 using Eigen::VectorXd;
 
 [[maybe_unused]] void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis, double xy_offset=0.0, double x_offset=0.0) {
-  const double l = 0.007 * res;
+  double dx = 0.014;
+  const double l = dx * res;
   int length = res;
   int width = res;
-  double dx = l / width;
 
   auto p = [&](int i, int j) {
     return i * width + j;

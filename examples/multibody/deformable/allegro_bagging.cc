@@ -548,7 +548,7 @@ int do_main() {
   auto table = ground_parser.AddModels(table_file)[0];
   plant.WeldFrames(plant.world_frame(),
                    plant.GetBodyByName("table_body", table).body_frame(),
-                   RigidTransformd(Eigen::Vector3d(0.25, 0.29 + 0.5, 0.01)));
+                   RigidTransformd(Eigen::Vector3d(0.25, 0.29 + 0.5, 0.02)));
   
   // free box
   const Vector4<double> red(1.0, 0.0, 0.0, 1.0);
