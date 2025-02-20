@@ -1,9 +1,11 @@
 #include <fstream>
+#include <iostream>
 #include <memory>
 
 #include <gflags/gflags.h>
 
 #include "drake/common/find_resource.h"
+#include "drake/examples/multibody/deformable/mpm_cloth_shared.h"
 #include "drake/geometry/drake_visualizer.h"
 #include "drake/geometry/meshcat.h"
 #include "drake/geometry/meshcat_point_cloud_visualizer.h"
@@ -21,13 +23,12 @@
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
-#include "drake/visualization/visualization_config.h"
-#include "drake/visualization/visualization_config_functions.h"
 #include "drake/systems/framework/leaf_system.h"
 #include "drake/systems/primitives/constant_vector_source.h"
 #include "drake/systems/primitives/matrix_gain.h"
 #include "drake/systems/primitives/multiplexer.h"
-#include "drake/examples/multibody/deformable/mpm_cloth_shared.h"
+#include "drake/visualization/visualization_config.h"
+#include "drake/visualization/visualization_config_functions.h"
 
 DEFINE_bool(write_files, true, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 17.0, "Desired duration of the simulation [s].");
@@ -36,8 +37,9 @@ DEFINE_double(res, 50, "Cloth Res");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 2e-3,
               "Discrete time step for the system [s]. Must be positive.");
-DEFINE_double(substep, 5e-4,
-              "Discrete time step for the substepping scheme [s]. Must be positive.");
+DEFINE_double(
+    substep, 5e-4,
+    "Discrete time step for the substepping scheme [s]. Must be positive.");
 DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
@@ -45,10 +47,12 @@ DEFINE_string(contact_approximation, "sap",
 
 DEFINE_double(stiffness, 200.0, "Contact Stiffness.");
 DEFINE_double(friction, 0.6, "Contact Friction.");
-DEFINE_double(damping, 1.0,
+DEFINE_double(
+    damping, 1.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
-DEFINE_bool(exact_line_search, true, "Enable exact_line_search for contact solving.");
+DEFINE_bool(exact_line_search, true,
+            "Enable exact_line_search for contact solving.");
 
 using drake::geometry::AddContactMaterial;
 using drake::geometry::Box;
@@ -67,8 +71,9 @@ using drake::multibody::DifferentialInverseKinematicsIntegrator;
 using drake::multibody::DifferentialInverseKinematicsParameters;
 using drake::multibody::MultibodyPlant;
 using drake::multibody::MultibodyPlantConfig;
-using drake::multibody::Parser;
 using drake::multibody::PackageMap;
+using drake::multibody::Parser;
+using drake::multibody::gmpm::MpmConfigParams;
 using drake::systems::BasicVector;
 using drake::systems::Context;
 using Eigen::Matrix2d;
@@ -78,7 +83,6 @@ using Eigen::Vector2d;
 using Eigen::Vector3d;
 using Eigen::Vector4d;
 using Eigen::VectorXd;
-using drake::multibody::gmpm::MpmConfigParams;
 
 namespace drake {
 namespace examples {
@@ -99,7 +103,7 @@ class LeftGripperRotator : public systems::LeafSystem<double> {
  public:
   LeftGripperRotator() {
     this->DeclareVectorOutputPort("desired state", BasicVector<double>(7),
-                                   &LeftGripperRotator::CalcDesiredState);
+                                  &LeftGripperRotator::CalcDesiredState);
     robot_state_index_ =
         this->DeclareVectorInputPort("robot_state", 7).get_index();
   }
@@ -112,16 +116,16 @@ class LeftGripperRotator : public systems::LeafSystem<double> {
   void CalcDesiredState(const systems::Context<double>& context,
                         systems::BasicVector<double>* output) const {
     const double t = context.get_time();
-    const auto &robot_state = robot_state_input_port().Eval(context);
+    const auto& robot_state = robot_state_input_port().Eval(context);
     VectorX<double> dX = Eigen::VectorXd::Zero(7);
     if ((t >= 2.0) && (t <= 3.0)) {
-        dX[6] = (t - 2.0) * 1.5708;
+      dX[6] = (t - 2.0) * 1.5708;
     } else if (t >= 3.0 && t <= 11.5) {
-        dX[6] = 1.5708;
+      dX[6] = 1.5708;
     } else if (t >= 11.5 && t <= 12.5) {
-        dX[6] = (12.5 - t) * 1.5708;
+      dX[6] = (12.5 - t) * 1.5708;
     } else {
-        dX[6] = 0;
+      dX[6] = 0;
     }
     output->set_value(dX + robot_state);
   }
@@ -131,7 +135,8 @@ class LeftGripperRotator : public systems::LeafSystem<double> {
 
 class HandPoseController : public drake::systems::LeafSystem<double> {
  public:
-  HandPoseController(const multibody::MultibodyPlant<double>& plant, bool is_left)
+  HandPoseController(const multibody::MultibodyPlant<double>& plant,
+                     bool is_left)
       : plant_(plant), is_left_(is_left) {
     open_state_ = Eigen::VectorXd::Zero(4);
     open_state_(0) = -0.08;
@@ -158,25 +163,27 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
       output->set_value(open_state_);
     } else if (context.get_time() < 2.0) {
       // gripper gripping from 0.5 to 0.8, then hold until 2.2
-      double t = std::max(std::min((context.get_time() - 0.5) / (0.3), 1.0), 0.0);
+      double t =
+          std::max(std::min((context.get_time() - 0.5) / (0.3), 1.0), 0.0);
       Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
                                 std::min(t, 1.0) * closed_state_;
       output->set_value(q_and_v);
     } else if (context.get_time() < 2.7) {
       // gripper opening from 2.0 to 2.7
-      double t = std::max(std::min((context.get_time() - 2.0) / (0.3), 1.0), 0.0);
+      double t =
+          std::max(std::min((context.get_time() - 2.0) / (0.3), 1.0), 0.0);
       Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * closed_state_ +
                                 std::min(t, 1.0) * open_state_;
       output->set_value(q_and_v);
     } else if (context.get_time() < 3.5) {
-        output->set_value(open_state_);
-    
+      output->set_value(open_state_);
 
-    // second
+      // second
     } else if (context.get_time() < 4.0) {
       if (is_left_) {
         // gripper gripping from 3.5 to 3.8, then hold until 6.0
-        double t = std::max(std::min((context.get_time() - 3.5) / (0.3), 1.0), 0.0);
+        double t =
+            std::max(std::min((context.get_time() - 3.5) / (0.3), 1.0), 0.0);
         Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
                                   std::min(t, 1.0) * closed_state_2_;
         output->set_value(q_and_v);
@@ -184,22 +191,24 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     } else if (context.get_time() < 6.0) {
       if (is_left_) {
         // gripper opening from 6.0 to 6.4
-        double t = std::max(std::min((context.get_time() - 6.0) / (0.4), 1.0), 0.0);
+        double t =
+            std::max(std::min((context.get_time() - 6.0) / (0.4), 1.0), 0.0);
         Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * closed_state_2_ +
                                   std::min(t, 1.0) * open_state_;
         output->set_value(q_and_v);
       }
-    } 
-    
+    }
+
     else if (context.get_time() < 8.0 && is_left_) {
       output->set_value(open_state_);
-    } 
-    
+    }
+
     // third
     else if (context.get_time() < 9.0) {
       if (is_left_) {
         // gripper gripping from 8.0 to 8.5, then hold until 10.0
-        double t = std::max(std::min((context.get_time() - 8.0) / (0.5), 1.0), 0.0);
+        double t =
+            std::max(std::min((context.get_time() - 8.0) / (0.5), 1.0), 0.0);
         Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
                                   std::min(t, 1.0) * closed_state_3_;
         output->set_value(q_and_v);
@@ -207,7 +216,8 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     } else if (context.get_time() < 13.0) {
       if (is_left_) {
         // gripper opening from 11.0 to 11.5
-        double t = std::max(std::min((context.get_time() - 11.0) / (0.5), 1.0), 0.0);
+        double t =
+            std::max(std::min((context.get_time() - 11.0) / (0.5), 1.0), 0.0);
         Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * closed_state_3_ +
                                   std::min(t, 1.0) * open_state_;
         output->set_value(q_and_v);
@@ -217,13 +227,15 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     // fourth
     else if (context.get_time() < 14.0) {
       // gripper gripping from 13.0 to 13.3, then hold until 15.0
-      double t = std::max(std::min((context.get_time() - 13.0) / (0.3), 1.0), 0.0);
+      double t =
+          std::max(std::min((context.get_time() - 13.0) / (0.3), 1.0), 0.0);
       Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
                                 std::min(t, 1.0) * closed_state_4_;
       output->set_value(q_and_v);
     } else if (context.get_time() < 16.0) {
       // gripper opening from 15.4 to 15.9
-      double t = std::max(std::min((context.get_time() - 15.4) / (0.5), 1.0), 0.0);
+      double t =
+          std::max(std::min((context.get_time() - 15.4) / (0.5), 1.0), 0.0);
       Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * closed_state_4_ +
                                 std::min(t, 1.0) * open_state_;
       output->set_value(q_and_v);
@@ -231,7 +243,7 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
 
     else {
       output->set_value(open_state_);
-    } 
+    }
   }
 
  private:
@@ -291,7 +303,7 @@ class IiwaController : public drake::systems::LeafSystem<double> {
     if ((context.get_time() >= 0.0) && (context.get_time() <= 0.5)) {
       dX(5) = -0.0054 * rate;  // down
     } else if (context.get_time() <= 1.0) {
-      dX.setZero(); // hold
+      dX.setZero();  // hold
     } else if (context.get_time() <= 1.5) {
       dX(5) = +0.003 * rate;  // up
     } else if (context.get_time() <= 2.0) {
@@ -307,53 +319,57 @@ class IiwaController : public drake::systems::LeafSystem<double> {
         dX(3) = 0.0003 * rate;
       }
     } else if (context.get_time() <= 3.5) {
-        if (is_left_) {
-            dX(5) = -0.00095 * rate;  // down
-        }
+      if (is_left_) {
+        dX(5) = -0.00095 * rate;  // down
+      }
     } else if (context.get_time() <= 4.0) {
-        if (is_left_) {
-            dX.setZero(); // hold
-        }
+      if (is_left_) {
+        dX.setZero();  // hold
+      }
     } else if (context.get_time() <= 4.5) {
-        if (is_left_) {
-            dX(5) = +0.004 * rate;  // up
-        }
+      if (is_left_) {
+        dX(5) = +0.004 * rate;  // up
+      }
     } else if (context.get_time() <= 5.0) {
-        if (is_left_) {
-          dX(4) = -0.002 * rate;  // recenter the cloth
-        }
+      if (is_left_) {
+        dX(4) = -0.002 * rate;  // recenter the cloth
+      }
     } else if (context.get_time() <= 6.0) {
-        if (is_left_) {
-            dX(4) = +0.004 * rate;  // move
-            dX(5) = -0.0019 * rate;  // move
-        }
+      if (is_left_) {
+        dX(4) = +0.004 * rate;   // move
+        dX(5) = -0.0019 * rate;  // move
+      }
     } else if (context.get_time() <= 7.0) {
-        if (is_left_) {
-            dX(5) = +0.003 * rate;  // move
-        }
+      if (is_left_) {
+        dX(5) = +0.003 * rate;  // move
+      }
     } else if (context.get_time() <= 8.0) {
       // try to unfold
-        if (is_left_) {
-            // dX(5) = -std::min(0.0032 * rate, current_state_values(5) - 0.2455);  // move
-            // dX(4) = -std::min(0.00454 * rate, current_state_values(4) - 0.258); // move, grasp the edge of the cloth
-            dX(5) = -std::min(0.0034 * rate, current_state_values(5) - 0.245);  // move
-            dX(4) = -std::min(0.00454 * rate, current_state_values(4) - 0.278); // move, grasp the edge of the cloth
-            dX(0) = -0.007 * rate;  // turn
-        }
+      if (is_left_) {
+        // dX(5) = -std::min(0.0032 * rate, current_state_values(5) - 0.2455);
+        // // move dX(4) = -std::min(0.00454 * rate, current_state_values(4) -
+        // 0.258); // move, grasp the edge of the cloth
+        dX(5) =
+            -std::min(0.0034 * rate, current_state_values(5) - 0.245);  // move
+        dX(4) = -std::min(0.00454 * rate,
+                          current_state_values(4) -
+                              0.278);  // move, grasp the edge of the cloth
+        dX(0) = -0.007 * rate;         // turn
+      }
     } else if (context.get_time() <= 8.3) {
       if (is_left_) {
-          dX.setZero(); // hold
-          dX(5) -= 0.0003 * rate;  // move
-          dX(4) += 0.0035 * rate;  // move
+        dX.setZero();            // hold
+        dX(5) -= 0.0003 * rate;  // move
+        dX(4) += 0.0035 * rate;  // move
       }
     } else if (context.get_time() <= 8.5) {
       if (is_left_) {
-          dX.setZero(); // hold
+        dX.setZero();  // hold
       }
     } else if (context.get_time() <= 9.5) {
       if (is_left_) {
         dX(5) = +0.0036 * rate;  // up
-        dX(0) = 0.007 * rate;  // turn
+        dX(0) = 0.007 * rate;    // turn
       }
     } else if (context.get_time() <= 10.2) {
       if (is_left_) {
@@ -366,21 +382,27 @@ class IiwaController : public drake::systems::LeafSystem<double> {
       }
     } else if (context.get_time() <= 11.5) {
       // stay
-    } 
-    else if (context.get_time() <= 12.5) {
+    } else if (context.get_time() <= 12.5) {
       // recenter for final unfold
       if (is_left_) {
         if (context.get_time() <= 11.58) {
           dX(4) = 0.0075 * rate;
         }
-        dX(3) = std::min(0.003 * rate, 0.43 - current_state_values(3)); // move-x, grasp the edge of the cloth
+        dX(3) = std::min(0.003 * rate,
+                         0.43 - current_state_values(
+                                    3));  // move-x, grasp the edge of the cloth
       } else {
-        dX(4) = std::min(0.0075 * rate, 0.66 - current_state_values(4)); // move-y
-        dX(3) = std::min(0.003 * rate, 0.43 - current_state_values(3)); // move-x, grasp the edge of the cloth
+        dX(4) =
+            std::min(0.0075 * rate, 0.66 - current_state_values(4));  // move-y
+        dX(3) = std::min(0.003 * rate,
+                         0.43 - current_state_values(
+                                    3));  // move-x, grasp the edge of the cloth
       }
     } else if (context.get_time() <= 13.0) {
-      dX(5) = -std::min(0.0034 * rate, current_state_values(5) - (is_left_ ? 0.245 : 0.245));  // move down
-      dX(1) = -0.007 * rate;  // turn
+      dX(5) = -std::min(
+          0.0034 * rate,
+          current_state_values(5) - (is_left_ ? 0.245 : 0.245));  // move down
+      dX(1) = -0.007 * rate;                                      // turn
       // dX(3) = +0.003 * rate;  // pre-shovel
     } else if (context.get_time() <= 13.5) {
       // hold
@@ -440,7 +462,8 @@ int do_main() {
   multibody::Parser left_parser(&plant, "left");
   multibody::Parser right_parser(&plant, "right");
 
-  const std::string iiwa_filename = PackageMap{}.ResolveUrl("package://drake_models/iiwa_description/sdf/iiwa7_no_collision.sdf");
+  const std::string iiwa_filename = PackageMap{}.ResolveUrl(
+      "package://drake_models/iiwa_description/sdf/iiwa7_no_collision.sdf");
   auto left_iiwa = left_parser.AddModels(iiwa_filename)[0];
   auto right_iiwa = right_parser.AddModels(iiwa_filename)[0];
 
@@ -451,7 +474,9 @@ int do_main() {
       MultibodyPlant<double>(plant_config.time_step);
   Parser(&right_iiwa_controller_plant).AddModels(iiwa_filename);
 
-  std::string hand_filename = "package://drake/examples/multibody/deformable/models/schunk_wsg_50_simon.sdf";
+  std::string hand_filename =
+      "package://drake/examples/multibody/deformable/models/"
+      "schunk_wsg_50_simon.sdf";
   auto left_wsg = left_parser.AddModelsFromUrl(hand_filename)[0];
   auto right_wsg = right_parser.AddModelsFromUrl(hand_filename)[0];
 
@@ -475,19 +500,20 @@ int do_main() {
       right_iiwa_controller_plant.world_frame(),
       right_iiwa_controller_plant.GetBodyByName("iiwa_link_0").body_frame(),
       right_iiwa_position);
-  plant.WeldFrames(
-      plant.GetBodyByName("iiwa_link_7", left_iiwa).body_frame(),
-      plant.GetBodyByName("body", left_wsg).body_frame(),
-      FromXyzRpyDegree(Eigen::Vector3d(90, 0, 0), Eigen::Vector3d(0, 0, 0.07 + 0.01)));
-  plant.WeldFrames(
-      plant.GetBodyByName("iiwa_link_7", right_iiwa).body_frame(),
-      plant.GetBodyByName("body", right_wsg).body_frame(),
-      FromXyzRpyDegree(Eigen::Vector3d(90, 0, 0), Eigen::Vector3d(0, 0, 0.07 + 0.01)));
+  plant.WeldFrames(plant.GetBodyByName("iiwa_link_7", left_iiwa).body_frame(),
+                   plant.GetBodyByName("body", left_wsg).body_frame(),
+                   FromXyzRpyDegree(Eigen::Vector3d(90, 0, 0),
+                                    Eigen::Vector3d(0, 0, 0.07 + 0.01)));
+  plant.WeldFrames(plant.GetBodyByName("iiwa_link_7", right_iiwa).body_frame(),
+                   plant.GetBodyByName("body", right_wsg).body_frame(),
+                   FromXyzRpyDegree(Eigen::Vector3d(90, 0, 0),
+                                    Eigen::Vector3d(0, 0, 0.07 + 0.01)));
 
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   // AddCloth(&deformable_model, FLAGS_res, 0.01, -0.2, 0.25);
-  AddClothFromFile(&deformable_model, "/home/changyu/Desktop/tshirt.obj", 0.05, -0.2, -0.1, 1);
+  AddClothFromFile(&deformable_model, "/home/xuchenhan/drake/tshirt.obj", 0.05,
+                   -0.2, -0.1, 1);
   // deformable_model.RegisterMpmParticle({Vector3d(0)}, {Vector3d(0)}, 1.0);
 
   MpmConfigParams mpm_config;
@@ -633,33 +659,39 @@ int do_main() {
                   plant.get_desired_state_input_port(left_iiwa));
   builder.Connect(right_mux->get_output_port(),
                   plant.get_desired_state_input_port(right_iiwa));
-  
+
   /* Add a visualizer that emits LCM messages for visualization. */
   geometry::DrakeVisualizerParams visualize_params;
-  visualize_params.show_mpm = geometry::DrakeVisualizerParams::ShowMpmOpt::kClothMpm;
-  auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph, nullptr, visualize_params);
+  visualize_params.show_mpm =
+      geometry::DrakeVisualizerParams::ShowMpmOpt::kClothMpm;
+  auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(
+      &builder, scene_graph, nullptr, visualize_params);
 
-  // NOTE (changyu): MPM shortcut port shuould be explicit connected for visualization.
-  builder.Connect(plant.get_output_port(
-    plant.deformable_model().mpm_output_port_index()), 
-    visualizer.mpm_input_port());
+  // NOTE (changyu): MPM shortcut port shuould be explicit connected for
+  // visualization.
+  builder.Connect(
+      plant.get_output_port(plant.deformable_model().mpm_output_port_index()),
+      visualizer.mpm_input_port());
 
   // meshcat viz
   auto meshcat = std::make_shared<geometry::Meshcat>();
   if (FLAGS_write_files) {
-      auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
-      meshcat_params.show_mpm = drake::geometry::MeshcatVisualizerParams::ShowMpmOpt::kClothMpm;
-      auto& meshcat_visualizer = drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
-          &builder, scene_graph, meshcat, meshcat_params);
-      visualization::ApplyVisualizationConfig(
-          visualization::VisualizationConfig{
-              .default_proximity_color = geometry::Rgba{1, 0, 0, 0.25},
-              .enable_alpha_sliders = true,
-          },
-          &builder, nullptr, nullptr, nullptr, meshcat);
-      
-      builder.Connect(plant.get_output_port(
-        plant.deformable_model().mpm_output_port_index()), 
+    auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
+    meshcat_params.show_mpm =
+        drake::geometry::MeshcatVisualizerParams::ShowMpmOpt::kClothMpm;
+    meshcat_params.default_color = geometry::Rgba{0.5, 0.5, 0.5, 1.0};
+    auto& meshcat_visualizer =
+        drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
+            &builder, scene_graph, meshcat, meshcat_params);
+    visualization::ApplyVisualizationConfig(
+        visualization::VisualizationConfig{
+            .default_proximity_color = geometry::Rgba{1, 0, 0, 0.25},
+            .enable_alpha_sliders = true,
+        },
+        &builder, nullptr, nullptr, nullptr, meshcat);
+
+    builder.Connect(
+        plant.get_output_port(plant.deformable_model().mpm_output_port_index()),
         meshcat_visualizer.mpm_input_port());
   }
 
@@ -682,18 +714,22 @@ int do_main() {
   simulator.Initialize();
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
 
+  std::cout << "[Press RETURN to continue]." << std::endl;
+  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
   if (FLAGS_write_files) {
     meshcat->StartRecording();
     simulator.AdvanceTo(FLAGS_simulation_time);
     meshcat->StopRecording();
     meshcat->PublishRecording();
-    std::ofstream htmlFile("/home/changyu/drake/dual_arm_folding.html");
+    std::ofstream htmlFile("/home/xuchenhan/drake/dual_arm_folding.html");
     htmlFile << meshcat->StaticHtml();
     htmlFile.close();
   } else {
     simulator.AdvanceTo(FLAGS_simulation_time);
   }
-
+  std::cout << "[Press RETURN to continue]." << std::endl;
+  std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
   return 0;
 }
 

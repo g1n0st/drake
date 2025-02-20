@@ -105,8 +105,8 @@ void TinyObjToSurfaceFaces(const tinyobj::mesh_t& mesh,
   for (int face = 0; face < num_faces; ++face) {
     DRAKE_DEMAND(mesh.num_face_vertices[face] == 3);
     const int vertex_indices[3] = {mesh.indices[3 * face].vertex_index,
-                                   mesh.indices[3 * face + 1].vertex_index,
-                                   mesh.indices[3 * face + 2].vertex_index};
+                                   mesh.indices[3 * face + 2].vertex_index,
+                                   mesh.indices[3 * face + 1].vertex_index};
     faces->emplace_back(vertex_indices);
   }
 }

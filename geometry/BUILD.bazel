@@ -717,6 +717,7 @@ drake_cc_library(
         ":meshcat_graphviz",
         ":meshcat_visualizer_params",
         ":rgba",
+        "//common:find_resource",
         ":scene_graph",
         "//common:essential",
         "//geometry/proximity:polygon_to_triangle_mesh",
