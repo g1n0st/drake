@@ -800,7 +800,6 @@ __global__ void update_grid_kernel(
                 g_vel[1] /= g_masses[cell_idx];
                 g_vel[2] /= g_masses[cell_idx];
             }
-            else {
 
             // apply boundary condition
             const int boundary_condition = config::G_BOUNDARY_CONDITION;
@@ -1162,6 +1161,19 @@ __global__ void update_grid_kernel(
                     check(glh_down_p, glh_down_v, false);
                     check(ghl_down_p, ghl_down_v, false);
                     check(ghh_down_p, ghh_down_v, false);
+
+                    T ground_dist = pos[2] - T(0.04);
+                    if (ground_dist < 0) {
+                        normal[0] = T(0.);
+                        normal[1] = T(0.);
+                        normal[2] = T(1.);
+                        dist = ground_dist;
+                        inside = true;
+                        diff_vel[0] = -g_vel[0];
+                        diff_vel[1] = -g_vel[1];
+                        diff_vel[2] = -g_vel[2];
+                        dotnv = dot<3>(diff_vel, normal);
+                    }
                 }
 
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
@@ -1177,7 +1189,6 @@ __global__ void update_grid_kernel(
                         g_vel[2] += diff_vel[2] * config::SDF_FRICTION<T> + normal[2] * dotnv_frac;
                     }
                 }
-            }
             }
 
             if constexpr (!ENFORCE_BC_ONLY) {

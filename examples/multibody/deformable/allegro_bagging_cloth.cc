@@ -532,14 +532,7 @@ int do_main() {
 
   auto [plant, scene_graph] = AddMultibodyPlant(plant_config, &builder);
 
-  // set up table and ground
-  {
-    /* Set up a ground. */
-    Box ground{10, 10, 10};
-    const RigidTransformd X_WG(Eigen::Vector3d{0, 0, -5 + 0.02});
-    plant.RegisterCollisionGeometry(plant.world_body(), X_WG, ground,
-                                    "ground_collision", rigid_proximity_props);
-  }
+  // set up table
   multibody::Parser ground_parser(&plant, "ground");
   const std::string table_file = FindResourceOrThrow(
       "drake/examples/multibody/deformable/"
@@ -582,8 +575,8 @@ int do_main() {
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   AddCloth(&deformable_model, FLAGS_res, 0.4);
-//   AddCloth(&deformable_model, 15, 0.04, 0.0, 0.0);
-//   AddCloth(&deformable_model, 15, 0.08, 0.0, 0.0);
+  AddCloth(&deformable_model, 20, 0.04, 0.5, -0.5 + 0.2);
+  AddCloth(&deformable_model, 20, 0.08, 1.0, -1.0 + 0.2);
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
@@ -592,6 +585,7 @@ int do_main() {
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.contact_query_frequency = 8;
+  mpm_config.exact_line_search = true;
   if (use_mpm_gripper) {
     mpm_config.mpm_bc = 114;
   } else {
