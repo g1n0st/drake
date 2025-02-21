@@ -559,8 +559,8 @@ int do_main() {
 
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, 45, 0.4);
-  AddCloth(&deformable_model, 38, 23, 0.31, 0.4, -0.4 + 0.08);
+  AddCloth(&deformable_model, 30 * 2, 0.4);
+  AddCloth(&deformable_model, 50, 30, 0.31, 0.4, -0.4 + 0.08);
   // AddCloth(&deformable_model, 20 * 2, 0.08, 1.0, -1.0 + 0.2);
 
   MpmConfigParams mpm_config;
