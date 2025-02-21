@@ -36,8 +36,8 @@ DEFINE_double(time_step, 5e-3,
               "Discrete time step for the system [s]. Must be positive.");
 DEFINE_double(substep, 5e-4,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
-DEFINE_double(stiffness, 1000.0, "Contact Stiffness.");
-DEFINE_double(friction, 0.2, "Contact Friction.");
+DEFINE_double(stiffness, 400.0, "Contact Stiffness.");
+DEFINE_double(friction, 1.0, "Contact Friction.");
 DEFINE_double(damping, 1.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
@@ -143,8 +143,10 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
  
    Eigen::VectorXd GetGripPosition() const {
      Eigen::VectorXd vec(16);
-     vec << 1.4, 0.25, 0.26, 1.22, -0.11, 0.54, 0.88, 0.93, 0.0, 0.54, 0.88,
-         0.93, 0.12, 0.54, 0.88, 0.93;
+     vec << 0.99, 0.34, 0.91, 0.48, 
+            -0.11, 0.73, 0.88, 0.93, 
+            0.0, 0.54, 1.22, 0.93, 
+            0.12, 0.54, 1.26, 0.93;
      return (vec);
    }
  
@@ -226,14 +228,14 @@ class IiwaController : public drake::systems::LeafSystem<double> {
      // NOTE (changyu): this rate is used to control the height of gripper
      double uprt = 0.4 / 0.3;
      if (t < 0.5) {
-       dX(5) -= 0.002 * rate; // move down
+       dX(5) -= 0.00172 * rate; // move down
      } else if (t < 1.0) {
        // hold
      } else if (t < 1.5) {
-      dX(5) += 0.00225 * rate * uprt; // move up
+      dX(5) += 0.00245 * rate * uprt; // move up
      } else if (t < 2.5) {
       dX(5) += 0.002 * rate * uprt; // move up
-      dX(4) -= 0.0042 * rate; // move left
+      dX(4) -= 0.0045 * rate; // move left
       dX(3) -= 0.0009 * rate; // move inward
      } else if (t < 3.0) {
       // hold
@@ -574,9 +576,9 @@ int do_main() {
 
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, FLAGS_res, 0.4);
-  AddCloth(&deformable_model, 20, 0.04, 0.5, -0.5 + 0.2);
-  AddCloth(&deformable_model, 20, 0.08, 1.0, -1.0 + 0.2);
+  AddCloth(&deformable_model, 30 * 2, 0.4);
+  AddCloth(&deformable_model, 20 * 2, 0.04, 0.5, -0.5 + 0.2);
+  AddCloth(&deformable_model, 20 * 2, 0.08, 1.0, -1.0 + 0.2);
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
@@ -591,7 +593,7 @@ int do_main() {
   } else {
     mpm_config.mpm_bc = -1;
   }
-  mpm_config.ignore_face_contact = true;
+  mpm_config.ignore_face_contact = false;
   mpm_config.mdv_as_impulse = false;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
@@ -751,7 +753,7 @@ int do_main() {
   meshcat->StopRecording();
   meshcat->PublishRecording();
 
-  std::ofstream htmlFile("/home/changyu/drake/allegro_bagging.html");
+  std::ofstream htmlFile("/home/changyu/drake/allegro_bagging_cloth.html");
   htmlFile << meshcat->StaticHtml();
   htmlFile.close();
 

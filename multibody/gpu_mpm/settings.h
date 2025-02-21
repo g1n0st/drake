@@ -46,7 +46,7 @@ namespace config {
 	template<> constexpr double GRID_BLOCK_SPACING<double> = 2.0;
 
 	constexpr int BLOCK_BITS			 = 2; // BLOCK 4x4x4
-	constexpr int DOMAIN_BITS			 = 7; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
+	constexpr int DOMAIN_BITS			 = 8; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
 	template<class T> constexpr T DXINV	 = (1 << DOMAIN_BITS);
 
 	constexpr int G_DOMAIN_BITS			 = DOMAIN_BITS;
@@ -70,12 +70,12 @@ namespace config {
 
 	// material parameters
 	template<class T> constexpr T YOUNGS_MODULUS;
-	template<> constexpr float YOUNGS_MODULUS<float> = 3200000.f;
-	template<> constexpr double YOUNGS_MODULUS<double> = 3200000.;
+	template<> constexpr float YOUNGS_MODULUS<float> = 150000.f;
+	template<> constexpr double YOUNGS_MODULUS<double> = 150000.;
 
 	template<class T> constexpr T POISSON_RATIO;
-	template<> constexpr float POISSON_RATIO<float> = .4f;
-	template<> constexpr double POISSON_RATIO<double> = .4;
+	template<> constexpr float POISSON_RATIO<float> = .3f;
+	template<> constexpr double POISSON_RATIO<double> = .3;
 
 	// shake use 100
 	// roll use 1000
@@ -109,8 +109,8 @@ namespace config {
 	// for three-clothes demo, SDF_FRICTION=0.3
 	// for other demos, SDF_FRICTION=1.0
 	template<class T> constexpr T SDF_FRICTION;
-	template<> constexpr float SDF_FRICTION<float> = 1.0f;
-	template<> constexpr double SDF_FRICTION<double> = 1.0;
+	template<> constexpr float SDF_FRICTION<float> = 0.2f;
+	template<> constexpr double SDF_FRICTION<double> = 0.2;
 
 	// Lame parameters
 	template<class T> constexpr T MU = YOUNGS_MODULUS<T> / (T(2.) * (T(1.) + POISSON_RATIO<T>));
