@@ -249,7 +249,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
         ));
 
     // If we don't converge in 2000 iterations, we probably will never converge anyway...    
-    const int max_newton_iterations = 20;
+    const int max_newton_iterations = 2000;
     constexpr bool use_jacobi = true;
     const T kRelTol = 5e-2;
     // Set the absolute tolerance close to machine epsilon so that we almost always exit based on the relative tolerance.
