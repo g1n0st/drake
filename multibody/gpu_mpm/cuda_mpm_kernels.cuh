@@ -969,10 +969,10 @@ __global__ void update_grid_kernel(
                     
                     constexpr T initial_free_duration = 0.25;
                     constexpr T initial_loose_duration = 0.25;
-                    constexpr T free_duration = 8.0;
+                    constexpr T free_duration = 4.0;
                     constexpr T bagging_duration = 1.0 - initial_loose_duration;
                     constexpr T static_duration = 1.0;
-                    constexpr T final_loose_duration = 0.4;
+                    constexpr T final_loose_duration = 1.0;
                     constexpr T bagging_v = 0.1;
 
                     T gll_up_p[3];
@@ -999,7 +999,7 @@ __global__ void update_grid_kernel(
                         x[2] = c;
                     };
 
-                    const auto& check = [&](const T *gx, const T* gv, const bool is_up) {
+                    const auto& check = [&](const T *gx, const T* gv, const bool is_up, const bool is_fixed = true) {
                         if (is_up) {
                             if (
                                 pos[0] >= gx[0] - gripper_xy && pos[0] <= gx[0] + gripper_xy &&
@@ -1015,7 +1015,7 @@ __global__ void update_grid_kernel(
                                 diff_vel[2] = gv[2] - g_vel[2];
                                 dotnv = dot<3>(normal, diff_vel);
                                 inside = true;
-                                fixed = true;
+                                fixed = is_fixed;
                             }
                         } else {
                             if (
@@ -1032,7 +1032,7 @@ __global__ void update_grid_kernel(
                                 diff_vel[2] = gv[2] - g_vel[2];
                                 dotnv = dot<3>(normal, diff_vel);
                                 inside = true;
-                                fixed = true;
+                                fixed = is_fixed;
                             }
                         }
                     };
@@ -1134,21 +1134,22 @@ __global__ void update_grid_kernel(
                     } else {
                         double total_dur = initial_loose_duration + bagging_duration;
                         double dt = 100.0;
-                        assign(gll_up_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, h_z);
-                        assign(glh_up_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, h_z);
+                        double ddt = min((times_elapsed - (free_duration + bagging_duration + initial_loose_duration + initial_free_duration + static_duration)), final_loose_duration);
+                        assign(gll_up_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, h_z + ddt * bagging_v);
+                        assign(glh_up_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, h_z + ddt * bagging_v);
                         assign(ghl_up_p, h_x - (total_dur - dt) * bagging_v, l_x + (total_dur - dt) * bagging_v,  h_z + dt * bagging_v);
                         assign(ghh_up_p, h_x - (total_dur - dt) * bagging_v, h_x - (total_dur - dt) * bagging_v, h_z + dt * bagging_v);
-                        assign(gll_down_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, l_z);
-                        assign(glh_down_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, l_z);
+                        assign(gll_down_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, l_z + ddt * bagging_v);
+                        assign(glh_down_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, l_z + ddt * bagging_v);
                         assign(ghl_down_p, h_x - (total_dur - dt) * bagging_v, l_x + (total_dur - dt) * bagging_v,  l_z - dt * bagging_v);
                         assign(ghh_down_p, h_x - (total_dur - dt) * bagging_v, h_x - (total_dur - dt) * bagging_v, l_z - dt * bagging_v);
 
-                        assign(gll_up_v, 0, 0, 0);
-                        assign(glh_up_v, 0, 0, 0);
+                        assign(gll_up_v, 0, 0, ddt < final_loose_duration ? + bagging_v : 0);
+                        assign(glh_up_v, 0, 0, ddt < final_loose_duration ? + bagging_v : 0);
                         assign(ghl_up_v, bagging_v, -bagging_v, + bagging_v);
                         assign(ghh_up_v, bagging_v, +bagging_v, + bagging_v);
-                        assign(gll_down_v, 0, 0, 0);
-                        assign(glh_down_v, 0, 0, 0);
+                        assign(gll_down_v, 0, 0, ddt < final_loose_duration ? + bagging_v : 0);
+                        assign(glh_down_v, 0, 0, ddt < final_loose_duration ? + bagging_v : 0);
                         assign(ghl_down_v, bagging_v, -bagging_v, - bagging_v);
                         assign(ghh_down_v, bagging_v, +bagging_v, - bagging_v);
                     }
@@ -1161,6 +1162,11 @@ __global__ void update_grid_kernel(
                     check(glh_down_p, glh_down_v, false);
                     check(ghl_down_p, ghl_down_v, false);
                     check(ghh_down_p, ghh_down_v, false);
+
+                    // hanging block
+                    T zeros[3] = {0, 0, 0};
+                    T hb1[3] = {0.65, 0.9, 0.3};
+                    check(hb1, zeros, false, false);
 
                     T ground_dist = pos[2] - T(0.04);
                     if (ground_dist < 0) {

@@ -109,8 +109,8 @@ namespace config {
 	// for three-clothes demo, SDF_FRICTION=0.3
 	// for other demos, SDF_FRICTION=1.0
 	template<class T> constexpr T SDF_FRICTION;
-	template<> constexpr float SDF_FRICTION<float> = 0.2f;
-	template<> constexpr double SDF_FRICTION<double> = 0.2;
+	template<> constexpr float SDF_FRICTION<float> = 1.0f;
+	template<> constexpr double SDF_FRICTION<double> = 1.0;
 
 	// Lame parameters
 	template<class T> constexpr T MU = YOUNGS_MODULUS<T> / (T(2.) * (T(1.) + POISSON_RATIO<T>));
