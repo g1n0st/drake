@@ -959,6 +959,8 @@ __global__ void update_grid_kernel(
 
                 // for allegro bagging demo
                 else if constexpr (MPM_BOUNDARY_CONDITION == 114) {
+                    constexpr T delay = 3.0;
+                    T t = times_elapsed;
                     constexpr T gripper_xy = 0.1 / 2.0;
                     constexpr T gripper_z = 0.04 / 2.0;
                     
@@ -969,7 +971,7 @@ __global__ void update_grid_kernel(
                     
                     constexpr T initial_free_duration = 0.25;
                     constexpr T initial_loose_duration = 0.25;
-                    constexpr T free_duration = 4.0;
+                    constexpr T free_duration = 4.0 + delay;
                     constexpr T bagging_duration = 1.0 - initial_loose_duration;
                     constexpr T static_duration = 1.0;
                     constexpr T final_loose_duration = 1.0;
@@ -1037,7 +1039,7 @@ __global__ void update_grid_kernel(
                         }
                     };
 
-                    if (times_elapsed < initial_free_duration) {
+                    if (t < initial_free_duration) {
                         assign(gll_up_p, l_x, l_x, h_z);
                         assign(glh_up_p, l_x, h_x, h_z);
                         assign(ghl_up_p, h_x, l_x,  h_z);
@@ -1055,8 +1057,8 @@ __global__ void update_grid_kernel(
                         assign(glh_down_v, 0, 0, 0);
                         assign(ghl_down_v, 0, 0, 0);
                         assign(ghh_down_v, 0, 0, 0);
-                    } else if (times_elapsed < initial_free_duration + initial_loose_duration) {
-                        double dt = times_elapsed - initial_free_duration;
+                    } else if (t < initial_free_duration + initial_loose_duration) {
+                        double dt = t - initial_free_duration;
                         assign(gll_up_p, l_x + dt * bagging_v, l_x + dt * bagging_v, h_z);
                         assign(glh_up_p, l_x + dt * bagging_v, h_x - dt * bagging_v, h_z);
                         assign(ghl_up_p, h_x - dt * bagging_v, l_x + dt * bagging_v,  h_z);
@@ -1074,7 +1076,7 @@ __global__ void update_grid_kernel(
                         assign(glh_down_v, + bagging_v, - bagging_v, 0);
                         assign(ghl_down_v, - bagging_v, + bagging_v, 0);
                         assign(ghh_down_v, - bagging_v, - bagging_v, 0);
-                    } else if (times_elapsed < free_duration + initial_loose_duration + initial_free_duration) {
+                    } else if (t < free_duration + initial_loose_duration + initial_free_duration) {
                         double dt = initial_loose_duration;
                         assign(gll_up_p, l_x + dt * bagging_v, l_x + dt * bagging_v, h_z);
                         assign(glh_up_p, l_x + dt * bagging_v, h_x - dt * bagging_v, h_z);
@@ -1093,8 +1095,8 @@ __global__ void update_grid_kernel(
                         assign(glh_down_v, 0, 0, 0);
                         assign(ghl_down_v, 0, 0, 0);
                         assign(ghh_down_v, 0, 0, 0);
-                    } else if (times_elapsed < free_duration + bagging_duration + initial_loose_duration + initial_free_duration) {
-                        double dt = (times_elapsed - free_duration - initial_free_duration);
+                    } else if (t < free_duration + bagging_duration + initial_loose_duration + initial_free_duration) {
+                        double dt = (t - free_duration - initial_free_duration);
                         assign(gll_up_p, l_x + dt * bagging_v, l_x + dt * bagging_v, h_z);
                         assign(glh_up_p, l_x + dt * bagging_v, h_x - dt * bagging_v, h_z);
                         assign(ghl_up_p, h_x - dt * bagging_v, l_x + dt * bagging_v,  h_z);
@@ -1112,7 +1114,7 @@ __global__ void update_grid_kernel(
                         assign(glh_down_v, + bagging_v, - bagging_v, 0);
                         assign(ghl_down_v, - bagging_v, + bagging_v, 0);
                         assign(ghh_down_v, - bagging_v, - bagging_v, 0);
-                    } else if (times_elapsed < free_duration + bagging_duration + initial_loose_duration + initial_free_duration + static_duration) {
+                    } else if (t < free_duration + bagging_duration + initial_loose_duration + initial_free_duration + static_duration) {
                         double total_dur = initial_loose_duration + bagging_duration;
                         assign(gll_up_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, h_z);
                         assign(glh_up_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, h_z);
@@ -1134,7 +1136,7 @@ __global__ void update_grid_kernel(
                     } else {
                         double total_dur = initial_loose_duration + bagging_duration;
                         double dt = 100.0;
-                        double ddt = min((times_elapsed - (free_duration + bagging_duration + initial_loose_duration + initial_free_duration + static_duration)), final_loose_duration);
+                        double ddt = min((t - (free_duration + bagging_duration + initial_loose_duration + initial_free_duration + static_duration)), final_loose_duration);
                         assign(gll_up_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, h_z + ddt * bagging_v);
                         assign(glh_up_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, h_z + ddt * bagging_v);
                         assign(ghl_up_p, h_x - (total_dur - dt) * bagging_v, l_x + (total_dur - dt) * bagging_v,  h_z + dt * bagging_v);

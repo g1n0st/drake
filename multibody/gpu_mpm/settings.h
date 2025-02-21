@@ -70,8 +70,8 @@ namespace config {
 
 	// material parameters
 	template<class T> constexpr T YOUNGS_MODULUS;
-	template<> constexpr float YOUNGS_MODULUS<float> = 150000.f;
-	template<> constexpr double YOUNGS_MODULUS<double> = 150000.;
+	template<> constexpr float YOUNGS_MODULUS<float> = 300000.f;
+	template<> constexpr double YOUNGS_MODULUS<double> = 300000.;
 
 	template<class T> constexpr T POISSON_RATIO;
 	template<> constexpr float POISSON_RATIO<float> = .3f;
@@ -98,8 +98,8 @@ namespace config {
 	// for tshirt/cloth folding demo, V=0.8
 	// for bagging demo, K=0.2
 	template<class T> constexpr T V;
-	template<> constexpr float V<float> = 1.0f;
-	template<> constexpr double V<double> = 1.0;
+	template<> constexpr float V<float> = 0.8f;
+	template<> constexpr double V<double> = 0.8;
 
 	template<class T> constexpr T c_F;
 	template<> constexpr float c_F<float> = .0f;

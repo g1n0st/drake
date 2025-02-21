@@ -34,10 +34,10 @@ DEFINE_int32(res, 30, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 5e-3,
               "Discrete time step for the system [s]. Must be positive.");
-DEFINE_double(substep, 5e-4,
+DEFINE_double(substep, 1e-3,
               "Discrete time step for the substepping scheme [s]. Must be positive.");
 DEFINE_double(stiffness, 200.0, "Contact Stiffness.");
-DEFINE_double(friction, 0.5, "Contact Friction.");
+DEFINE_double(friction, 0.3, "Contact Friction.");
 DEFINE_double(damping, 1.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
@@ -77,6 +77,7 @@ namespace examples {
 namespace {
 
 bool use_mpm_gripper = true;
+constexpr double delay = 3.0;
 
 RigidTransformd FromXyzRpy(const Vector3<double>& rpy,
                            const Vector3<double>& p) {
@@ -102,17 +103,17 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
                          drake::systems::BasicVector<double>* output) const {
      Eigen::VectorXd positions = GetHomePosition();
      double t = context.get_time();
-     if (t < 1.0) {
+     if (t < delay + 1.0) {
         positions = 0.75 * GetHomePosition() + 0.25 * GetGripPosition();
-     } else if (t < 1.5){
+     } else if (t < delay + 1.5){
        // start gripping red box
-       double dt = std::min(std::max((context.get_time() - 1.0) / 0.5, 0.25), 1.0);
+       double dt = std::min(std::max((context.get_time() - (1.0 + delay)) / 0.5, 0.25), 1.0);
        positions = (1.0 - dt) * GetHomePosition() + dt * GetGripPosition();
-     } else if (t < 3.0) {
+     } else if (t < 3.0 + delay) {
        positions = GetGripPosition();
-     } else if (t < 4.5) {
+     } else if (t < 4.5 + delay) {
        // loose hand to put red box down
-       double dt = std::min(std::max((context.get_time() - 3.0) / 0.5, 0.0), 0.7);
+       double dt = std::min(std::max((context.get_time() - (3.0 + delay)) / 0.5, 0.0), 0.7);
        positions = (1.0 - dt) * GetGripPosition() + dt * GetHomePosition();
      } else {
       positions = 0.3 * GetGripPosition() + 0.7 * GetHomePosition();
@@ -218,26 +219,29 @@ class IiwaController : public drake::systems::LeafSystem<double> {
      double rate = plant_.time_step() / 0.01;
      // NOTE (changyu): this rate is used to control the height of gripper
      double uprt = 0.4 / 0.3;
-     if (t < 1.0) {
+     if (t < delay) {
+
+     }
+     else if (t < 1.0 + delay) {
       dX(5) -= 0.004 * rate / 2; // move down
       dX(3) -= 0.0012 * rate / 2; // move outward
       dX(4) -= 0.0055 * rate / 2; // move left
-     } else if (t < 1.5) {
+     } else if (t < 1.5 + delay) {
       dX(3) -= 0.0012 * rate; // move outward
        // hold
-     } else if (t < 2.0) {
+     } else if (t < 2.0 + delay) {
       dX(5) += 0.00245 * rate * uprt; // move up
       dX(3) -= 0.0012 * rate; // move inward
-     } else if (t < 3.0) {
+     } else if (t < 3.0 + delay) {
       dX(5) += 0.002 * rate * uprt; // move up
       dX(4) -= 0.0045 * rate; // move left
       // dX(3) -= 0.0029 * rate; // move inward
-     } else if (t < 3.5) {
+     } else if (t < 3.5 + delay) {
       // hold
       // dX(0) -= 0.007 * rate;
       dX(1) -= 3.1415926 / 2 / 50.0 * rate;
-     } else if (t < 5.5) {
-      if (t <= 4.5) {
+     } else if (t < 5.5 + delay) {
+      if (t <= 4.5 + delay) {
         dX(1) += 3.1415926 / 4 / 50.0 * rate;
       }
       dX(4) += 0.0084 * rate / 4.0; // move right
@@ -278,7 +282,7 @@ class BaggingGripperController : public systems::LeafSystem<double> {
  
   static constexpr double initial_free_duration = 0.25;
   static constexpr double initial_loose_duration = 0.25;
-  static constexpr double free_duration = 4.0;
+  static constexpr double free_duration = 4.0 + delay;
   static constexpr double bagging_duration = 1.0 - initial_loose_duration;
   static constexpr double static_duration = 1.0;
   static constexpr double final_loose_duration = 1.0;
@@ -345,7 +349,7 @@ class BaggingGripperController : public systems::LeafSystem<double> {
   private:
    void CalcDesiredState(const systems::Context<double>& context,
                          systems::BasicVector<double>* output) const {
-     const double t = context.get_time();
+     const double t = std::max(double(context.get_time()), 0.);
  
      Vector3d gll_up_p;
      Vector3d glh_up_p;
@@ -730,7 +734,7 @@ int do_main() {
   meshcat->StartRecording();
   simulator.set_target_realtime_rate(FLAGS_realtime_rate);
   simulator.Initialize();
-  simulator.AdvanceTo(FLAGS_simulation_time);
+  simulator.AdvanceTo(FLAGS_simulation_time + delay);
   meshcat->StopRecording();
   meshcat->PublishRecording();
 
