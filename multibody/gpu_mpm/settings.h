@@ -46,7 +46,7 @@ namespace config {
 	template<> constexpr double GRID_BLOCK_SPACING<double> = 2.0;
 
 	constexpr int BLOCK_BITS			 = 2; // BLOCK 4x4x4
-	constexpr int DOMAIN_BITS			 = 8; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
+	constexpr int DOMAIN_BITS			 = 7; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
 	template<class T> constexpr T DXINV	 = (1 << DOMAIN_BITS);
 
 	constexpr int G_DOMAIN_BITS			 = DOMAIN_BITS;
