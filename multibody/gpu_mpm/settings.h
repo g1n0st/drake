@@ -98,8 +98,8 @@ namespace config {
 	// for tshirt/cloth folding demo, V=0.8
 	// for bagging demo, K=0.2
 	template<class T> constexpr T V;
-	template<> constexpr float V<float> = .5f;
-	template<> constexpr double V<double> = .5;
+	template<> constexpr float V<float> = .8f;
+	template<> constexpr double V<double> = .8;
 
 	template<class T> constexpr T c_F;
 	template<> constexpr float c_F<float> = .0f;
@@ -159,8 +159,8 @@ namespace config {
 	template<> constexpr double PARTICLE_YIELD_STRESS<double> = 1e9;
 
 	template<class T> constexpr T PARTICLE_YOUNGS_MODULUS;
-	template<> constexpr float PARTICLE_YOUNGS_MODULUS<float> = 5e6f;
-	template<> constexpr double PARTICLE_YOUNGS_MODULUS<double> = 5e6;
+	template<> constexpr float PARTICLE_YOUNGS_MODULUS<float> = 5e5f;
+	template<> constexpr double PARTICLE_YOUNGS_MODULUS<double> = 5e5;
 
 	template<class T> constexpr T PARTICLE_POISSON_RATIO;
 	template<> constexpr float PARTICLE_POISSON_RATIO<float> = .4f;
