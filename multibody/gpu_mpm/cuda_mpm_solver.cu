@@ -631,7 +631,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
             file << "  {\n";
             file << "      \"cnt\": " << count << ",\n";
             file << "      \"n_contacts\": " << n_contacts << ",\n";
-            file << "      \"grid_DoFs\": " << grid_DoFs << ",\n";
+            file << "      \"grid_DoFs\": " << grid_DoFs << "\n";
             file << "  },\n";
         file.close();
         printf("Dumped\n");
