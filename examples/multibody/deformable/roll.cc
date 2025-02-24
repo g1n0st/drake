@@ -31,7 +31,7 @@
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
-DEFINE_double(ppc, 8.0, "MPM Particle-Per-Cell.");
+DEFINE_double(ppc, 3, "MPM Particle-Per-Cell.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
