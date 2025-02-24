@@ -120,7 +120,7 @@ void GpuMpmState<T>::Finalize() {
         d_Dm_inverses_ = nullptr;
         d_indices_     = nullptr;
     }
-
+    std::cout << n_particles_ << std::endl;
 
     // device grid buffer allocation
     // NOTE(changyu): considering the problem size, we pre-allocate the dense grid once and skip the untouched parts when traversal.
