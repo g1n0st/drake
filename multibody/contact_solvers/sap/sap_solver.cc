@@ -6,6 +6,8 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <iostream>
+#include <fstream>
 
 #include "drake/common/default_scalars.h"
 #include "drake/common/extract_double.h"
@@ -337,6 +339,12 @@ SapSolverStatus SapSolver<T>::SolveWithGuessImpl(const SapModel<T>& model,
   // even instantiated and no factorizations are performed (the expensive part
   // of the computation). We report zero number of iterations.
   stats_.num_iters = k;
+  std::cout << k << std::endl;
+  std::ofstream file("/home/changyu/Desktop/mpm-data/dough-roll-sap.json", std::ios::app);
+      file << "  {\n";
+      file << "      \"cnt\": " << k << "\n";
+      file << "  },\n";
+  file.close();
 
   return SapSolverStatus::kSuccess;
 }

@@ -241,6 +241,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
     std::vector<T> s_times;
     std::vector<T> s_energies;
     std::vector<int> s_line_search_cnts;
+    std::vector<int> s_dofs;
 
     CUDA_SAFE_CALL((
         compute_base_cell_node_index_kernel<<<
@@ -251,7 +252,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
     // If we don't converge in 2000 iterations, we probably will never converge anyway...    
     const int max_newton_iterations = 40000;
     constexpr bool use_jacobi = true;
-    const T kRelTol = 1e-5;
+    const T kRelTol = 5e-2;
     // Set the absolute tolerance close to machine epsilon so that we almost always exit based on the relative tolerance.
     const T kAbsTol = 16 * std::numeric_limits<T>::epsilon();
 
@@ -614,6 +615,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
         long long after_ts = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         s_residuals.push_back(norm_dir);
         s_times.push_back(T((after_ts-before_ts) / 1e3));
+        s_dofs.push_back(grid_DoFs);
     }
     // throw;
     std::cout << "Iteration count :" <<  count 
@@ -623,39 +625,24 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
               << ", grid_DoFs " << grid_DoFs 
               << ", line_search_cnt_aver " << static_cast<T>(std::accumulate(s_line_search_cnts.begin(), s_line_search_cnts.end(), 0)) / s_line_search_cnts.size()
               << std::endl;
+    
+    if (true) {
+        std::ofstream file("/home/changyu/Desktop/mpm-data/dough-roll.json", std::ios::app);
+            file << "  {\n";
+            file << "      \"cnt\": " << count << ",\n";
+            file << "      \"n_contacts\": " << n_contacts << ",\n";
+            file << "      \"grid_DoFs\": " << grid_DoFs << ",\n";
+            file << "  },\n";
+        file.close();
+        printf("Dumped\n");
+    }
+    
     if (count == max_newton_iterations) {
         std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Newton iterations did not converge!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
     }
     CUDA_SAFE_CALL(cudaFree(norm_dir_d));
     CUDA_SAFE_CALL(cudaFree(total_grid_DoFs_d));
     CUDA_SAFE_CALL(cudaFree(solved_grid_DoFs_d));
-
-    if (false) {
-        std::ofstream file("/home/changyu/drake/mpm-data/" 
-                           + std::string(use_jacobi ? "jacobi" : "colored_gs") 
-                           + "_iter_" + std::to_string(max_newton_iterations)
-                           + "_frame_" + std::to_string(frame) 
-                           + "_substep_" + std::to_string(substep)
-                           + ".json");
-        file << "[\n";
-        for (int i = 0; i < count; ++i) {
-            file << "  {\n";
-            file << "      \"time\": " << s_times[i] << ",\n";
-            if (enable_line_search && global_line_search) {
-                file << "      \"residual\": " << s_residuals[i] << ",\n";
-                file << "      \"line_search_cnt\": " << s_line_search_cnts[i] << ",\n";
-                file << "      \"energy\": " << s_energies[i] << "\n";
-            } else {
-                file << "      \"residual\": " << s_residuals[i] << "\n";
-            }
-            file << "  }";
-            if (i != count -1) file << ",";
-            file << "\n";
-        }
-        file << "]\n";
-        file.close();
-        printf("Dumped\n");
-    }
 
     // NOTE (changyu): two-way coupling part, apply contact impulse back to the rigid part
     if (mdv_as_impulse) {
