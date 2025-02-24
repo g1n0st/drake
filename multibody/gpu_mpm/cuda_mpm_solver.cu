@@ -617,6 +617,17 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state,
     //           << ", grid_DoFs " << grid_DoFs 
     //           << ", line_search_cnt_aver " << static_cast<T>(std::accumulate(s_line_search_cnts.begin(), s_line_search_cnts.end(), 0)) / s_line_search_cnts.size()
             //   << std::endl;
+    if (true) {
+        std::ofstream file("/home/changyu/Desktop/mpm-data/shake.json", std::ios::app);
+            file << "  {\n";
+            file << "      \"cnt\": " << count << ",\n";
+            file << "      \"n_contacts\": " << n_contacts << ",\n";
+            file << "      \"grid_DoFs\": " << grid_DoFs << "\n";
+            file << "  },\n";
+        file.close();
+        printf("Dumped\n");
+    }
+
     if (count == max_newton_iterations) {
         std::cout << "reltol = " << (norm_dir / norm_impulse_initial) << std::endl;
     }
