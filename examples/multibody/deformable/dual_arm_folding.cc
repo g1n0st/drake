@@ -523,6 +523,7 @@ int do_main() {
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
   mpm_config.exact_line_search = FLAGS_exact_line_search;
+  mpm_config.mdv_as_impulse = false;
   if (use_mpm_ground) {
     mpm_config.mpm_bc = 222;
   }
@@ -679,7 +680,7 @@ int do_main() {
     auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
     meshcat_params.show_mpm =
         drake::geometry::MeshcatVisualizerParams::ShowMpmOpt::kClothMpm;
-    meshcat_params.default_color = geometry::Rgba{0.5, 0.5, 0.5, 1.0};
+    meshcat_params.default_color = geometry::Rgba{0.3, 0.3, 0.3, 1.0};
     auto& meshcat_visualizer =
         drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
             &builder, scene_graph, meshcat, meshcat_params);

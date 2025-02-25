@@ -279,8 +279,8 @@ void MeshcatVisualizer<T>::SetMpmObjects(
     {
       current_path = params_.prefix + "/mpm_object_visual/" +
                      std::to_string(current_frame) + "_wireframe";
-      meshcat_->SetObject(current_path, mesh, Rgba{0.5, 0.5, 0.5, 1.0},
-                          /*wireframe=*/true);
+      meshcat_->SetObject(current_path, mesh, Rgba{0.1, 0.1, 0.1, 1.0},
+                          /*wireframe=*/true, 2.0);
       meshcat_->SetProperty(current_path, "visible", false, 0);
       meshcat_->SetProperty(current_path, "visible", true, time);
       if (current_frame >= 1) {
