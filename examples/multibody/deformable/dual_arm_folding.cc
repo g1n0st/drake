@@ -512,7 +512,7 @@ int do_main() {
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   // AddCloth(&deformable_model, FLAGS_res, 0.01, -0.2, 0.25);
-  AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt.obj", 0.05,
+  AddClothFromFile(&deformable_model, "/home/xuchenhan/drake/tshirt.obj", 0.05,
                    -0.2, -0.1, 1);
   // deformable_model.RegisterMpmParticle({Vector3d(0)}, {Vector3d(0)}, 1.0);
 
@@ -679,7 +679,7 @@ int do_main() {
     auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
     meshcat_params.show_mpm =
         drake::geometry::MeshcatVisualizerParams::ShowMpmOpt::kClothMpm;
-    meshcat_params.default_color = geometry::Rgba{1.0, 1.0, 1.0, 1.0};
+    meshcat_params.default_color = geometry::Rgba{0.5, 0.5, 0.5, 1.0};
     auto& meshcat_visualizer =
         drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
             &builder, scene_graph, meshcat, meshcat_params);
@@ -722,7 +722,7 @@ int do_main() {
     simulator.AdvanceTo(FLAGS_simulation_time);
     meshcat->StopRecording();
     meshcat->PublishRecording();
-    std::ofstream htmlFile("/home/changyu/drake/dual_arm_folding.html");
+    std::ofstream htmlFile("/home/xuchenhan/drake/dual_arm_folding.html");
     htmlFile << meshcat->StaticHtml();
     htmlFile.close();
   } else {
