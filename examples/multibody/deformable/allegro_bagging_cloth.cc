@@ -29,7 +29,7 @@
 #include "drake/visualization/visualization_config_functions.h"
 
 DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
-DEFINE_double(simulation_time, 9.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 12.0, "Desired duration of the simulation [s].");
 DEFINE_int32(res, 30, "Cloth Resolution.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 5e-3,
@@ -521,11 +521,12 @@ int do_main() {
                    RigidTransformd(Eigen::Vector3d(0.25, 0.29 + 0.5, 0.02)));
   
   IllustrationProperties illustration_props;
-  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.7, 0.5, 0.4, 0.8));
+  illustration_props.AddProperty("phong", "diffuse", Vector4d(0.4, 0.4, 0.4, 0.8));
   Box box{0.1, 0.1, 0.04};
+  Box box_visual{0.1 * 0.98, 0.1 * 0.98, 0.04 * 0.98};
   const RigidTransformd X_WG_BOX(Eigen::Vector3d{0.65, 0.9, 0.3});
   plant.RegisterCollisionGeometry(plant.world_body(), X_WG_BOX, box, "box_collision", rigid_proximity_props);
-  plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box, "box_visual", std::move(illustration_props));
+  plant.RegisterVisualGeometry(plant.world_body(), X_WG_BOX, box_visual, "box_visual", std::move(illustration_props));
 
   MultibodyPlant<double> iiwa_controller_plant =
       MultibodyPlant<double>(plant_config.time_step);

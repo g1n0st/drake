@@ -159,7 +159,8 @@ class MeshcatVisualizer final : public systems::LeafSystem<T> {
 
   // NOTE (changyu): used for cloth-MPM Meshcat visualization.
   void SetMpmObjects(const systems::Context<T>& context,
-                     const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT> & mpm_object) const;
+                     const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT> & mpm_object,
+                    const std::string name) const;
   // NOTE (changyu): used for particle-MPM Meshcat visualization.
   void SetMpmParticles(const systems::Context<T>& context,
                      const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT> & mpm_object) const;

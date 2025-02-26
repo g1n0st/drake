@@ -144,7 +144,25 @@ systems::EventStatus MeshcatVisualizer<T>::UpdateMeshcat(
             .template Eval<
                 multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>>(
                 context);
-    SetMpmObjects(context, mpm_object);
+    size_t faceA = 59 * 59 * 2;
+    size_t vertA = 60 * 60;
+    multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT> mpm_object_A;
+    multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT> mpm_object_B;
+    for (size_t i = 0; i < vertA; ++i) {
+      mpm_object_A.pos.push_back(mpm_object.pos[i]);
+    }
+    for (size_t i = vertA; i < mpm_object.pos.size(); ++i) {
+      mpm_object_B.pos.push_back(mpm_object.pos[i]);
+    }
+    for (size_t i = 0; i < faceA * 3; ++i) {
+      mpm_object_A.indices.push_back(mpm_object.indices[i]);
+    }
+    for (size_t i = faceA * 3; i < mpm_object.indices.size(); ++i) {
+      mpm_object_B.indices.push_back(mpm_object.indices[i] - vertA);
+    }
+
+    SetMpmObjects(context, mpm_object_A, "A");
+    SetMpmObjects(context, mpm_object_B, "B");
   } else if (params_.show_mpm ==
              MeshcatVisualizerParams::ShowMpmOpt::kParticleMpm) {
     const auto& mpm_object =
@@ -181,7 +199,8 @@ template <typename T>
 void MeshcatVisualizer<T>::SetMpmObjects(
     const systems::Context<T>& context,
     const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>&
-        mpm_object) const {
+        mpm_object,
+    const std::string name) const {
   if constexpr (std::is_same_v<T, double>) {
     std::vector<SurfaceTriangle> triangles;
     std::vector<Vector3<T>> vertices;
@@ -195,7 +214,10 @@ void MeshcatVisualizer<T>::SetMpmObjects(
     }
     const TriangleSurfaceMesh<double> mesh(std::move(triangles),
                                            std::move(vertices));
-    const Rgba rgba = params_.default_color;
+    Rgba rgba = params_.default_color;
+    if (name == "B") {
+      rgba = Rgba{205.0 / 255.0, 89.0 / 255.0, 143.0 / 255.0, 1.0};
+    }
 
     std::string current_path;
     int current_frame = 0;
@@ -204,26 +226,31 @@ void MeshcatVisualizer<T>::SetMpmObjects(
     time = context.get_time();
     {
       current_path = params_.prefix + "/mpm_object_visual/" +
-                     std::to_string(current_frame);
+                     std::to_string(current_frame) + name;
       meshcat_->SetObject(current_path, mesh, rgba);
       meshcat_->SetProperty(current_path, "visible", false, 0);
       meshcat_->SetProperty(current_path, "visible", true, time);
       if (current_frame >= 1) {
         std::string prev_path = params_.prefix + "/mpm_object_visual/" +
-                                std::to_string(current_frame - 1);
+                                std::to_string(current_frame - 1) + name;
         meshcat_->SetProperty(prev_path, "visible", false, time);
       }
     }
     {
       current_path = params_.prefix + "/mpm_object_visual/" +
-                     std::to_string(current_frame) + "_wireframe";
-      meshcat_->SetObject(current_path, mesh, Rgba{0.5, 0.5, 0.5, 1.0},
-                          /*wireframe=*/true);
+                     std::to_string(current_frame) + name + "_wireframe";
+      if (name == "B") {
+        meshcat_->SetObject(current_path, mesh, Rgba{0.2, 0.2, 0.2, 1.0},
+                            /*wireframe=*/true);
+      } else {
+        meshcat_->SetObject(current_path, mesh, Rgba{0.5, 0.5, 0.5, 1.0},
+          /*wireframe=*/true);
+      }
       meshcat_->SetProperty(current_path, "visible", false, 0);
       meshcat_->SetProperty(current_path, "visible", true, time);
       if (current_frame >= 1) {
         std::string prev_path = params_.prefix + "/mpm_object_visual/" +
-                                std::to_string(current_frame - 1) + "_wireframe";
+                                std::to_string(current_frame - 1) + name + "_wireframe";
         meshcat_->SetProperty(prev_path, "visible", false, time);
       }
 
