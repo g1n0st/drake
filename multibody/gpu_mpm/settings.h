@@ -47,16 +47,16 @@ namespace config {
 
 	constexpr int BLOCK_BITS			 = 2; // BLOCK 4x4x4
 	constexpr int DOMAIN_BITS			 = 6; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
-	template<class T> constexpr T DXINV	 = (GRID_BLOCK_SPACING<T> * (1 << DOMAIN_BITS));
+	template<class T> constexpr T DXINV	 = (1 << DOMAIN_BITS);
 
 	constexpr int G_DOMAIN_BITS			 = DOMAIN_BITS;
 	constexpr int G_DOMAIN_SIZE			 = (1 << DOMAIN_BITS);
 	constexpr int G_DOMAIN_VOLUME		 = (1 << (DOMAIN_BITS * 3));
 
 	constexpr int G_BOUNDARY_CONDITION = 3;
-	template<class T> constexpr T G_DX			= T(1.) / DXINV<T>;
-	template<class T> constexpr T G_DX_INV		= DXINV<T>;
-	template<class T> constexpr T G_D_INV		= T(4.) * DXINV<T> * DXINV<T>;
+	template<class T> constexpr T G_DX			= T(GRID_BLOCK_SPACING<T>) / DXINV<T>;
+	template<class T> constexpr T G_DX_INV		= T(1.0) / G_DX<T>;
+	template<class T> constexpr T G_D_INV		= T(4.) * G_DX_INV<T> * G_DX_INV<T>;
 
 	constexpr int G_BLOCK_BITS			 = BLOCK_BITS;
 	constexpr int G_BLOCK_SIZE			 = (1 << BLOCK_BITS);
