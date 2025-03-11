@@ -124,17 +124,17 @@ void GpuMpmState<T>::Finalize() {
 
     // device grid buffer allocation
     // NOTE(changyu): considering the problem size, we pre-allocate the dense grid once and skip the untouched parts when traversal.
-    CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_masses, config::G_DOMAIN_VOLUME * sizeof(T)));
-    CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_momentum, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
-    CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_touched_flags, config::G_GRID_VOLUME * sizeof(uint32_t)));
-    CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_touched_ids, config::G_GRID_VOLUME * sizeof(uint32_t)));
+    CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_masses, grid_config_.G_DOMAIN_VOLUME * sizeof(T)));
+    CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_momentum, grid_config_.G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_touched_flags, grid_config_.G_GRID_VOLUME * sizeof(uint32_t)));
+    CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_touched_ids, grid_config_.G_GRID_VOLUME * sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMalloc(&grid_buffer_.d_g_touched_cnt, sizeof(uint32_t)));
     CUDA_SAFE_CALL(cudaMemset(grid_buffer_.d_g_touched_cnt, 0, sizeof(uint32_t)));
 
-    CUDA_SAFE_CALL(cudaMalloc(&d_g_Hess_, config::G_DOMAIN_VOLUME * sizeof(Mat3<T>)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_g_Grad_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_g_Dir_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
-    CUDA_SAFE_CALL(cudaMalloc(&d_g_v_star_, config::G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Hess_, grid_config_.G_DOMAIN_VOLUME * sizeof(Mat3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Grad_, grid_config_.G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_Dir_, grid_config_.G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
+    CUDA_SAFE_CALL(cudaMalloc(&d_g_v_star_, grid_config_.G_DOMAIN_VOLUME * sizeof(Vec3<T>)));
 
     radix_sort(this->next_sort_keys(), this->current_sort_keys(), this->next_sort_ids(), this->current_sort_ids(), sort_buffer_, sort_buffer_size_, static_cast<unsigned int>(n_particles_));
     CUDA_SAFE_CALL(cudaMalloc(&sort_buffer_, sizeof(unsigned int) * sort_buffer_size_));

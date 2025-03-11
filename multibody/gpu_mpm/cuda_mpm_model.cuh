@@ -38,7 +38,32 @@ template <typename T>
 struct GpuMpmState {
 
 public:
-    GpuMpmState() = default;
+    GpuMpmState(int domain_bits, T grid_block_spacing) {
+        grid_config_.BLOCK_BITS                  = (2);              // BLOCK 4x4x4
+        grid_config_.DOMAIN_BITS                 = (domain_bits);    // GRID  128x128x128 or 64x64x64
+        grid_config_.DXINV                       = (1 << grid_config_.DOMAIN_BITS);
+        grid_config_.GRID_BLOCK_SPACING          = (grid_block_spacing);
+
+        grid_config_.G_DOMAIN_BITS               = (grid_config_.DOMAIN_BITS);
+        grid_config_.G_DOMAIN_SIZE               = (1 << grid_config_.DOMAIN_BITS);
+        grid_config_.G_DOMAIN_VOLUME             = (1 << (grid_config_.DOMAIN_BITS * 3));
+
+        grid_config_.G_DX                        = (grid_config_.GRID_BLOCK_SPACING / grid_config_.DXINV);
+        grid_config_.G_DX_INV                    = (T(1.0) / grid_config_.G_DX);
+        grid_config_.G_D_INV                     = (T(4.) * grid_config_.G_DX_INV * grid_config_.G_DX_INV);
+
+        grid_config_.G_BLOCK_BITS                = (grid_config_.BLOCK_BITS);
+        grid_config_.G_BLOCK_SIZE                = (1 << grid_config_.BLOCK_BITS);
+        grid_config_.G_BLOCK_MASK                = ((1 << grid_config_.BLOCK_BITS) - 1);
+        grid_config_.G_BLOCK_VOLUME              = (1 << (grid_config_.BLOCK_BITS * 3));
+        grid_config_.G_BLOCK_VOLUME_MASK         = ((1 << (grid_config_.BLOCK_BITS * 3)) - 1);
+
+        grid_config_.G_GRID_BITS	             = (grid_config_.DOMAIN_BITS - grid_config_.BLOCK_BITS);
+        grid_config_.G_GRID_SIZE	             = (1 << (grid_config_.DOMAIN_BITS - grid_config_.BLOCK_BITS));
+        grid_config_.G_GRID_VOLUME               = (1 << (grid_config_.G_GRID_BITS * 3));
+    }
+
+    const GridConfig<T>& grid_config() const { return grid_config_; }
 
     const size_t& n_verts() const { return n_verts_; }
     const size_t& n_faces() const { return n_faces_; }
@@ -262,6 +287,9 @@ private:
     T* d_g_Grad_ = nullptr;
     T* d_g_Dir_  = nullptr;
     T* d_g_v_star_ = nullptr;
+
+    // Grid domain meta-data
+    GridConfig<T> grid_config_;
 };
 
 }  // namespace gmpm

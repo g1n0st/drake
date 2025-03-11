@@ -33,40 +33,38 @@ template<typename T> using Mat3 = Eigen::Matrix<T, 3, 3>;
 template<typename T> using Vec2 = Eigen::Vector<T, 2>;
 template<typename T> using Mat2 = Eigen::Matrix<T, 2, 2>;
 
+template <typename T>
+struct GridConfig {
+    int BLOCK_BITS;
+    int DOMAIN_BITS;
+    T DXINV;
+    T GRID_BLOCK_SPACING;
+
+    int G_DOMAIN_BITS;
+    int G_DOMAIN_SIZE;
+    int G_DOMAIN_VOLUME;
+
+    T G_DX;
+    T G_DX_INV;
+    T G_D_INV;
+
+    int G_BLOCK_BITS;
+    int G_BLOCK_SIZE;
+    int G_BLOCK_MASK;
+    int G_BLOCK_VOLUME;
+    int G_BLOCK_VOLUME_MASK;
+
+    int G_GRID_BITS;
+    int G_GRID_SIZE;
+    int G_GRID_VOLUME;
+};
+
 namespace config {
 	using GpuT = double;
 
     // cuda device
     constexpr int G_DEVICE_COUNT = 1;
 	constexpr int DEFAULT_CUDA_BLOCK_SIZE = 128;
-
-    // background_grid
-	template<class T> constexpr T GRID_BLOCK_SPACING;
-	template<> constexpr float GRID_BLOCK_SPACING<float> = 1.f;
-	template<> constexpr double GRID_BLOCK_SPACING<double> = 1.;
-
-	constexpr int BLOCK_BITS			 = 2; // BLOCK 4x4x4
-	constexpr int DOMAIN_BITS			 = 6; // GRID  128x128x128 for cloth MPM, 64x64x64 for particle MPM
-	template<class T> constexpr T DXINV	 = (1 << DOMAIN_BITS);
-
-	constexpr int G_DOMAIN_BITS			 = DOMAIN_BITS;
-	constexpr int G_DOMAIN_SIZE			 = (1 << DOMAIN_BITS);
-	constexpr int G_DOMAIN_VOLUME		 = (1 << (DOMAIN_BITS * 3));
-
-	constexpr int G_BOUNDARY_CONDITION = 3;
-	template<class T> constexpr T G_DX			= T(GRID_BLOCK_SPACING<T>) / DXINV<T>;
-	template<class T> constexpr T G_DX_INV		= T(1.0) / G_DX<T>;
-	template<class T> constexpr T G_D_INV		= T(4.) * G_DX_INV<T> * G_DX_INV<T>;
-
-	constexpr int G_BLOCK_BITS			 = BLOCK_BITS;
-	constexpr int G_BLOCK_SIZE			 = (1 << BLOCK_BITS);
-	constexpr int G_BLOCK_MASK			 = ((1 << BLOCK_BITS) - 1);
-	constexpr int G_BLOCK_VOLUME		 = (1 << (BLOCK_BITS * 3));
-	constexpr int G_BLOCK_VOLUME_MASK	 = ((1 << (BLOCK_BITS * 3)) - 1);
-
-	constexpr int G_GRID_BITS			 = (DOMAIN_BITS - BLOCK_BITS);
-	constexpr int G_GRID_SIZE			 = (1 << (DOMAIN_BITS - BLOCK_BITS));
-	constexpr int G_GRID_VOLUME		 	 = (1 << (G_GRID_BITS * 3));
 
 	// material parameters
 	template<class T> constexpr T YOUNGS_MODULUS;

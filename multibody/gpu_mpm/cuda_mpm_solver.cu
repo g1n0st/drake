@@ -26,7 +26,7 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
     CUDA_SAFE_CALL((
         compute_base_cell_node_index_kernel<<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_particles(), state->current_positions(), state->current_sort_keys(), state->current_sort_ids())
+        (state->grid_config(), state->n_particles(), state->current_positions(), state->current_sort_keys(), state->current_sort_ids())
         ));
 
     // TODO (changyu):
@@ -54,7 +54,7 @@ void GpuMpmSolver<T>::RebuildMapping(GpuMpmState<T> *state, bool sort) const {
                        state->sort_buffer(), 
                        state->sort_buffer_size(), 
                        static_cast<unsigned int>(state->n_particles()),
-                       /*num_bit = */ std::min((config::G_DOMAIN_BITS * 3), 16))
+                       /*num_bit = */ std::min((state->grid_config().G_DOMAIN_BITS * 3), 16))
             ));
         CUDA_SAFE_CALL((
             compute_sorted_state_kernel<<<
@@ -94,18 +94,18 @@ void GpuMpmSolver<T>::CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt) c
 template<typename T>
 void GpuMpmSolver<T>::ParticleToGrid(GpuMpmState<T> *state, const T& dt) const {
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
-    const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
+    const uint32_t &touched_cells_cnt = touched_blocks_cnt * state->grid_config().G_BLOCK_VOLUME;
     if (touched_cells_cnt > 0) {
     CUDA_SAFE_CALL((
         clean_grid_kernel<<<
         (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (touched_cells_cnt, state->grid_touched_ids(), state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
+        (state->grid_config(), touched_cells_cnt, state->grid_touched_ids(), state->grid_touched_flags(), state->grid_masses(), state->grid_momentum())
         ));
     }
     CUDA_SAFE_CALL((
         particle_to_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
+        (state->grid_config(), state->n_particles(), state->current_positions(), state->current_velocities(), state->current_volumes(), state->current_affine_matrices(),
          state->forces(), state->taus(),
          state->current_sort_keys(),
          state->grid_touched_flags(), state->grid_masses(), state->grid_momentum(), dt)
@@ -119,20 +119,20 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state, int mpm_bc, bool enforce
         CUDA_SAFE_CALL(cudaMemset(state->grid_touched_cnt(), 0, sizeof(uint32_t)));
         CUDA_SAFE_CALL((
             gather_touched_grid_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE><<<
-            (config::G_GRID_VOLUME + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (state->grid_touched_flags(), state->grid_touched_ids(), state->grid_touched_cnt(), state->grid_masses())
+            (state->grid_config().G_GRID_VOLUME + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
+            (state->grid_config().G_GRID_VOLUME, state->grid_touched_flags(), state->grid_touched_ids(), state->grid_touched_cnt(), state->grid_masses())
             ));
     }
 
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
-    const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
+    const uint32_t &touched_cells_cnt = touched_blocks_cnt * state->grid_config().G_BLOCK_VOLUME;
 
     #define GRID_OP_WITH_BC(MPM_BC, ENFORCE_BC_ONLY) \
     else if (mpm_bc == MPM_BC) { \
         CUDA_SAFE_CALL(( \
             update_grid_kernel<T, MPM_BC, ENFORCE_BC_ONLY><<< \
             (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE \
-            >>>(touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum(), state->grid_v_star(), state->times_elapsed) \
+            >>>(state->grid_config(), touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(), state->grid_momentum(), state->grid_v_star(), state->times_elapsed) \
         )); \
     }
     
@@ -163,7 +163,7 @@ void GpuMpmSolver<T>::GridToParticle(GpuMpmState<T> *state, const T& dt) const {
     CUDA_SAFE_CALL((
         grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/false><<<
         (state->n_particles() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
+        (state->grid_config(), state->n_particles(), state->current_positions(), state->current_velocities(), state->current_affine_matrices(),
          state->grid_masses(), state->grid_momentum(), dt)
         ));
 }
@@ -225,12 +225,12 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     if (!n_contacts) return;
 
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
-    const uint32_t &touched_cells_cnt = touched_blocks_cnt * config::G_BLOCK_VOLUME;
+    const uint32_t &touched_cells_cnt = touched_blocks_cnt * state->grid_config().G_BLOCK_VOLUME;
 
     CUDA_SAFE_CALL((
         compute_base_cell_node_index_kernel<<<
         (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
+        (state->grid_config(), n_contacts, state->contact_pos(), state->contact_sort_keys(), state->contact_sort_ids())
         ));
 
     // If we don't converge in 2000 iterations, we probably will never converge anyway...    
@@ -263,7 +263,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
     CUDA_SAFE_CALL((
         grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
         (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-        (n_contacts, state->contact_pos(), state->contact_vel_star(), nullptr, state->grid_masses(), state->grid_momentum(), dt)
+        (state->grid_config(), n_contacts, state->contact_pos(), state->contact_vel_star(), nullptr, state->grid_masses(), state->grid_momentum(), dt)
         ));
 
     // Choose an arbitrary small number as the initial norm so that we can enter the loop.
@@ -278,14 +278,15 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             CUDA_SAFE_CALL((
                 clean_grid_contact_kernel<<<
                 (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-                (touched_cells_cnt, state->grid_touched_ids(), state->grid_Hess(), state->grid_Grad(), state->grid_Dir())
+                (state->grid_config(), touched_cells_cnt, state->grid_touched_ids(), state->grid_Hess(), state->grid_Grad(), state->grid_Dir())
                 ));
         }
         
         CUDA_SAFE_CALL((
             contact_particle_to_grid_kernel<T, 32><<<
             (n_contacts + 32 - 1) / 32, 32>>>
-            (n_contacts, 
+            (state->grid_config(),
+            n_contacts, 
             state->contact_pos(), 
             state->contact_vel(), 
             state->current_velocities(),
@@ -303,7 +304,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         CUDA_SAFE_CALL((
             grid_contact_3x3_parallel_solving_kernel<<<
             (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
+            (state->grid_config(), touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
             state->grid_v_star(), state->grid_Hess(), state->grid_Grad(), state->grid_momentum(), state->grid_Dir(), norm_dir_d, norm_impulse_d)
             ));
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
@@ -315,7 +316,9 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             CUDA_SAFE_CALL(cudaMemset(global_d2E1_d, 0, sizeof(T)));
             CUDA_SAFE_CALL((
                 grid_to_particle_contact_term_line_search_kernel<T, 32><<<(n_contacts + 32 - 1) / 32, 32>>>
-                (n_contacts, 
+                (
+                state->grid_config(),
+                n_contacts, 
                 state->contact_pos(), 
                 state->contact_vel(), 
                 state->current_velocities(),
@@ -335,7 +338,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             CUDA_SAFE_CALL((
                 update_global_inertia_energy_grid_kernel<<<
                 (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-                (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
+                (state->grid_config(), touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
                 state->grid_v_star(), state->grid_momentum(), state->grid_Dir(),
                 global_E1_d, global_dE1_d, global_d2E1_d, current_alpha)
                 ));
@@ -453,14 +456,14 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         CUDA_SAFE_CALL((
             apply_global_line_search_grid_kernel<<<
             (touched_cells_cnt + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
+            (state->grid_config(), touched_cells_cnt, state->grid_touched_ids(), state->grid_masses(),
             state->grid_momentum(), state->grid_Dir(), global_alpha)
             ));
         
         CUDA_SAFE_CALL((
             grid_to_particle_kernel<T, config::DEFAULT_CUDA_BLOCK_SIZE, /*CONTACT_TRANSFER=*/true><<<
             (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
-            (n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
+            (state->grid_config(), n_contacts, state->contact_pos(), state->contact_vel(), nullptr,
             state->grid_masses(), state->grid_momentum(), dt)
             ));
 

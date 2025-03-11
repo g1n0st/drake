@@ -529,52 +529,50 @@ inline uint3 inverse_morton_code(const uint32_t &code) noexcept {
     return {x, y, z};
 }
 
+template<typename T>
 __device__ __host__
-inline std::uint32_t cell_index(const uint32_t &xi, const uint32_t &yi, const uint32_t &zi) noexcept {
+inline std::uint32_t cell_index(const GridConfig<T> &gconf, const uint32_t &xi, const uint32_t &yi, const uint32_t &zi) noexcept {
     // NOTE (changyu): using morton code ordering within grid block (lower_bit) seems nothing different
-    uint32_t higher_bit = morton_code({xi >> config::BLOCK_BITS, yi >> config::BLOCK_BITS, zi >> config::BLOCK_BITS});
-    uint32_t lower_bit = ((xi & config::G_BLOCK_MASK) << (config::G_BLOCK_BITS * 2)) | ((yi & config::G_BLOCK_MASK) << config::G_BLOCK_BITS) | (zi & config::G_BLOCK_MASK);
-    return (higher_bit << (config::G_BLOCK_BITS * 3)) | lower_bit;
+    uint32_t higher_bit = morton_code({xi >> gconf.BLOCK_BITS, yi >> gconf.BLOCK_BITS, zi >> gconf.BLOCK_BITS});
+    uint32_t lower_bit = ((xi & gconf.G_BLOCK_MASK) << (gconf.G_BLOCK_BITS * 2)) | ((yi & gconf.G_BLOCK_MASK) << gconf.G_BLOCK_BITS) | (zi & gconf.G_BLOCK_MASK);
+    return (higher_bit << (gconf.G_BLOCK_BITS * 3)) | lower_bit;
     // printf("%.3lf %.3lf %.3lf %u %u %u high=%u, low=%u, %u\n", x, y, z, xi, yi, zi, higher_bit, lower_bit, keys[idx]);
 }
 
+template<typename T>
 __device__ __host__
-inline uint3 inverse_cell_index(const std::uint32_t &index) noexcept {
+inline uint3 inverse_cell_index(const GridConfig<T> &gconf, const std::uint32_t &index) noexcept {
     // Extract higher_bit and lower_bit
-    uint32_t higher_bit = index >> (config::G_BLOCK_BITS * 3);
-    uint32_t lower_bit = index & ((1 << (config::G_BLOCK_BITS * 3)) - 1);
+    uint32_t higher_bit = index >> (gconf.G_BLOCK_BITS * 3);
+    uint32_t lower_bit = index & ((1 << (gconf.G_BLOCK_BITS * 3)) - 1);
 
     // Extract xi, yi, zi from lower_bit
-    uint32_t lower_xi = (lower_bit >> (config::G_BLOCK_BITS * 2)) & config::G_BLOCK_MASK;
-    uint32_t lower_yi = (lower_bit >> config::G_BLOCK_BITS) & config::G_BLOCK_MASK;
-    uint32_t lower_zi = lower_bit & config::G_BLOCK_MASK;
+    uint32_t lower_xi = (lower_bit >> (gconf.G_BLOCK_BITS * 2)) & gconf.G_BLOCK_MASK;
+    uint32_t lower_yi = (lower_bit >> gconf.G_BLOCK_BITS) & gconf.G_BLOCK_MASK;
+    uint32_t lower_zi = lower_bit & gconf.G_BLOCK_MASK;
 
     // Extract xi, yi, zi from higher_bit using inverse Morton code
     uint3 higher_xyz = inverse_morton_code(higher_bit);
 
     // Combine higher and lower bits to get original xi, yi, zi
-    uint32_t xi = (higher_xyz.x << config::BLOCK_BITS) | lower_xi;
-    uint32_t yi = (higher_xyz.y << config::BLOCK_BITS) | lower_yi;
-    uint32_t zi = (higher_xyz.z << config::BLOCK_BITS) | lower_zi;
+    uint32_t xi = (higher_xyz.x << gconf.BLOCK_BITS) | lower_xi;
+    uint32_t yi = (higher_xyz.y << gconf.BLOCK_BITS) | lower_yi;
+    uint32_t zi = (higher_xyz.z << gconf.BLOCK_BITS) | lower_zi;
 
     return {xi, yi, zi};
 }
 
 template<typename T>
-__global__ void compute_base_cell_node_index_kernel(const size_t n_particles, const T* positions, uint32_t* keys, uint32_t* ids) {
+__global__ void compute_base_cell_node_index_kernel(const GridConfig<T> gconf, const size_t n_particles, const T* positions, uint32_t* keys, uint32_t* ids) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_particles) {
         T x = positions[idx * 3 + 0];
         T y = positions[idx * 3 + 1];
         T z = positions[idx * 3 + 2];
-        uint32_t xi = static_cast<uint32_t>(x * config::G_DX_INV<T> - T(0.5));
-        uint32_t yi = static_cast<uint32_t>(y * config::G_DX_INV<T> - T(0.5));
-        uint32_t zi = static_cast<uint32_t>(z * config::G_DX_INV<T> - T(0.5));
-        /*uint3 inv_xyz = inverse_cell_index(cell_index(xi, yi, zi));
-        if (xi != inv_xyz.x || yi != inv_xyz.y || zi != inv_xyz.z) {
-            printf("%u,%u, %u,%u %u,%u\n", xi, inv_xyz.x, yi, inv_xyz.y, zi, inv_xyz.z);
-        }*/
-        keys[idx] = cell_index(xi, yi, zi);
+        uint32_t xi = static_cast<uint32_t>(x * gconf.G_DX_INV - T(0.5));
+        uint32_t yi = static_cast<uint32_t>(y * gconf.G_DX_INV - T(0.5));
+        uint32_t zi = static_cast<uint32_t>(z * gconf.G_DX_INV - T(0.5));
+        keys[idx] = cell_index(gconf, xi, yi, zi);
         ids[idx] = idx;
     }
 }
@@ -614,7 +612,8 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
 }
 
 template<typename T, int BLOCK_DIM>
-__global__ void particle_to_grid_kernel(const size_t n_particles,
+__global__ void particle_to_grid_kernel(const GridConfig<T> gconf, 
+    const size_t n_particles,
     const T* positions, 
     const T* velocities,
     const T* volumes,
@@ -656,14 +655,14 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+            static_cast<uint32_t>(positions[idx * 3 + 0] * gconf.G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * gconf.G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * gconf.G_DX_INV - T(0.5))
         };
         T fx[3] = {
-            positions[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
-            positions[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
-            positions[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+            positions[idx * 3 + 0] * gconf.G_DX_INV - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * gconf.G_DX_INV - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * gconf.G_DX_INV - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         #pragma unroll
@@ -681,7 +680,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
         const T* stress = &taus[idx * 9];
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * config::G_D_INV<T>) * stress[i] + C[i] * mass;
+            B[i] = (-dt * gconf.G_DX_INV) * stress[i] + C[i] * mass;
         }
 
         T val[4];
@@ -693,9 +692,9 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                 #pragma unroll
                 for (int k = 0; k < 3; ++k) {
                     T xi_minus_xp[3] = {
-                        (i - fx[0]) * config::G_DX<T>,
-                        (j - fx[1]) * config::G_DX<T>,
-                        (k - fx[2]) * config::G_DX<T>
+                        (i - fx[0]) * gconf.G_DX,
+                        (j - fx[1]) * gconf.G_DX,
+                        (k - fx[2]) * gconf.G_DX
                     };
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
@@ -726,8 +725,8 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
                     }
 
                     if (boundary) {
-                        const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-                        const uint32_t target_grid_index = target_cell_index >> (config::G_BLOCK_BITS * 3);
+                        const uint32_t target_cell_index = cell_index(gconf, base[0] + i, base[1] + j, base[2] + k);
+                        const uint32_t target_grid_index = target_cell_index >> (gconf.G_BLOCK_BITS * 3);
                         g_touched_flags[target_grid_index] = 1;
                         atomicAdd(&(g_masses[target_cell_index]), val[0]);
                         atomicAdd(&(g_momentum[target_cell_index * 3 + 0]), val[1]);
@@ -742,6 +741,7 @@ __global__ void particle_to_grid_kernel(const size_t n_particles,
 
 template<typename T, int BLOCK_DIM>
 __global__ void gather_touched_grid_kernel(
+    const int G_GRID_VOLUME,
     const uint32_t* g_touched_flags,
     uint32_t* g_touched_ids,
     uint32_t* g_touched_cnt,
@@ -756,7 +756,7 @@ __global__ void gather_touched_grid_kernel(
     uint32_t touched_count = 0;
     uint32_t touched_idx = 0;
 
-    if (idx < config::G_GRID_VOLUME && g_touched_flags[idx]) {
+    if (idx < G_GRID_VOLUME && g_touched_flags[idx]) {
         touched_idx = idx;
         touched_count = 1;
     }
@@ -782,6 +782,7 @@ __global__ void gather_touched_grid_kernel(
 
 template<typename T>
 __global__ void clean_grid_kernel(
+    const GridConfig<T> gconf,
     const uint32_t touched_cells_cnt,
     const uint32_t* g_touched_ids,
     uint32_t* g_touched_flags,
@@ -789,8 +790,8 @@ __global__ void clean_grid_kernel(
     T* g_momentum) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
-        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
-        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        uint32_t block_idx = g_touched_ids[idx >> (gconf.G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (gconf.G_BLOCK_BITS * 3)) | (idx & gconf.G_BLOCK_VOLUME_MASK);
         g_touched_flags[block_idx] = 0;
         g_masses[cell_idx] = 0;
         g_momentum[cell_idx * 3 + 0] = 0;
@@ -801,6 +802,7 @@ __global__ void clean_grid_kernel(
 
 template<typename T>
 __global__ void clean_grid_contact_kernel(
+    const GridConfig<T> gconf,
     const uint32_t touched_cells_cnt,
     const uint32_t* g_touched_ids,
     T* g_Hess,
@@ -808,8 +810,8 @@ __global__ void clean_grid_contact_kernel(
     T* g_Dir) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
-        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
-        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        uint32_t block_idx = g_touched_ids[idx >> (gconf.G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (gconf.G_BLOCK_BITS * 3)) | (idx & gconf.G_BLOCK_VOLUME_MASK);
         g_Grad[cell_idx * 3 + 0] = 0;
         g_Grad[cell_idx * 3 + 1] = 0;
         g_Grad[cell_idx * 3 + 2] = 0;
@@ -823,6 +825,7 @@ __global__ void clean_grid_contact_kernel(
 
 template<typename T, int MPM_BOUNDARY_CONDITION=-1, bool ENFORCE_BC_ONLY=false>
 __global__ void update_grid_kernel(
+    const GridConfig<T> gconf,
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
     T* g_masses,
@@ -831,8 +834,8 @@ __global__ void update_grid_kernel(
     const T times_elapsed) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
-        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
-        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
+        uint32_t block_idx = g_touched_ids[idx >> (gconf.G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (gconf.G_BLOCK_BITS * 3)) | (idx & gconf.G_BLOCK_VOLUME_MASK);
         if (g_masses[cell_idx] > T(0.)) {
             T *g_vel = &g_momentum[cell_idx * 3];
 
@@ -845,20 +848,20 @@ __global__ void update_grid_kernel(
             else {
 
             // apply boundary condition
-            const int boundary_condition = config::G_BOUNDARY_CONDITION;
-            uint3 xyz = inverse_cell_index(cell_idx);
+            const int boundary_condition = 3;
+            uint3 xyz = inverse_cell_index(gconf, cell_idx);
             if (xyz.x < boundary_condition && g_vel[0] < 0) g_vel[0] = 0;
-            if (xyz.x >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[0] > 0) g_vel[0] = 0;
+            if (xyz.x >= gconf.G_DOMAIN_SIZE - boundary_condition && g_vel[0] > 0) g_vel[0] = 0;
             if (xyz.y < boundary_condition && g_vel[1] < 0) g_vel[1] = 0;
-            if (xyz.y >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[1] > 0) g_vel[1] = 0;
+            if (xyz.y >= gconf.G_DOMAIN_SIZE - boundary_condition && g_vel[1] > 0) g_vel[1] = 0;
             if (xyz.z < boundary_condition && g_vel[2] < 0) g_vel[2] = 0;
-            if (xyz.z >= config::G_DOMAIN_SIZE - boundary_condition && g_vel[2] > 0) g_vel[2] = 0;
+            if (xyz.z >= gconf.G_DOMAIN_SIZE - boundary_condition && g_vel[2] > 0) g_vel[2] = 0;
 
             {
                 T pos[3] = {
-                    (xyz.x + T(.5)) * config::G_DX<T>,
-                    (xyz.y + T(.5)) * config::G_DX<T>,
-                    (xyz.z + T(.5)) * config::G_DX<T>
+                    (xyz.x + T(.5)) * gconf.G_DX,
+                    (xyz.y + T(.5)) * gconf.G_DX,
+                    (xyz.z + T(.5)) * gconf.G_DX
                 };
                 bool fixed = false;
                 bool inside = false;
@@ -1232,7 +1235,9 @@ __global__ void update_grid_kernel(
 }
 
 template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
-__global__ void grid_to_particle_kernel(const size_t n_particles,
+__global__ void grid_to_particle_kernel(
+    const GridConfig<T> gconf,
+    const size_t n_particles,
     T* positions, 
     T* velocities,
     T* affine_matrices,
@@ -1248,14 +1253,14 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(positions[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(positions[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+            static_cast<uint32_t>(positions[idx * 3 + 0] * gconf.G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 1] * gconf.G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(positions[idx * 3 + 2] * gconf.G_DX_INV - T(0.5))
         };
         T fx[3] = {
-            positions[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
-            positions[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
-            positions[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+            positions[idx * 3 + 0] * gconf.G_DX_INV - static_cast<T>(base[0]),
+            positions[idx * 3 + 1] * gconf.G_DX_INV - static_cast<T>(base[1]),
+            positions[idx * 3 + 2] * gconf.G_DX_INV - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         #pragma unroll
@@ -1288,7 +1293,7 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                         (k - fx[2])
                     };
 
-                    const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                    const uint32_t target_cell_index = cell_index(gconf, base[0] + i, base[1] + j, base[2] + k);
                     const T* g_v = &g_momentum[target_cell_index * 3];
 
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
@@ -1307,15 +1312,15 @@ __global__ void grid_to_particle_kernel(const size_t n_particles,
                         // printf("weight=%.8lf\n", weight);
                         // printf("g_v=[%.8lf   %.8lf   %.8lf]\n", g_v[0], g_v[1], g_v[2]);
                         // printf("xip=[%.8lf   %.8lf   %.8lf]\n", xi_minus_xp[0], xi_minus_xp[1], xi_minus_xp[2]);
-                        new_C[0] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[0];
-                        new_C[1] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[1];
-                        new_C[2] += 4 * config::G_DX_INV<T> * weight * g_v[0] * xi_minus_xp[2];
-                        new_C[3] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[0];
-                        new_C[4] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[1];
-                        new_C[5] += 4 * config::G_DX_INV<T> * weight * g_v[1] * xi_minus_xp[2];
-                        new_C[6] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[0];
-                        new_C[7] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[1];
-                        new_C[8] += 4 * config::G_DX_INV<T> * weight * g_v[2] * xi_minus_xp[2];
+                        new_C[0] += 4 * gconf.G_DX_INV * weight * g_v[0] * xi_minus_xp[0];
+                        new_C[1] += 4 * gconf.G_DX_INV * weight * g_v[0] * xi_minus_xp[1];
+                        new_C[2] += 4 * gconf.G_DX_INV * weight * g_v[0] * xi_minus_xp[2];
+                        new_C[3] += 4 * gconf.G_DX_INV * weight * g_v[1] * xi_minus_xp[0];
+                        new_C[4] += 4 * gconf.G_DX_INV * weight * g_v[1] * xi_minus_xp[1];
+                        new_C[5] += 4 * gconf.G_DX_INV * weight * g_v[1] * xi_minus_xp[2];
+                        new_C[6] += 4 * gconf.G_DX_INV * weight * g_v[2] * xi_minus_xp[0];
+                        new_C[7] += 4 * gconf.G_DX_INV * weight * g_v[2] * xi_minus_xp[1];
+                        new_C[8] += 4 * gconf.G_DX_INV * weight * g_v[2] * xi_minus_xp[2];
                     }
                 }
             }
@@ -1486,7 +1491,9 @@ __device__ void compute_contact_grad_and_hess(
 }
 
 template<typename T, int BLOCK_DIM>
-__global__ void contact_particle_to_grid_kernel(const size_t n_particles,
+__global__ void contact_particle_to_grid_kernel(
+    const GridConfig<T> gconf,
+    const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
     const T* velocities,
@@ -1532,14 +1539,14 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(contact_pos[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(contact_pos[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(contact_pos[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+            static_cast<uint32_t>(contact_pos[idx * 3 + 0] * gconf.G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(contact_pos[idx * 3 + 1] * gconf.G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(contact_pos[idx * 3 + 2] * gconf.G_DX_INV - T(0.5))
         };
         T fx[3] = {
-            contact_pos[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
-            contact_pos[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
-            contact_pos[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+            contact_pos[idx * 3 + 0] * gconf.G_DX_INV - static_cast<T>(base[0]),
+            contact_pos[idx * 3 + 1] * gconf.G_DX_INV - static_cast<T>(base[1]),
+            contact_pos[idx * 3 + 2] * gconf.G_DX_INV - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         #pragma unroll
@@ -1610,7 +1617,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
                     }
 
                     if (boundary) {
-                        const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                        const uint32_t target_cell_index = cell_index(gconf, base[0] + i, base[1] + j, base[2] + k);
                         #pragma unroll
                         for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), val[ii]);
                         #pragma unroll
@@ -1624,6 +1631,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
 
 template<typename T>
 __global__ void grid_contact_3x3_parallel_solving_kernel(
+    const GridConfig<T> gconf,
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
     const T* g_masses,
@@ -1636,9 +1644,9 @@ __global__ void grid_contact_3x3_parallel_solving_kernel(
     T* norm_impulse) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
-        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
-        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
-        uint3 xyz = inverse_cell_index(cell_idx);
+        uint32_t block_idx = g_touched_ids[idx >> (gconf.G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (gconf.G_BLOCK_BITS * 3)) | (idx & gconf.G_BLOCK_VOLUME_MASK);
+        uint3 xyz = inverse_cell_index(gconf, cell_idx);
         if (g_masses[cell_idx] > T(0.)) {
             T* g_vel = &g_momentum[cell_idx * 3];
             T mass = g_masses[cell_idx];
@@ -1703,7 +1711,9 @@ __global__ void grid_contact_3x3_parallel_solving_kernel(
 }
 
 template<typename T, int BLOCK_DIM>
-__global__ void grid_to_particle_contact_term_line_search_kernel(const size_t n_particles,
+__global__ void grid_to_particle_contact_term_line_search_kernel(
+    const GridConfig<T> gconf,
+    const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
     const T* velocities,
@@ -1731,14 +1741,14 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(const size_t n_
 
     if (idx < n_particles) {
         uint32_t base[3] = {
-            static_cast<uint32_t>(contact_pos[idx * 3 + 0] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(contact_pos[idx * 3 + 1] * config::G_DX_INV<T> - T(0.5)),
-            static_cast<uint32_t>(contact_pos[idx * 3 + 2] * config::G_DX_INV<T> - T(0.5))
+            static_cast<uint32_t>(contact_pos[idx * 3 + 0] * gconf.G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(contact_pos[idx * 3 + 1] * gconf.G_DX_INV - T(0.5)),
+            static_cast<uint32_t>(contact_pos[idx * 3 + 2] * gconf.G_DX_INV - T(0.5))
         };
         T fx[3] = {
-            contact_pos[idx * 3 + 0] * config::G_DX_INV<T> - static_cast<T>(base[0]),
-            contact_pos[idx * 3 + 1] * config::G_DX_INV<T> - static_cast<T>(base[1]),
-            contact_pos[idx * 3 + 2] * config::G_DX_INV<T> - static_cast<T>(base[2])
+            contact_pos[idx * 3 + 0] * gconf.G_DX_INV - static_cast<T>(base[0]),
+            contact_pos[idx * 3 + 1] * gconf.G_DX_INV - static_cast<T>(base[1]),
+            contact_pos[idx * 3 + 2] * gconf.G_DX_INV - static_cast<T>(base[2])
         };
         // Quadratic kernels  [http://mpm.graphics   Eqn. 123, with x=fx, fx-1,fx-2]
         #pragma unroll
@@ -1761,7 +1771,7 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(const size_t n_
             for (int j = 0; j < 3; ++j) {
                 #pragma unroll
                 for (int k = 0; k < 3; ++k) {
-                    const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                    const uint32_t target_cell_index = cell_index(gconf, base[0] + i, base[1] + j, base[2] + k);
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
                     const T* g_v = &g_velocities[target_cell_index * 3];
@@ -1862,6 +1872,7 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(const size_t n_
 
 template<typename T>
 __global__ void update_global_inertia_energy_grid_kernel(
+    const GridConfig<T> gconf,
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
     const T* g_masses,
@@ -1874,9 +1885,9 @@ __global__ void update_global_inertia_energy_grid_kernel(
     const T global_alpha) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
-        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
-        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
-        uint3 xyz = inverse_cell_index(cell_idx);
+        uint32_t block_idx = g_touched_ids[idx >> (gconf.G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (gconf.G_BLOCK_BITS * 3)) | (idx & gconf.G_BLOCK_VOLUME_MASK);
+        uint3 xyz = inverse_cell_index(gconf, cell_idx);
         if (g_masses[cell_idx] > 0) {
             T* g_vel = &g_momentum[cell_idx * 3];
             const T* v_star = &g_v_star[cell_idx * 3];
@@ -1903,6 +1914,7 @@ __global__ void update_global_inertia_energy_grid_kernel(
 
 template<typename T>
 __global__ void apply_global_line_search_grid_kernel(
+    const GridConfig<T> gconf,
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
     const T* g_masses,
@@ -1911,9 +1923,9 @@ __global__ void apply_global_line_search_grid_kernel(
     const T global_alpha) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
-        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
-        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
-        uint3 xyz = inverse_cell_index(cell_idx);
+        uint32_t block_idx = g_touched_ids[idx >> (gconf.G_BLOCK_BITS * 3)];
+        uint32_t cell_idx = (block_idx << (gconf.G_BLOCK_BITS * 3)) | (idx & gconf.G_BLOCK_VOLUME_MASK);
+        uint3 xyz = inverse_cell_index(gconf, cell_idx);
         if (g_masses[cell_idx] > 0) {
             T* g_vel = &g_momentum[cell_idx * 3];
             const T* Dir = &g_Dir[cell_idx * 3];

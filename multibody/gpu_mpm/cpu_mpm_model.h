@@ -21,18 +21,21 @@ namespace gmpm {
 // NOTE(changyu): `MpmConfigParams` is responsive to store the initial config parameters in `CpuMpmModel`,
 template<typename T = config::GpuT>
 struct MpmConfigParams {
+    int domain_bits {7};
+    T grid_block_spacing {static_cast<T>(1.)};
+
     T substep_dt {static_cast<T>(1e-3)};
     bool write_files {false};
-    T contact_stiffness{static_cast<T>(1e5)};
-    T contact_damping{static_cast<T>(0.0)};
-    T contact_friction_mu{static_cast<T>(0.0)};
-    int contact_query_frequency{1};
-    int mpm_bc{-1};
-    bool ignore_face_contact{false};
+    T contact_stiffness {static_cast<T>(1e5)};
+    T contact_damping {static_cast<T>(0.0)};
+    T contact_friction_mu {static_cast<T>(0.0)};
+    int contact_query_frequency {1};
+    int mpm_bc {-1};
+    bool ignore_face_contact {false};
 };
 
 template<typename T = config::GpuT>
-inline std::vector<Vec3<T>> sample_particle_mpm_box(const T minx[3], const T maxx[3], const T ppc) {
+inline std::vector<Vec3<T>> sample_particle_mpm_box(const T minx[3], const T maxx[3], const T ppc, const T dx) {
     const tph_poisson_real bounds_min[3] = { 
         static_cast<tph_poisson_real>(minx[0]), static_cast<tph_poisson_real>(minx[1]), static_cast<tph_poisson_real>(minx[2])
     };
@@ -40,7 +43,7 @@ inline std::vector<Vec3<T>> sample_particle_mpm_box(const T minx[3], const T max
         static_cast<tph_poisson_real>(maxx[0]), static_cast<tph_poisson_real>(maxx[1]), static_cast<tph_poisson_real>(maxx[2])
     };
 
-    const tph_poisson_real h = config::G_DX<T>;
+    const tph_poisson_real h = dx;
     const tph_poisson_real sample_r = h / (std::cbrt(tph_poisson_real(ppc)) + 1);
     
     const tph_poisson_args args = { 
