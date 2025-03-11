@@ -1370,22 +1370,6 @@ __global__ void initialize_contact_velocities(const size_t n_contacts,
     }
 }
 
-template<typename UINT>
-__device__ __host__ inline UINT get_color_mask(UINT i, UINT j, UINT k) {
-    return (i % 3U) * 9U + (j % 3U) * 3U + (k % 3U);
-}
-
-template<typename UINT>
-__device__ __host__ inline void get_color_coordinates(UINT x, UINT y, UINT z, UINT color_mask, UINT &i, UINT &j, UINT &k) {
-    UINT i_offset = color_mask / 9U;
-    UINT j_offset = (color_mask % 9U) / 3U;
-    UINT k_offset = color_mask % 3U;
-
-    i = ((3U + i_offset) - (x % 3U)) % 3U;
-    j = ((3U + j_offset) - (y % 3U)) % 3U;
-    k = ((3U + k_offset) - (z % 3U)) % 3U;
-}
-
 // SAP model
 template<typename T>
 __device__ void compute_contact_grad_and_hess(
