@@ -103,10 +103,7 @@ public:
     T* grid_Hess() { return d_g_Hess_; }
     T* grid_Grad() { return d_g_Grad_; }
     T* grid_Dir() { return d_g_Dir_; }
-    T* grid_alpha() { return d_g_alpha_; }
     T* grid_v_star() { return d_g_v_star_; }
-    T* grid_E0() { return d_g_E0_; }
-    T* grid_E1() { return d_g_E1_; }
 
     T* F_Bq_W_tau() { return d_F_Bq_W_tau_; }
     T* F_Bq_W_f() { return d_F_Bq_W_f_; }
@@ -264,10 +261,7 @@ private:
     T* d_g_Hess_ = nullptr;
     T* d_g_Grad_ = nullptr;
     T* d_g_Dir_  = nullptr;
-    T* d_g_alpha_ = nullptr;
     T* d_g_v_star_ = nullptr;
-    T* d_g_E0_ = nullptr;
-    T* d_g_E1_ = nullptr;
 };
 
 }  // namespace gmpm

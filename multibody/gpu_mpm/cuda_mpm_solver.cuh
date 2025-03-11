@@ -28,10 +28,7 @@ public:
     void SyncParticleStateToCpu(GpuMpmState<T> *state) const;
     void Dump(const GpuMpmState<T> &state, std::string filename) const;
     void CopyContactPairs(GpuMpmState<T> *state, const MpmParticleContactPairs<T> &contact_pairs) const;
-    void UpdateContact(GpuMpmState<T> *state, 
-    const int frame, const int substep, const T& dt, 
-    const T& friction_mu, const T& stiffness, const T& damping, 
-    const bool bump, const bool exact_line_search, const bool mdv_as_impulse) const;
+    void UpdateContact(GpuMpmState<T> *state, const T& dt, const T& friction_mu, const T& stiffness, const T& damping) const;
 };
 
 }  // namespace gmpm

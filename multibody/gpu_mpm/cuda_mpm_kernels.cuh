@@ -805,15 +805,11 @@ __global__ void clean_grid_contact_kernel(
     const uint32_t* g_touched_ids,
     T* g_Hess,
     T* g_Grad,
-    T* g_Dir,
-    T* g_alpha,
-    T* g_E0,
-    T* g_E1) {
+    T* g_Dir) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
-        g_alpha[cell_idx] = T(-1.);
         g_Grad[cell_idx * 3 + 0] = 0;
         g_Grad[cell_idx * 3 + 1] = 0;
         g_Grad[cell_idx * 3 + 2] = 0;
@@ -822,8 +818,6 @@ __global__ void clean_grid_contact_kernel(
         g_Dir[cell_idx * 3 + 2] = 0;
         #pragma unroll
         for (int i = 0; i < 9; ++i) g_Hess[cell_idx * 9 + i] = 0;
-        g_E0[cell_idx] = 0;
-        g_E1[cell_idx] = 0;
     }
 }
 
@@ -1507,7 +1501,7 @@ __device__ void compute_contact_grad_and_hess(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool JACOBI>
+template<typename T, int BLOCK_DIM>
 __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
@@ -1523,8 +1517,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     const T dt,
     const T friction_mu,
     const T stiffness,
-    const T damping,
-    const uint32_t g_color_mask) {
+    const T damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -1577,17 +1570,7 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         const T* particle_v = &contact_vel[idx * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
-        // TODO (changyu): const GpuT phi0 = -(
-        // static_cast<GpuT>(mpm_contact_pairs[i].penetration_distance) + 
-        //     (mpm_state->positions_host()[mpm_contact_pairs[i].particle_in_contact_index] - 
-        //     mpm_contact_pairs[i].particle_in_contact_position.template cast<GpuT>()).dot(nhat_W)
-        //   );
         T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-        if (phi0 < 0) {
-            printf("IMPOSSIBLE!!!\n");
-        }
-#endif
 
         T vn_rel_W[3] = {
             particle_vn[0] - contact_rigid_v[idx * 3 + 0],
@@ -1623,60 +1606,31 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
         matmul<3, 3, 3, T>(R_WC, lc_Hess_C, tmp);
         matmul<3, 3, 3, T>(tmp, R_CW, lc_Hess_W); // J^T Hess J
 
-        if constexpr(!JACOBI) {
-            uint32_t i, j, k;
-            get_color_coordinates(base[0], base[1], base[2], g_color_mask, i, j, k);
-
-            T val[12]; // buffer for both W_Hess & W_Grad
-            T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
-            #pragma unroll
-            for (int ii = 0; ii < 9; ++ii) val[ii] = weight * lc_Hess_W[ii] * weight;
-            for (int ii = 9; ii < 12; ++ii) val[ii] = weight * lc_Grad_W[ii - 9];
-
-            for (int iter = 1; iter <= mark; iter <<= 1) {
-                T tmp[12]; 
-                #pragma unroll
-                for (int ii = 0; ii < 12; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
-                if (interval >= iter) {
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                for (int k = 0; k < 3; ++k) {
+                    T val[12]; // buffer for both W_Hess & W_Grad
+                    T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
                     #pragma unroll
-                    for (int ii = 0; ii < 12; ++ii) val[ii] += tmp[ii];
-                }
-            }
+                    for (int ii = 0; ii < 9; ++ii) val[ii] = weight * weight * lc_Hess_W[ii];
+                    for (int ii = 9; ii < 12; ++ii) val[ii] = weight * lc_Grad_W[ii - 9];
 
-            if (boundary) {
-                const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-                #pragma unroll
-                for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), val[ii]);
-                #pragma unroll
-                for (int ii = 0; ii < 3; ++ii) atomicAdd(&(g_Grad[target_cell_index * 3 + ii]), val[ii + 9]);
-            }
-        } else {
-            for (int i = 0; i < 3; ++i) {
-                for (int j = 0; j < 3; ++j) {
-                    for (int k = 0; k < 3; ++k) {
-                        T val[12]; // buffer for both W_Hess & W_Grad
-                            T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
+                    for (int iter = 1; iter <= mark; iter <<= 1) {
+                        T tmp[12]; 
+                        #pragma unroll
+                        for (int ii = 0; ii < 12; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
+                        if (interval >= iter) {
                             #pragma unroll
-                            for (int ii = 0; ii < 9; ++ii) val[ii] = weight * weight * lc_Hess_W[ii];
-                            for (int ii = 9; ii < 12; ++ii) val[ii] = weight * lc_Grad_W[ii - 9];
+                            for (int ii = 0; ii < 12; ++ii) val[ii] += tmp[ii];
+                        }
+                    }
 
-                            for (int iter = 1; iter <= mark; iter <<= 1) {
-                                T tmp[12]; 
-                                #pragma unroll
-                                for (int ii = 0; ii < 12; ++ii) tmp[ii] = __shfl_down_sync(0xFFFFFFFF, val[ii], iter);
-                                if (interval >= iter) {
-                                    #pragma unroll
-                                    for (int ii = 0; ii < 12; ++ii) val[ii] += tmp[ii];
-                                }
-                            }
-
-                            if (boundary) {
-                                const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
-                                #pragma unroll
-                                for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), val[ii]);
-                                #pragma unroll
-                                for (int ii = 0; ii < 3; ++ii) atomicAdd(&(g_Grad[target_cell_index * 3 + ii]), val[ii + 9]);
-                            }
+                    if (boundary) {
+                        const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
+                        #pragma unroll
+                        for (int ii = 0; ii < 9; ++ii) atomicAdd(&(g_Hess[target_cell_index * 9 + ii]), val[ii]);
+                        #pragma unroll
+                        for (int ii = 0; ii < 3; ++ii) atomicAdd(&(g_Grad[target_cell_index * 3 + ii]), val[ii + 9]);
                     }
                 }
             }
@@ -1684,8 +1638,8 @@ __global__ void contact_particle_to_grid_kernel(const size_t n_particles,
     }
 }
 
-template<typename T, bool JACOBI>
-__global__ void update_grid_contact_coordinate_descent_kernel(
+template<typename T>
+__global__ void grid_contact_3x3_parallel_solving_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
     const T* g_masses,
@@ -1694,20 +1648,14 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
     T* g_Grad,
     T* g_momentum,
     T* g_Dir,
-    T* g_alpha,
-    T* g_E0,
-    T* g_E1,
     T* norm_dir,
-    T* norm_impulse,
-    uint32_t* total_grid_DoFs,
-    const uint32_t g_color_mask,
-    const T jacobi_relax_coeff) {
+    T* norm_impulse) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
         uint3 xyz = inverse_cell_index(cell_idx);
-        if (g_masses[cell_idx] > T(0.) && (get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask || JACOBI)) {
+        if (g_masses[cell_idx] > T(0.)) {
             T* g_vel = &g_momentum[cell_idx * 3];
             T mass = g_masses[cell_idx];
             T* local_Hess = &g_Hess[cell_idx * 9];
@@ -1766,22 +1714,12 @@ __global__ void update_grid_contact_coordinate_descent_kernel(
 
             // stop criterion
             atomicAdd(norm_dir, norm_sqr<3>(&scaled_grad[0]));
-            atomicAdd(total_grid_DoFs, 1U);
-
-            // NOTE(changyu): enable it to add relaxation factor
-            if (JACOBI) {
-                for (int i = 0; i < 3; ++i) local_Dir[i] *= jacobi_relax_coeff;
-            }
-
-            g_alpha[cell_idx] = T(1.0);
-            g_E0[cell_idx] = T(0.0);
-            g_E1[cell_idx] = T(0.0);
         }
     }
 }
 
-template<typename T, int BLOCK_DIM, bool JACOBI, bool SOLVE_DF_DDF>
-__global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles,
+template<typename T, int BLOCK_DIM>
+__global__ void grid_to_particle_contact_term_line_search_kernel(const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
     const T* velocities,
@@ -1792,8 +1730,6 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
     const T* contact_rigid_v,
     const T* g_velocities,
     const T* g_Dir,
-    const T* g_alpha,
-    T* g_E0,
     T* g_E1,
     T* g_dE1,
     T* g_d2E1,
@@ -1801,9 +1737,6 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
     const T friction_mu,
     const T stiffness,
     const T damping,
-    const uint32_t g_color_mask,
-    const bool eval_E0,
-    const bool global_line_search,
     const T global_alpha) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
@@ -1836,13 +1769,6 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
         // v_p of next jacobi iteration{k+1}
         T v_p_next[3] = {0, 0, 0};
 
-        uint32_t ii, jj, kk;
-        get_color_coordinates(base[0], base[1], base[2], g_color_mask, ii, jj, kk);
-        const uint32_t color_index = cell_index(base[0] + ii, base[1] + jj, base[2] + kk);
-        if (g_alpha[color_index] < 0. && !JACOBI) { // NOTE (changyu): use g_alpha[color_index] < 0 to indicate this DoF is solved
-            return;
-        }
-
         T vp_search_dir_W[3] = {0, 0, 0};
 
         #pragma unroll
@@ -1854,40 +1780,17 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
                     const uint32_t target_cell_index = cell_index(base[0] + i, base[1] + j, base[2] + k);
                     T weight = weights[threadIdx.x][i][0] * weights[threadIdx.x][j][1] * weights[threadIdx.x][k][2];
 
-                    if constexpr (JACOBI) {
-                        const T* g_v = &g_velocities[target_cell_index * 3];
-                        const T* g_D = &g_Dir[target_cell_index * 3];
-                        const T alpha = global_line_search ? global_alpha : g_alpha[target_cell_index];
-                        v_p_current[0] += weight * g_v[0];
-                        v_p_current[1] += weight * g_v[1];
-                        v_p_current[2] += weight * g_v[2];
-                        v_p_next[0] += weight * (g_v[0] + alpha * g_D[0]);
-                        v_p_next[1] += weight * (g_v[1] + alpha * g_D[1]);
-                        v_p_next[2] += weight * (g_v[2] + alpha * g_D[2]);
-                        vp_search_dir_W[0] += weight * g_D[0];
-                        vp_search_dir_W[1] += weight * g_D[1];
-                        vp_search_dir_W[2] += weight * g_D[2];
-                    } else {
-                        if (get_color_mask(base[0] + i, base[1] + j, base[2] + k) == g_color_mask) {
-                            const T* g_v = &g_velocities[target_cell_index * 3];
-                            const T* g_D = &g_Dir[target_cell_index * 3];
-                            const T alpha = g_alpha[target_cell_index];
-                            v_p_current[0] += weight * g_v[0];
-                            v_p_current[1] += weight * g_v[1];
-                            v_p_current[2] += weight * g_v[2];
-                            v_p_next[0] += weight * (g_v[0] + alpha * g_D[0]);
-                            v_p_next[1] += weight * (g_v[1] + alpha * g_D[1]);
-                            v_p_next[2] += weight * (g_v[2] + alpha * g_D[2]);
-                        } else {
-                            const T* g_v = &g_velocities[target_cell_index * 3];
-                            v_p_current[0] += weight * g_v[0];
-                            v_p_current[1] += weight * g_v[1];
-                            v_p_current[2] += weight * g_v[2];
-                            v_p_next[0] += weight * g_v[0];
-                            v_p_next[1] += weight * g_v[1];
-                            v_p_next[2] += weight * g_v[2];
-                        }
-                    }
+                    const T* g_v = &g_velocities[target_cell_index * 3];
+                    const T* g_D = &g_Dir[target_cell_index * 3];
+                    v_p_current[0] += weight * g_v[0];
+                    v_p_current[1] += weight * g_v[1];
+                    v_p_current[2] += weight * g_v[2];
+                    v_p_next[0] += weight * (g_v[0] + global_alpha * g_D[0]);
+                    v_p_next[1] += weight * (g_v[1] + global_alpha * g_D[1]);
+                    v_p_next[2] += weight * (g_v[2] + global_alpha * g_D[2]);
+                    vp_search_dir_W[0] += weight * g_D[0];
+                    vp_search_dir_W[1] += weight * g_D[1];
+                    vp_search_dir_W[2] += weight * g_D[2];
                 }
             }
         }
@@ -1897,11 +1800,6 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
         T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-        if (phi0 < 0) {
-            printf("IMPOSSIBLE!!!\n");
-        }
-#endif
 
         T vn_rel_W[3] = {
             v_p_n[0] - contact_rigid_v[idx * 3 + 0],
@@ -1965,129 +1863,37 @@ __global__ void grid_to_particle_vdb_line_search_kernel(const size_t n_particles
             return lt + ln;
         };
 
-        T weight = weights[threadIdx.x][ii][0] * weights[threadIdx.x][jj][1] * weights[threadIdx.x][kk][2];
-        if constexpr(SOLVE_DF_DDF) {
-            if (JACOBI && global_line_search && !eval_E0) {
-            } else {
-                printf("SOLVE_DF_DDF must be JACOBI && global_line_search && !eval_E0!!!!!!!!!!!!!!!!!\n");
-            }
-        }
-        if (global_line_search) {
-            atomicAdd(g_E1, lc(v_next_C, vn_C));
-            if constexpr (SOLVE_DF_DDF) {
-                T lc_Hess_C[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-                compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
-                T global_dir_C[3];
-                matmul<3, 3, 1, T>(R_CW, vp_search_dir_W, global_dir_C);
-                atomicAdd(g_dE1, dot<3>(lc_Grad_C, global_dir_C));
-                T tmp[3];
-                matmul<1, 3, 3, T>(global_dir_C, lc_Hess_C, tmp);
-                atomicAdd(g_d2E1, dot<3>(tmp, global_dir_C));
-            }
-        } else {
-            if constexpr (JACOBI) {
-                printf("ERROR, JACOBI CANNOT USE LOCAL LINE-SEARCH!!!!!!!!!!!!!!!!!!!!!!!\n");
-            }
-            atomicAdd(&g_E1[color_index], lc(v_next_C, vn_C));
-        }
-        if (eval_E0) {
-            if (global_line_search) {
-                atomicAdd(g_E0, lc(v_current_C, vn_C));
-            } else {
-                if constexpr (JACOBI) {
-                    printf("ERROR, JACOBI CANNOT USE LOCAL LINE-SEARCH!!!!!!!!!!!!!!!!!!!!!!!\n");
-                }
-                atomicAdd(&g_E0[color_index], lc(v_current_C, vn_C));
-            }
-        }
+        atomicAdd(g_E1, lc(v_next_C, vn_C));
+        T lc_Hess_C[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
+        compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
+        T global_dir_C[3];
+        matmul<3, 3, 1, T>(R_CW, vp_search_dir_W, global_dir_C);
+        atomicAdd(g_dE1, dot<3>(lc_Grad_C, global_dir_C));
+        T tmp[3];
+        matmul<1, 3, 3, T>(global_dir_C, lc_Hess_C, tmp);
+        atomicAdd(g_d2E1, dot<3>(tmp, global_dir_C));
     }
 }
 
-template<typename T, bool JACOBI>
-__global__ void update_grid_contact_alpha_kernel(
+
+template<typename T>
+__global__ void update_global_inertia_energy_grid_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
     const T* g_masses,
     const T* g_v_star,
     T* g_momentum,
     const T* g_Dir,
-    T* g_alpha,
-    const T* g_E0,
-    T* g_E1,
-    uint32_t* solved_grid_DoFs,
-    const uint32_t g_color_mask,
-    const bool enable_line_search) {
-    uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
-    if (idx < touched_cells_cnt) {
-        uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
-        uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
-        uint3 xyz = inverse_cell_index(cell_idx);
-        if (g_masses[cell_idx] > T(0.) && 
-            (get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask || JACOBI) &&
-            g_alpha[cell_idx] > 0.) {
-            T* g_vel = &g_momentum[cell_idx * 3];
-            const T* v_star = &g_v_star[cell_idx * 3];
-            const T mass = g_masses[cell_idx];
-            const T alpha = g_alpha[cell_idx];
-            const T* Dir = &g_Dir[cell_idx * 3];
-            T v_current_rel[3] = {
-                g_vel[0] - v_star[0],
-                g_vel[1] - v_star[1],
-                g_vel[2] - v_star[2]
-            };
-            T v_next_rel[3] = {
-                g_vel[0] + alpha * Dir[0] - v_star[0],
-                g_vel[1] + alpha * Dir[1] - v_star[1],
-                g_vel[2] + alpha * Dir[2] - v_star[2]
-            };
-
-            // (1/2) * ||v_i - v_i^*||_M^2
-            T E0 = g_E0[cell_idx] + T(0.5) * mass * norm_sqr<3>(v_current_rel);
-            T E1 = g_E1[cell_idx] + T(0.5) * mass * norm_sqr<3>(v_next_rel);
-            if (E1 <= E0 || !enable_line_search) {
-                g_vel[0] += alpha * Dir[0];
-                g_vel[1] += alpha * Dir[1];
-                g_vel[2] += alpha * Dir[2];
-                g_alpha[cell_idx] = T(-1.);
-                atomicAdd(solved_grid_DoFs, 1U);
-            } else {
-                g_alpha[cell_idx] *= T(0.5);
-                g_E1[cell_idx] = T(0.);
-                if (g_alpha[cell_idx] < 1e-4) {
-                    printf("Tiny Alpha!!!!!!!!!!! color=%u idx=%u E0=%.10f E1=%.10f\n", g_color_mask, cell_idx, E0, E1);
-                    g_vel[0] += alpha * Dir[0];
-                    g_vel[1] += alpha * Dir[1];
-                    g_vel[2] += alpha * Dir[2];
-                    g_alpha[cell_idx] = T(-1.);
-                    atomicAdd(solved_grid_DoFs, 1U);
-                }
-            }
-        }
-    }
-}
-
-template<typename T, bool JACOBI, bool SOLVE_DF_DDF>
-__global__ void update_global_energy_grid_kernel(
-    const uint32_t touched_cells_cnt,
-    uint32_t* g_touched_ids,
-    const T* g_masses,
-    const T* g_v_star,
-    T* g_momentum,
-    const T* g_Dir,
-    T* global_E0,
     T* global_E1,
     T* global_dE1,
     T* global_d2E1,
-    const uint32_t g_color_mask,
-    const T global_alpha,
-    const bool eval_E0) {
+    const T global_alpha) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
         uint3 xyz = inverse_cell_index(cell_idx);
-        if (g_masses[cell_idx] > T(0.) && 
-            (get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask || JACOBI)) {
+        if (g_masses[cell_idx] > 0) {
             T* g_vel = &g_momentum[cell_idx * 3];
             const T* v_star = &g_v_star[cell_idx * 3];
             const T mass = g_masses[cell_idx];
@@ -2103,42 +1909,28 @@ __global__ void update_global_energy_grid_kernel(
                 g_vel[2] + global_alpha * Dir[2] - v_star[2]
             };
 
-            if constexpr(SOLVE_DF_DDF) {
-                if (JACOBI && !eval_E0) {
-                } else {
-                    printf("SOLVE_DF_DDF must be JACOBI && !eval_E0!!!!!!!!!!!!!!!!!\n");
-                }
-            }
-            if (eval_E0) {
-                atomicAdd(global_E0, T(0.5) * mass * norm_sqr<3>(v_current_rel));
-            }
-
             // (1/2) * ||v_i - v_i^*||_M^2
             atomicAdd(global_E1, T(0.5) * mass * norm_sqr<3>(v_next_rel));
-            if constexpr(SOLVE_DF_DDF) {
-                atomicAdd(global_dE1,  mass * dot<3>(v_next_rel, Dir));
-                atomicAdd(global_d2E1, mass * norm_sqr<3>(Dir));
-            }
+            atomicAdd(global_dE1,  mass * dot<3>(v_next_rel, Dir));
+            atomicAdd(global_d2E1, mass * norm_sqr<3>(Dir));
         }
     }
 }
 
-template<typename T, bool JACOBI>
+template<typename T>
 __global__ void apply_global_line_search_grid_kernel(
     const uint32_t touched_cells_cnt,
     uint32_t* g_touched_ids,
     const T* g_masses,
     T* g_momentum,
     const T* g_Dir,
-    const uint32_t g_color_mask,
     const T global_alpha) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (config::G_BLOCK_BITS * 3)];
         uint32_t cell_idx = (block_idx << (config::G_BLOCK_BITS * 3)) | (idx & config::G_BLOCK_VOLUME_MASK);
         uint3 xyz = inverse_cell_index(cell_idx);
-        if (g_masses[cell_idx] > T(0.) && 
-            (get_color_mask(xyz.x, xyz.y, xyz.z) == g_color_mask || JACOBI)) {
+        if (g_masses[cell_idx] > 0) {
             T* g_vel = &g_momentum[cell_idx * 3];
             const T* Dir = &g_Dir[cell_idx * 3];
             g_vel[0] += global_alpha * Dir[0];
@@ -2148,7 +1940,7 @@ __global__ void apply_global_line_search_grid_kernel(
     }
 }
 
-template<typename T, bool MDV_AS_IMPULSE>
+template<typename T>
 __global__ void apply_contact_impulse_to_rigid_bodies(
     const size_t n_contacts,
     const T* contact_pos,
@@ -2170,73 +1962,54 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     const T damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_contacts) {
-        T l_WN_W[3] = {0, 0, 0};
-        if constexpr (MDV_AS_IMPULSE) {
-            T dv[3] = {
-                contact_vel[idx * 3 + 0] - contact_vel_star[idx * 3 + 0],
-                contact_vel[idx * 3 + 1] - contact_vel_star[idx * 3 + 1],
-                contact_vel[idx * 3 + 2] - contact_vel_star[idx * 3 + 2]
-            };
-            T m = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        // Use negative contact energy gradient as the impulse 
+        // instead of particle mdv when accumulating impulses on rigid bodies
+        const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
+        const T* particle_v = &contact_vel[idx * 3];
 
-            // We negate the sign of the grid node's momentum change to get
-            //  the impulse applied to the rigid body at the grid node.
-            l_WN_W[0] = m * -dv[0];
-            l_WN_W[1] = m * -dv[1];
-            l_WN_W[2] = m * -dv[2];
-        } else {
-            // Use negative contact energy gradient as the impulse 
-            // instead of particle mdv when accumulating impulses on rigid bodies
-            const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
-            const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
-            const T* particle_v = &contact_vel[idx * 3];
+        T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
+        T phi0 = -contact_dist[idx];
 
-            T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
-            T phi0 = -contact_dist[idx];
-#ifdef DEBUG
-            if (phi0 < 0) {
-                printf("IMPOSSIBLE!!!\n");
-            }
-#endif
+        T vn_rel_W[3] = {
+            particle_vn[0] - contact_rigid_v[idx * 3 + 0],
+            particle_vn[1] - contact_rigid_v[idx * 3 + 1],
+            particle_vn[2] - contact_rigid_v[idx * 3 + 2]
+        };
+        T v_rel_W[3] = {
+            particle_v[0] - contact_rigid_v[idx * 3 + 0],
+            particle_v[1] - contact_rigid_v[idx * 3 + 1],
+            particle_v[2] - contact_rigid_v[idx * 3 + 2]
+        };
 
-            T vn_rel_W[3] = {
-                particle_vn[0] - contact_rigid_v[idx * 3 + 0],
-                particle_vn[1] - contact_rigid_v[idx * 3 + 1],
-                particle_vn[2] - contact_rigid_v[idx * 3 + 2]
-            };
-            T v_rel_W[3] = {
-                particle_v[0] - contact_rigid_v[idx * 3 + 0],
-                particle_v[1] - contact_rigid_v[idx * 3 + 1],
-                particle_v[2] - contact_rigid_v[idx * 3 + 2]
-            };
+        constexpr int kZAxis = 2;
+        T R_WC[9], R_CW[9]; // for each contact pair, Ji = R_CWp * wip
+        make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
+        transpose<3, 3, T>(R_WC, R_CW);
 
-            constexpr int kZAxis = 2;
-            T R_WC[9], R_CW[9]; // for each contact pair, Ji = R_CWp * wip
-            make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
-            transpose<3, 3, T>(R_WC, R_CW);
+        T vn_C[3], v_next_C[3]; // in the contact local coordinate
+        matmul<3, 3, 1, T>(R_CW, vn_rel_W, vn_C);
+        matmul<3, 3, 1, T>(R_CW, v_rel_W, v_next_C);
 
-            T vn_C[3], v_next_C[3]; // in the contact local coordinate
-            matmul<3, 3, 1, T>(R_CW, vn_rel_W, vn_C);
-            matmul<3, 3, 1, T>(R_CW, v_rel_W, v_next_C);
+        T lc_Hess_C_unused[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
+        compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C_unused, lc_Grad_C);
+        
+        
+        // grad in the world local coordinate
+        T lc_Grad_W[3];
 
-            T lc_Hess_C_unused[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-            compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C_unused, lc_Grad_C);
-            
-            
-            // grad in the world local coordinate
-            T lc_Grad_W[3];
+        // Grad for lc(vp(vi))
+        matmul<3, 3, 1, T>(R_WC, lc_Grad_C, lc_Grad_W); // J^T Grad
 
-            // Grad for lc(vp(vi))
-            matmul<3, 3, 1, T>(R_WC, lc_Grad_C, lc_Grad_W); // J^T Grad
-
-            // NOTE (changyu): we have two negative signs here 
-            // (1): we negate the sign of the gradient of lc() to get the impulse(gamma) applied to the grid node.
-            // (2): we negate (1) again to compute the reaction force to the rigid body, in accordance with Newton's Third Law.
-            // finally we have no sign here
-            l_WN_W[0] = lc_Grad_W[0];
-            l_WN_W[1] = lc_Grad_W[1];
-            l_WN_W[2] = lc_Grad_W[2];
-        }
+        // NOTE (changyu): we have two negative signs here 
+        // (1): we negate the sign of the gradient of lc() to get the impulse(gamma) applied to the grid node.
+        // (2): we negate (1) again to compute the reaction force to the rigid body, in accordance with Newton's Third Law.
+        // finally we have no sign here
+        T l_WN_W[3] = {
+            lc_Grad_W[0],
+            lc_Grad_W[1],
+            lc_Grad_W[2]
+        };
 
         const T* p_WN = &contact_pos[idx * 3];
         const T* p_WB = &contact_rigid_p_WB[idx * 3];

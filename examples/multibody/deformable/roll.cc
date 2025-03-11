@@ -43,7 +43,6 @@ DEFINE_double(friction, 1.0, "Contact Friction.");
 DEFINE_double(damping, 1.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
-DEFINE_bool(exact_line_search, true, "Enable exact_line_search for contact solving.");
 
 using drake::geometry::AddContactMaterial;
 using drake::geometry::Box;
@@ -352,7 +351,6 @@ int do_main() {
   mpm_config.contact_stiffness = FLAGS_stiffness;
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
-  mpm_config.exact_line_search = FLAGS_exact_line_search;
   if (use_mpm_ground) {
     mpm_config.mpm_bc = 111;
   }
