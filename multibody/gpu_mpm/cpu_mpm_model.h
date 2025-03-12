@@ -38,7 +38,6 @@ struct MpmConfigParams {
     T contact_epsv {static_cast<T>(1e-3)};
     T contact_damping {static_cast<T>(0.0)};
     T contact_friction_mu {static_cast<T>(0.0)};
-    int contact_query_frequency {1};
     int mpm_bc {-1};
     bool ignore_face_contact {false};
 };
