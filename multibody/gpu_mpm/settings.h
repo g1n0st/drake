@@ -68,15 +68,6 @@ namespace config {
     constexpr int G_DEVICE_COUNT = 1;
 	constexpr int DEFAULT_CUDA_BLOCK_SIZE = 128;
 
-	// material parameters
-	template<class T> constexpr T YOUNGS_MODULUS;
-	template<> constexpr float YOUNGS_MODULUS<float> = 3200000.f;
-	template<> constexpr double YOUNGS_MODULUS<double> = 3200000.;
-
-	template<class T> constexpr T POISSON_RATIO;
-	template<> constexpr float POISSON_RATIO<float> = .4f;
-	template<> constexpr double POISSON_RATIO<double> = .4;
-
 	// shake use 100
 	// roll use 1000
 	template<class T> constexpr T DENSITY;
@@ -112,10 +103,6 @@ namespace config {
 	template<> constexpr float SDF_FRICTION<float> = 0.5f;
 	template<> constexpr double SDF_FRICTION<double> = 0.5;
 
-	// Lame parameters
-	template<class T> constexpr T MU = YOUNGS_MODULUS<T> / (T(2.) * (T(1.) + POISSON_RATIO<T>));
-	template<class T> constexpr T LAMBDA = YOUNGS_MODULUS<T> * POISSON_RATIO<T> / ((T(1.) + POISSON_RATIO<T>) * (T(1.) - T(2.) * POISSON_RATIO<T>));
-
 	// gravity
 	constexpr uint32_t GRAVITY_AXIS = 2;
 
@@ -126,49 +113,6 @@ namespace config {
 	template<class T> constexpr T epsv;
 	template<> constexpr float epsv<float> = 1e-3f;
 	template<> constexpr double epsv<double> = 1e-3;
-
-	// Particle parameters
-#define PARTICLE_EXAMPLE 2 // dual_arm=0, roll=1, shake=2
-#if PARTICLE_EXAMPLE == 0
-	template<class T> constexpr T PARTICLE_YIELD_STRESS;
-	template<> constexpr float PARTICLE_YIELD_STRESS<float> = 6e3f;
-	template<> constexpr double PARTICLE_YIELD_STRESS<double> = 6e3;
-
-	template<class T> constexpr T PARTICLE_YOUNGS_MODULUS;
-	template<> constexpr float PARTICLE_YOUNGS_MODULUS<float> = 1e5f;
-	template<> constexpr double PARTICLE_YOUNGS_MODULUS<double> = 1e5;
-
-	template<class T> constexpr T PARTICLE_POISSON_RATIO;
-	template<> constexpr float PARTICLE_POISSON_RATIO<float> = .2f;
-	template<> constexpr double PARTICLE_POISSON_RATIO<double> = .2;
-#elif PARTICLE_EXAMPLE == 1
-	template<class T> constexpr T PARTICLE_YIELD_STRESS;
-	template<> constexpr float PARTICLE_YIELD_STRESS<float> = 1e3f;
-	template<> constexpr double PARTICLE_YIELD_STRESS<double> = 1e3;
-
-	template<class T> constexpr T PARTICLE_YOUNGS_MODULUS;
-	template<> constexpr float PARTICLE_YOUNGS_MODULUS<float> = 2e4f;
-	template<> constexpr double PARTICLE_YOUNGS_MODULUS<double> = 2e4;
-
-	template<class T> constexpr T PARTICLE_POISSON_RATIO;
-	template<> constexpr float PARTICLE_POISSON_RATIO<float> = .4f;
-	template<> constexpr double PARTICLE_POISSON_RATIO<double> = .4;
-#elif PARTICLE_EXAMPLE == 2
-	template<class T> constexpr T PARTICLE_YIELD_STRESS;
-	template<> constexpr float PARTICLE_YIELD_STRESS<float> = 1e9f;
-	template<> constexpr double PARTICLE_YIELD_STRESS<double> = 1e9;
-
-	template<class T> constexpr T PARTICLE_YOUNGS_MODULUS;
-	template<> constexpr float PARTICLE_YOUNGS_MODULUS<float> = 5e5f;
-	template<> constexpr double PARTICLE_YOUNGS_MODULUS<double> = 5e5;
-
-	template<class T> constexpr T PARTICLE_POISSON_RATIO;
-	template<> constexpr float PARTICLE_POISSON_RATIO<float> = .4f;
-	template<> constexpr double PARTICLE_POISSON_RATIO<double> = .4;
-#else
-#endif
-	template<class T> constexpr T PARTICLE_MU = PARTICLE_YOUNGS_MODULUS<T> / (T(2.) * (T(1.) + PARTICLE_POISSON_RATIO<T>));
-	template<class T> constexpr T PARTICLE_LAMBDA = PARTICLE_YOUNGS_MODULUS<T> * PARTICLE_POISSON_RATIO<T> / ((T(1.) + PARTICLE_POISSON_RATIO<T>) * (T(1.) - T(2.) * PARTICLE_POISSON_RATIO<T>));
 };
 
 }  // namespace gmpm

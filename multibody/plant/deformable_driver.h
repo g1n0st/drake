@@ -243,7 +243,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         dt_left -= ddt;
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
         mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
-        mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
+        mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt, deformable_model_->cpu_mpm_model().config);
         mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, deformable_model_->cpu_mpm_model().config.mpm_bc);
 

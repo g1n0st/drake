@@ -60,12 +60,13 @@ GTEST_TEST(EstTest, SmokeTest) {
   EXPECT_TRUE(mpm_state.current_positions() != nullptr);
 
   multibody::gmpm::GpuMpmSolver<T> mpm_solver;
+  multibody::gmpm::MpmConfigParams<T> params;
   T dt = T(1e-3);
   for (int frame = 0; frame < 200; frame++) {
     long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     for (int substep = 0; substep < 40; substep++) {
       mpm_solver.RebuildMapping(&mpm_state, substep == 0);
-      mpm_solver.CalcFemStateAndForce(&mpm_state, dt);
+      mpm_solver.CalcFemStateAndForce(&mpm_state, dt, params);
       mpm_solver.ParticleToGrid(&mpm_state, dt);
       mpm_solver.UpdateGrid(&mpm_state);
       mpm_solver.GridToParticle(&mpm_state, dt);

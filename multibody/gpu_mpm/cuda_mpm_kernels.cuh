@@ -94,7 +94,7 @@ __global__ void initialize_fem_state_kernel(
 
 template<typename T>
 __device__ __host__
-inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
+inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF, const T mu, const T lambda) {
     T U[4], sig[4], V[4];
     svd2x2(F, U, sig, V);
     T R[4];
@@ -102,15 +102,15 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF) {
     T J = determinant2(F);
     T Finv[4];
     inverse2(F, Finv);
-    dphi_dF[0] = T(2.) * config::MU<T> * (F[0] - R[0]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[0];
-    dphi_dF[1] = T(2.) * config::MU<T> * (F[1] - R[1]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[2];
-    dphi_dF[2] = T(2.) * config::MU<T> * (F[2] - R[2]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[1];
-    dphi_dF[3] = T(2.) * config::MU<T> * (F[3] - R[3]) + config::LAMBDA<T> * (J - T(1.)) * J * Finv[3];
+    dphi_dF[0] = T(2.) * mu * (F[0] - R[0]) + lambda * (J - T(1.)) * J * Finv[0];
+    dphi_dF[1] = T(2.) * mu * (F[1] - R[1]) + lambda * (J - T(1.)) * J * Finv[2];
+    dphi_dF[2] = T(2.) * mu * (F[2] - R[2]) + lambda * (J - T(1.)) * J * Finv[1];
+    dphi_dF[3] = T(2.) * mu * (F[3] - R[3]) + lambda * (J - T(1.)) * J * Finv[3];
 }
 
 template<typename T>
 __device__ __host__
-inline void compute_dphi_dF(const T* F, T* dphi_dF) {
+inline void compute_dphi_dF(const T* F, T* dphi_dF, const T E, const T nu) {
     // A00=0, A01=1, A02=2
     // A10=3, A11=4, A12=5
     // A20=6, A21=7, A22=8
@@ -121,7 +121,9 @@ inline void compute_dphi_dF(const T* F, T* dphi_dF) {
         R[3], R[4]
     };
     T dphi_dF_2x2[4];
-    fixed_corotated_PK1_2D(R_hat, dphi_dF_2x2);
+    const T mu = E / (T(2.) * (T(1.) + nu));
+	const T lambda = E * nu / ((T(1.) + nu) * (T(1.) - T(2.) * nu));
+    fixed_corotated_PK1_2D(R_hat, dphi_dF_2x2, mu, lambda);
     T P_hat[9] = {
         dphi_dF_2x2[0], dphi_dF_2x2[1], 0,
         dphi_dF_2x2[2], dphi_dF_2x2[3], 0,
@@ -226,7 +228,9 @@ __global__ void calc_fem_state_and_force_kernel(
     T* deformation_gradients,
     T* forces, 
     T* taus,
-    const T dt) {
+    const T dt,
+    const T E, 
+    const T nu) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     int face_pid = index_mappings[idx];
     if (idx < n_faces) {
@@ -288,7 +292,7 @@ __global__ void calc_fem_state_and_force_kernel(
         }
 
         T VP_local[9];
-        compute_dphi_dF(ctF, VP_local);
+        compute_dphi_dF(ctF, VP_local, E, nu);
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             VP_local[i] *= volumes[face_pid];
@@ -326,14 +330,19 @@ __global__ void calc_fem_state_and_force_kernel(
     }
 }
 
-template<typename T, bool PLASTICITY=true, bool LINEAR_COROTATED=false>
+template<typename T>
 __global__ void calc_particle_state_and_force_kernel(
     const size_t n_particles,
     const T* volumes,
     const T* affine_matrices,
     T* deformation_gradients,
     T* taus,
-    const T dt) {
+    const T dt,
+    const T E, 
+    const T nu,
+    const T yield_stress,
+    const bool plasticity,
+    const bool linear_corotated) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_particles) {
         T* F = &deformation_gradients[idx * 9];
@@ -370,7 +379,10 @@ __global__ void calc_particle_state_and_force_kernel(
         }
 
         T *stress = &taus[idx * 9];
-        if constexpr(LINEAR_COROTATED) {
+        // Lame parameters
+        const T mu = E / (T(2.) * (T(1.) + nu));
+	    const T lambda = E * nu / ((T(1.) + nu) * (T(1.) - T(2.) * nu));
+        if (linear_corotated) {
             // Matrix3<T> R0;
             // Matrix3<T> strain;
             // Matrix3<T> unused_S;
@@ -403,7 +415,7 @@ __global__ void calc_particle_state_and_force_kernel(
             // (*P) = 2.0 * this->mu() * data.R0 * data.strain + this->lambda() * data.trace_strain * data.R0;
             T P[9];
             for (int i = 0; i < 9; ++i) {
-                P[i] = T(2.) * config::PARTICLE_MU<T> * R_strain[i] + config::PARTICLE_LAMBDA<T> * trace_strain * R[i];
+                P[i] = T(2.) * mu * R_strain[i] + lambda * trace_strain * R[i];
             }
 
             // Matrix3<T> P;
@@ -417,7 +429,7 @@ __global__ void calc_particle_state_and_force_kernel(
             }
         }
         else {
-            if constexpr(PLASTICITY) {
+            if (plasticity) {
                 T b_trial[3] = {
                     sigma[0] * sigma[0],
                     sigma[4] * sigma[4],
@@ -437,14 +449,14 @@ __global__ void calc_particle_state_and_force_kernel(
                     epsilon[2] - (trace_epsilon / T(3.))
                 };
                 T s_trial[3] = {
-                    T(2.) * config::PARTICLE_MU<T> * epsilon_hat[0],
-                    T(2.) * config::PARTICLE_MU<T> * epsilon_hat[1],
-                    T(2.) * config::PARTICLE_MU<T> * epsilon_hat[2],
+                    T(2.) * mu * epsilon_hat[0],
+                    T(2.) * mu * epsilon_hat[1],
+                    T(2.) * mu * epsilon_hat[2],
                 };
                 T s_trial_norm = norm<3>(s_trial) + T(1e-8);
-                T y = s_trial_norm - sqrt(T(2./3.)) * config::PARTICLE_YIELD_STRESS<T>;
+                T y = s_trial_norm - sqrt(T(2./3.)) * yield_stress;
                 if (y > 0) {
-                    T mu_hat = config::PARTICLE_MU<T> * (b_trial[0] + b_trial[1] + b_trial[2]) / T(3.);
+                    T mu_hat = mu * (b_trial[0] + b_trial[1] + b_trial[2]) / T(3.);
                     T s_new_norm = s_trial_norm - y;
                     T s_new[3] = {
                         (s_new_norm / s_trial_norm) * s_trial[0],
@@ -452,9 +464,9 @@ __global__ void calc_particle_state_and_force_kernel(
                         (s_new_norm / s_trial_norm) * s_trial[2]
                     };
                     T H[3] = {
-                        s_new[0] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.),
-                        s_new[1] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.),
-                        s_new[2] / (T(2.) * config::PARTICLE_MU<T>) + trace_epsilon / T(3.)
+                        s_new[0] / (T(2.) * mu) + trace_epsilon / T(3.),
+                        s_new[1] / (T(2.) * mu) + trace_epsilon / T(3.),
+                        s_new[2] / (T(2.) * mu) + trace_epsilon / T(3.)
                     };
 
                     sigma[0 * 3 + 0] = exp(H[0]);
@@ -475,12 +487,12 @@ __global__ void calc_particle_state_and_force_kernel(
             T *two_mu_F_minus_R = R;
             #pragma unroll
             for (int i = 0; i < 9; ++i) {
-                two_mu_F_minus_R[i] = T(2.) * config::PARTICLE_MU<T> * (F[i] - R[i]);
+                two_mu_F_minus_R[i] = T(2.) * mu * (F[i] - R[i]);
             }
             matmulT<3, 3, 3, T>(two_mu_F_minus_R, F, stress);
             #pragma unroll
             for (int i = 0; i < 3; ++i) {
-                stress[i * 3 + i] += config::PARTICLE_LAMBDA<T> * J * (J - T(1.));
+                stress[i * 3 + i] += lambda * J * (J - T(1.));
             }
 
             #pragma unroll

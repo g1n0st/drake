@@ -21,8 +21,16 @@ namespace gmpm {
 // NOTE(changyu): `MpmConfigParams` is responsive to store the initial config parameters in `CpuMpmModel`,
 template<typename T = config::GpuT>
 struct MpmConfigParams {
+    // grid domain parameters
     int domain_bits {7};
     T grid_block_spacing {static_cast<T>(1.)};
+
+    // material parameters
+    T youngs_modules {static_cast<T>(4e5)};
+    T poisson_ratio {static_cast<T>(.3)};
+    T particle_yield_stress {static_cast<T>(1e9)};
+    T particle_plasticity {true};
+    T particle_linear_corotated {false};
 
     T substep_dt {static_cast<T>(1e-3)};
     bool write_files {false};
