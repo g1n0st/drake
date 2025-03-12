@@ -41,7 +41,7 @@ public:
     GpuMpmState(int domain_bits, T grid_block_spacing) {
         grid_config_.BLOCK_BITS                  = (2);              // BLOCK 4x4x4
         grid_config_.DOMAIN_BITS                 = (domain_bits);    // GRID  128x128x128 or 64x64x64
-        grid_config_.DXINV                       = (1 << grid_config_.DOMAIN_BITS);
+        grid_config_.DXINV                       = T(1 << grid_config_.DOMAIN_BITS);
         grid_config_.GRID_BLOCK_SPACING          = (grid_block_spacing);
 
         grid_config_.G_DOMAIN_BITS               = (grid_config_.DOMAIN_BITS);

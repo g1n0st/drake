@@ -622,6 +622,7 @@ int do_main() {
   AddCloth(&deformable_model, FLAGS_res, 0.4);
 
   MpmConfigParams mpm_config;
+  mpm_config.domain_bits = 6;
   mpm_config.substep_dt = FLAGS_substep;
   mpm_config.write_files = FLAGS_write_files;
   mpm_config.contact_stiffness = FLAGS_stiffness;

@@ -57,6 +57,8 @@ struct GridConfig {
     int G_GRID_BITS;
     int G_GRID_SIZE;
     int G_GRID_VOLUME;
+
+	__host__ __device__ GridConfig() {}
 };
 
 namespace config {
