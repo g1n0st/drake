@@ -1390,7 +1390,7 @@ __global__ void initialize_contact_velocities(const size_t n_contacts,
 // SAP model
 template<typename T>
 __device__ void compute_contact_grad_and_hess(
-    const T phi0, const T dt, const T stiffness, const T damping, const T friction_mu, 
+    const T phi0, const T dt, const T stiffness, const T epsv, const T damping, const T friction_mu, 
     const T *v0, const T *v_next,
     T *C_Hess, T *C_Grad) {
     /* Solves the contact problem for a single particle against a rigid body
@@ -1460,7 +1460,7 @@ __device__ void compute_contact_grad_and_hess(
         // γn0 = δt fn(ϕ0, vn0) = δt k (−ϕ0)+ (1 − dvn0)+
         const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
 
-        const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + config::epsv<T> * config::epsv<T>);
+        const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + epsv * epsv);
         const T ts_hat[2] = {v_next[0] / ts_coeff, v_next[1] / ts_coeff}; // Eq. 18
 
         // γt = -μ * γn0 * t̂_s 
@@ -1520,6 +1520,7 @@ __global__ void contact_particle_to_grid_kernel(
     const T dt,
     const T friction_mu,
     const T stiffness,
+    const T epsv,
     const T damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
@@ -1596,7 +1597,7 @@ __global__ void contact_particle_to_grid_kernel(
         matmul<3, 3, 1, T>(R_CW, v_rel_W, v_next_C);
 
         T lc_Hess_C[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-        compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
+        compute_contact_grad_and_hess(phi0, dt, stiffness, epsv, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
         
         
         // hess and grad in the world local coordinate
@@ -1742,6 +1743,7 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
     const T dt,
     const T friction_mu,
     const T stiffness,
+    const T epsv,
     const T damping,
     const T global_alpha) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -1839,7 +1841,7 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
             // frictional component (Lagged Model)
             // lt(v_t) = μ * γn0 * ||v_t||_s
             const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
-            const T lt = friction_mu * yn0 * (sqrt(v[0] * v[0] + v[1] * v[1] + config::epsv<T> * config::epsv<T>) - config::epsv<T>); // Eq. 33
+            const T lt = friction_mu * yn0 * (sqrt(v[0] * v[0] + v[1] * v[1] + epsv * epsv) - epsv); // Eq. 33
 
             // normal component (Compliant Contact)
 
@@ -1871,7 +1873,7 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
 
         atomicAdd(g_E1, lc(v_next_C, vn_C));
         T lc_Hess_C[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-        compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
+        compute_contact_grad_and_hess(phi0, dt, stiffness, epsv, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
         T global_dir_C[3];
         matmul<3, 3, 1, T>(R_CW, vp_search_dir_W, global_dir_C);
         atomicAdd(g_dE1, dot<3>(lc_Grad_C, global_dir_C));
@@ -1967,6 +1969,7 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     const T dt,
     const T friction_mu,
     const T stiffness,
+    const T epsv,
     const T damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_contacts) {
@@ -2000,7 +2003,7 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
         matmul<3, 3, 1, T>(R_CW, v_rel_W, v_next_C);
 
         T lc_Hess_C_unused[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-        compute_contact_grad_and_hess(phi0, dt, stiffness, damping, friction_mu, vn_C, v_next_C, lc_Hess_C_unused, lc_Grad_C);
+        compute_contact_grad_and_hess(phi0, dt, stiffness, epsv, damping, friction_mu, vn_C, v_next_C, lc_Hess_C_unused, lc_Grad_C);
         
         
         // grad in the world local coordinate

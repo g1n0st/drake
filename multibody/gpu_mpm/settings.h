@@ -65,7 +65,6 @@ namespace config {
 	using GpuT = double;
 
     // cuda device
-    constexpr int G_DEVICE_COUNT = 1;
 	constexpr int DEFAULT_CUDA_BLOCK_SIZE = 128;
 
 	// shake use 100
@@ -109,10 +108,6 @@ namespace config {
 	template<class T> constexpr T GRAVITY;
 	template<> constexpr float GRAVITY<float> = -9.8f;
 	template<> constexpr double GRAVITY<double> = -9.8;
-
-	template<class T> constexpr T epsv;
-	template<> constexpr float epsv<float> = 1e-3f;
-	template<> constexpr double epsv<double> = 1e-3;
 };
 
 }  // namespace gmpm

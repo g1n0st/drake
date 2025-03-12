@@ -35,6 +35,7 @@ struct MpmConfigParams {
     T substep_dt {static_cast<T>(1e-3)};
     bool write_files {false};
     T contact_stiffness {static_cast<T>(1e5)};
+    T contact_epsv {static_cast<T>(1e-3)};
     T contact_damping {static_cast<T>(0.0)};
     T contact_friction_mu {static_cast<T>(0.0)};
     int contact_query_frequency {1};

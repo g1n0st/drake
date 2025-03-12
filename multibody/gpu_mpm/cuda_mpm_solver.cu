@@ -221,7 +221,7 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const MpmParticleC
 }
 
 template<typename T>
-void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T& friction_mu, const T& stiffness, const T& damping) const {
+void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const MpmConfigParams<T>& params) const {
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
 
@@ -299,7 +299,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
             state->contact_sort_keys(), 
             state->grid_Hess(),
             state->grid_Grad(),
-            dt, friction_mu, stiffness, damping)
+            dt, 
+            params.contact_friction_mu, params.contact_stiffness, params.contact_epsv, params.contact_damping)
             ));
     
         CUDA_SAFE_CALL((
@@ -333,7 +334,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
                 global_E1_d,
                 global_dE1_d,
                 global_d2E1_d,
-                dt, friction_mu, stiffness, damping,
+                dt, 
+                params.contact_friction_mu, params.contact_stiffness, params.contact_epsv, params.contact_damping,
                 current_alpha)
                 ));
             CUDA_SAFE_CALL((
@@ -502,7 +504,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, const T&
         state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
         state->contact_mpm_id(), state->contact_rigid_id(), 
         state->contact_rigid_p_WB(), state->F_Bq_W_tau(), state->F_Bq_W_f(),
-        dt, friction_mu, stiffness, damping)
+        dt, 
+        params.contact_friction_mu, params.contact_stiffness, params.contact_epsv, params.contact_damping)
         ));
 }
 
