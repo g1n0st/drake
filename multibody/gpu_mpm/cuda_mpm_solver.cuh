@@ -20,15 +20,15 @@ template<typename T>
 class GpuMpmSolver {
 public:
     void RebuildMapping(GpuMpmState<T> *state, bool sort) const;
-    void CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt, const MpmConfigParams<T>& params) const;
+    void CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt) const;
     void ParticleToGrid(GpuMpmState<T> *state, const T& dt) const;
-    void UpdateGrid(GpuMpmState<T> *state, const MpmConfigParams<T>& params, bool enforce_bc_only = false) const;
+    void UpdateGrid(GpuMpmState<T> *state, bool enforce_bc_only = false) const;
     void GridToParticle(GpuMpmState<T> *state, const T& dt) const;
     void GpuSync() const;
     void SyncParticleStateToCpu(GpuMpmState<T> *state) const;
     void Dump(const GpuMpmState<T> &state, std::string filename) const;
     void CopyContactPairs(GpuMpmState<T> *state, const MpmParticleContactPairs<T> &contact_pairs) const;
-    void UpdateContact(GpuMpmState<T> *state, const T& dt, const MpmConfigParams<T>& params) const;
+    void UpdateContact(GpuMpmState<T> *state, const T& dt) const;
 };
 
 }  // namespace gmpm

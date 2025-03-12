@@ -10,6 +10,7 @@
 #include <assert.h>
 
 #include "multibody/gpu_mpm/settings.h"
+#include "multibody/gpu_mpm/cpu_mpm_model.h"
 
 namespace drake {
 namespace multibody {
@@ -38,11 +39,11 @@ template <typename T>
 struct GpuMpmState {
 
 public:
-    GpuMpmState(int domain_bits, T grid_block_spacing) {
+    GpuMpmState(MpmConfigParams<T> config_params) : config_(config_params) {
         grid_config_.BLOCK_BITS                  = (2);              // BLOCK 4x4x4
-        grid_config_.DOMAIN_BITS                 = (domain_bits);    // GRID  128x128x128 or 64x64x64
+        grid_config_.DOMAIN_BITS                 = (config_params.domain_bits);    // GRID  128x128x128 or 64x64x64
         grid_config_.DXINV                       = T(1 << grid_config_.DOMAIN_BITS);
-        grid_config_.GRID_BLOCK_SPACING          = (grid_block_spacing);
+        grid_config_.GRID_BLOCK_SPACING          = (config_params.grid_block_spacing);
 
         grid_config_.G_DOMAIN_BITS               = (grid_config_.DOMAIN_BITS);
         grid_config_.G_DOMAIN_SIZE               = (1 << grid_config_.DOMAIN_BITS);
@@ -64,6 +65,7 @@ public:
     }
 
     const GridConfig<T>& grid_config() const { return grid_config_; }
+    const MpmConfigParams<T>& config() const { return config_;      }
 
     const size_t& n_verts() const { return n_verts_; }
     const size_t& n_faces() const { return n_faces_; }
@@ -290,6 +292,8 @@ private:
 
     // Grid domain meta-data
     GridConfig<T> grid_config_;
+    // MPM config params
+    MpmConfigParams<T> config_;
 };
 
 }  // namespace gmpm

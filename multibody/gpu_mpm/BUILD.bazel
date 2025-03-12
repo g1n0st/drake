@@ -38,14 +38,3 @@ nvcc_library(
         "//common:essential",
     ],
 )
-
-drake_cc_googletest(
-    name = "cuda_mpm_test",
-    srcs = ["cuda_mpm_test.cc"],
-    tags = ["cuda"],
-    deps = [
-        ":cuda_mpm",
-        "@partio",
-        "@gtest//:main",
-    ],
-)

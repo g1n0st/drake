@@ -3,10 +3,11 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <iostream>
+#include <numeric>
+#include <vector>
 #include <cuda_runtime.h>
 
 #include "multibody/gpu_mpm/settings.h"
-#include "multibody/gpu_mpm/cuda_mpm_model.cuh"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"

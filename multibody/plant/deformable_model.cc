@@ -422,10 +422,7 @@ void DeformableModel<T>::DoDeclareSystemResources() {
   // NOTE (changyu): when finailize, use `CpuMpmModel` as config to initialize `GpuMpmState`
   // and allocate GPU resources here.
   if (ExistsMpmModel()) {
-    gmpm::GpuMpmState<gmpm::config::GpuT> mpm_state(
-      cpu_mpm_model_->config.domain_bits, 
-      cpu_mpm_model_->config.grid_block_spacing
-    );
+    gmpm::GpuMpmState<gmpm::config::GpuT> mpm_state(cpu_mpm_model_->config);
 
     if (cpu_mpm_model_->indices.size() > 0) {
       mpm_state.AddQRCloth(cpu_mpm_model_->pos, cpu_mpm_model_->vel, cpu_mpm_model_->indices);
