@@ -22,7 +22,7 @@ public:
     void RebuildMapping(GpuMpmState<T> *state, bool sort) const;
     void CalcFemStateAndForce(GpuMpmState<T> *state, const T& dt, const MpmConfigParams<T>& params) const;
     void ParticleToGrid(GpuMpmState<T> *state, const T& dt) const;
-    void UpdateGrid(GpuMpmState<T> *state, int mpm_bc = -1, bool enforce_bc_only = false) const;
+    void UpdateGrid(GpuMpmState<T> *state, const MpmConfigParams<T>& params, bool enforce_bc_only = false) const;
     void GridToParticle(GpuMpmState<T> *state, const T& dt) const;
     void GpuSync() const;
     void SyncParticleStateToCpu(GpuMpmState<T> *state) const;

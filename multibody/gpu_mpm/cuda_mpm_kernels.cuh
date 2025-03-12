@@ -843,7 +843,8 @@ __global__ void update_grid_kernel(
     T* g_masses,
     T* g_momentum,
     T* g_v_star,
-    const T times_elapsed) {
+    const T times_elapsed,
+    const T sdf_friction) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < touched_cells_cnt) {
         uint32_t block_idx = g_touched_ids[idx >> (gconf.G_BLOCK_BITS * 3)];
@@ -1228,10 +1229,10 @@ __global__ void update_grid_kernel(
                         g_vel[1] += diff_vel[1];
                         g_vel[2] += diff_vel[2];
                     } else {
-                        T dotnv_frac = dotnv * (1. - config::SDF_FRICTION<T>);
-                        g_vel[0] += diff_vel[0] * config::SDF_FRICTION<T> + normal[0] * dotnv_frac;
-                        g_vel[1] += diff_vel[1] * config::SDF_FRICTION<T> + normal[1] * dotnv_frac;
-                        g_vel[2] += diff_vel[2] * config::SDF_FRICTION<T> + normal[2] * dotnv_frac;
+                        T dotnv_frac = dotnv * (1. - sdf_friction);
+                        g_vel[0] += diff_vel[0] * sdf_friction + normal[0] * dotnv_frac;
+                        g_vel[1] += diff_vel[1] * sdf_friction + normal[1] * dotnv_frac;
+                        g_vel[2] += diff_vel[2] * sdf_friction + normal[2] * dotnv_frac;
                     }
                 }
             }

@@ -68,7 +68,7 @@ GTEST_TEST(EstTest, SmokeTest) {
       mpm_solver.RebuildMapping(&mpm_state, substep == 0);
       mpm_solver.CalcFemStateAndForce(&mpm_state, dt, params);
       mpm_solver.ParticleToGrid(&mpm_state, dt);
-      mpm_solver.UpdateGrid(&mpm_state);
+      mpm_solver.UpdateGrid(&mpm_state, params);
       mpm_solver.GridToParticle(&mpm_state, dt);
     }
     mpm_solver.GpuSync();

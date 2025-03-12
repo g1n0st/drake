@@ -95,13 +95,6 @@ namespace config {
 	template<> constexpr float c_F<float> = .0f;
 	template<> constexpr double c_F<double> = .0;
 
-	// NOTE (changyu):
-	// for three-clothes demo, SDF_FRICTION=0.3
-	// for other demos, SDF_FRICTION=1.0
-	template<class T> constexpr T SDF_FRICTION;
-	template<> constexpr float SDF_FRICTION<float> = 0.5f;
-	template<> constexpr double SDF_FRICTION<double> = 0.5;
-
 	// gravity
 	constexpr uint32_t GRAVITY_AXIS = 2;
 

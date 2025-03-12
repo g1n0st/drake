@@ -32,6 +32,8 @@ struct MpmConfigParams {
     T particle_plasticity {true};
     T particle_linear_corotated {false};
 
+    T sdf_friction {static_cast<T>(.5)};
+
     T substep_dt {static_cast<T>(1e-3)};
     bool write_files {false};
     T contact_stiffness {static_cast<T>(1e5)};
