@@ -21,23 +21,24 @@
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
-#include "drake/visualization/visualization_config.h"
-#include "drake/visualization/visualization_config_functions.h"
 #include "drake/systems/framework/leaf_system.h"
 #include "drake/systems/primitives/constant_vector_source.h"
 #include "drake/systems/primitives/matrix_gain.h"
 #include "drake/systems/primitives/multiplexer.h"
+#include "drake/visualization/visualization_config.h"
+#include "drake/visualization/visualization_config_functions.h"
 
-DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
+DEFINE_bool(write_files, true, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 10.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
-DEFINE_double(ppc, 8.0, "MPM Particle-Per-Cell.");
+DEFINE_double(ppc, 3, "MPM Particle-Per-Cell.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
 DEFINE_double(time_step, 1e-2,
               "Discrete time step for the system [s]. Must be positive.");
-DEFINE_double(substep, 5e-4,
-              "Discrete time step for the substepping scheme [s]. Must be positive.");
-
+DEFINE_double(
+    substep, 1e-3,
+    "Discrete time step for the substepping scheme [s]. Must be positive.");
+DEFINE_bool(visualize, true, "Enable visualizing via Meldis.");
 DEFINE_double(stiffness, 1e3, "Contact Stiffness.");
 DEFINE_double(friction, 1.0, "Contact Friction.");
 DEFINE_double(damping, 1.0,
@@ -61,10 +62,11 @@ using drake::multibody::DifferentialInverseKinematicsIntegrator;
 using drake::multibody::DifferentialInverseKinematicsParameters;
 using drake::multibody::MultibodyPlant;
 using drake::multibody::MultibodyPlantConfig;
-using drake::multibody::Parser;
 using drake::multibody::PackageMap;
+using drake::multibody::Parser;
 using drake::multibody::RigidBody;
 using drake::multibody::SpatialInertia;
+using drake::multibody::gmpm::MpmConfigParams;
 using drake::systems::BasicVector;
 using drake::systems::Context;
 using Eigen::Matrix2d;
@@ -74,7 +76,6 @@ using Eigen::Vector2d;
 using Eigen::Vector3d;
 using Eigen::Vector4d;
 using Eigen::VectorXd;
-using drake::multibody::gmpm::MpmConfigParams;
 
 namespace drake {
 namespace examples {
@@ -221,7 +222,7 @@ class IiwaController : public drake::systems::LeafSystem<double> {
       dX(5) = 0.005 * rate;  // lift, 6.2-6.5
     } else if (context.get_time() <= 9.0) {
       dX.setZero();  // hold,
-    } 
+    }
     auto new_value = current_state_values + dX;
     next_states->set_value(new_value);
   }
@@ -252,8 +253,8 @@ int do_main() {
                      &compliant_hydro_props);
   AddCompliantHydroelasticProperties(0.01, 1e6, &compliant_hydro_props);
 
-  RigidTransformd X_ZR = FromXyzRpyDegree(
-       Vector3<double>(90, 0, 0), Vector3<double>(0.0, 0, 0.18));
+  RigidTransformd X_ZR = FromXyzRpyDegree(Vector3<double>(90, 0, 0),
+                                          Vector3<double>(0.0, 0, 0.18));
 
   bool use_mpm_ground = true;
   if (!use_mpm_ground) {
@@ -277,14 +278,14 @@ int do_main() {
   auto table = ground_parser.AddModels(table_file)[0];
   plant.WeldFrames(plant.world_frame(),
                    plant.GetBodyByName("table_body", table).body_frame(),
-                    RigidTransformd(Eigen::Vector3d(0.5, 0.5, 0.5)));
-
+                   RigidTransformd(Eigen::Vector3d(0.5, 0.5, 0.5)));
 
   // plant.mutable_gravity_field().set_gravity_vector(Eigen::Vector3d::Zero());
   multibody::Parser left_parser(&plant, "left");
   multibody::Parser right_parser(&plant, "right");
 
-  const std::string iiwa_filename = PackageMap{}.ResolveUrl("package://drake_models/iiwa_description/sdf/iiwa7_no_collision.sdf");
+  const std::string iiwa_filename = PackageMap{}.ResolveUrl(
+      "package://drake_models/iiwa_description/sdf/iiwa7_no_collision.sdf");
   auto left_iiwa = left_parser.AddModels(iiwa_filename)[0];
   auto right_iiwa = right_parser.AddModels(iiwa_filename)[0];
 
@@ -295,7 +296,9 @@ int do_main() {
       MultibodyPlant<double>(plant_config.time_step);
   Parser(&right_iiwa_controller_plant).AddModels(iiwa_filename);
 
-  std::string hand_filename = "package://drake/examples/multibody/deformable/models/schunk_wsg_50_simon.sdf";
+  std::string hand_filename =
+      "package://drake/examples/multibody/deformable/models/"
+      "schunk_wsg_50_simon.sdf";
   auto left_wsg = left_parser.AddModelsFromUrl(hand_filename)[0];
   auto right_wsg = right_parser.AddModelsFromUrl(hand_filename)[0];
 
@@ -311,10 +314,10 @@ int do_main() {
   plant.SetDefaultFreeBodyPose(roller_body, X_WR);
   unused(roller_filename, roller, compliant_hydro_props);
 
-  RigidTransformd left_iiwa_position =
-      FromXyzRpyDegree(Eigen::Vector3d(0, 0, -90), Eigen::Vector3d(0 + 0.5, 0.8 + 0.5, 0 + 0.5));
-  RigidTransformd right_iiwa_position =
-      FromXyzRpyDegree(Eigen::Vector3d(0, 0, 90), Eigen::Vector3d(0 + 0.5, -0.8 + 0.5, 0 + 0.5));
+  RigidTransformd left_iiwa_position = FromXyzRpyDegree(
+      Eigen::Vector3d(0, 0, -90), Eigen::Vector3d(0 + 0.5, 0.8 + 0.5, 0 + 0.5));
+  RigidTransformd right_iiwa_position = FromXyzRpyDegree(
+      Eigen::Vector3d(0, 0, 90), Eigen::Vector3d(0 + 0.5, -0.8 + 0.5, 0 + 0.5));
   plant.WeldFrames(plant.world_frame(),
                    plant.GetBodyByName("iiwa_link_0", left_iiwa).body_frame(),
                    left_iiwa_position);
@@ -341,11 +344,20 @@ int do_main() {
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmParticle(
-    {0.05 + 0.5 - 0.16, 0.0 + 0.5 - 0.06, 0.05 + 0.5 - 0.05}, 
-    {0.05 + 0.5 + 0.16, 0.0 + 0.5 + 0.06, 0.05 + 0.5 + 0.05}, 
-    FLAGS_ppc);
+      {0.05 + 0.5 - 0.16, 0.0 + 0.5 - 0.06, 0.05 + 0.5 - 0.05},
+      {0.05 + 0.5 + 0.16, 0.0 + 0.5 + 0.06, 0.05 + 0.5 + 0.05}, FLAGS_ppc);
 
   MpmConfigParams mpm_config;
+  mpm_config.domain_bits = 6;
+  mpm_config.grid_block_spacing = 1.152;
+  mpm_config.youngs_modules = 2e4;
+  mpm_config.poisson_ratio = 0.4;
+  mpm_config.particle_yield_stress = 1e3;
+  mpm_config.particle_plasticity = true;
+  mpm_config.particle_linear_corotated = false;
+  mpm_config.density = 1000.0;
+  mpm_config.rpic_damping = 0.2;
+
   mpm_config.substep_dt = FLAGS_substep;
   mpm_config.write_files = FLAGS_write_files;
   mpm_config.contact_stiffness = FLAGS_stiffness;
@@ -482,33 +494,40 @@ int do_main() {
                   plant.get_desired_state_input_port(left_iiwa));
   builder.Connect(right_mux->get_output_port(),
                   plant.get_desired_state_input_port(right_iiwa));
-  
-  /* Add a visualizer that emits LCM messages for visualization. */
-  geometry::DrakeVisualizerParams visualize_params;
-  visualize_params.show_mpm = geometry::DrakeVisualizerParams::ShowMpmOpt::kParticleMpm;
-  auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph, nullptr, visualize_params);
 
-  // NOTE (changyu): MPM shortcut port shuould be explicit connected for visualization.
-  builder.Connect(plant.get_output_port(
-    plant.deformable_model().mpm_output_port_index()), 
-    visualizer.mpm_input_port());
+  /* Add a visualizer that emits LCM messages for visualization. */
+  if (FLAGS_visualize) {
+    geometry::DrakeVisualizerParams visualize_params;
+    visualize_params.show_mpm =
+        geometry::DrakeVisualizerParams::ShowMpmOpt::kParticleMpm;
+    auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(
+        &builder, scene_graph, nullptr, visualize_params);
+
+    // NOTE (changyu): MPM shortcut port shuould be explicit connected for
+    // visualization.
+    builder.Connect(
+        plant.get_output_port(plant.deformable_model().mpm_output_port_index()),
+        visualizer.mpm_input_port());
+  }
 
   // meshcat viz
   auto meshcat = std::make_shared<geometry::Meshcat>();
   if (FLAGS_write_files) {
-      auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
-      meshcat_params.show_mpm = drake::geometry::MeshcatVisualizerParams::ShowMpmOpt::kParticleMpm;
-      auto& meshcat_visualizer = drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
-          &builder, scene_graph, meshcat, meshcat_params);
-      visualization::ApplyVisualizationConfig(
-          visualization::VisualizationConfig{
-              .default_proximity_color = geometry::Rgba{1, 0, 0, 0.25},
-              .enable_alpha_sliders = true,
-          },
-          &builder, nullptr, nullptr, nullptr, meshcat);
-      
-      builder.Connect(plant.get_output_port(
-        plant.deformable_model().mpm_output_port_index()), 
+    auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
+    meshcat_params.show_mpm =
+        drake::geometry::MeshcatVisualizerParams::ShowMpmOpt::kParticleMpm;
+    auto& meshcat_visualizer =
+        drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
+            &builder, scene_graph, meshcat, meshcat_params);
+    visualization::ApplyVisualizationConfig(
+        visualization::VisualizationConfig{
+            .default_proximity_color = geometry::Rgba{1, 0, 0, 0.25},
+            .enable_alpha_sliders = true,
+        },
+        &builder, nullptr, nullptr, nullptr, meshcat);
+
+    builder.Connect(
+        plant.get_output_port(plant.deformable_model().mpm_output_port_index()),
         meshcat_visualizer.mpm_input_port());
   }
 
