@@ -624,6 +624,7 @@ int do_main() {
   MpmConfigParams mpm_config;
   mpm_config.domain_bits = 6;
   mpm_config.youngs_modules = 3200000.0;
+  mpm_config.rpic_damping = 1.0;
 
   mpm_config.substep_dt = FLAGS_substep;
   mpm_config.write_files = FLAGS_write_files;

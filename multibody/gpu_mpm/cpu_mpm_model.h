@@ -27,13 +27,23 @@ struct MpmConfigParams {
     T grid_block_spacing {static_cast<T>(1.)};
 
     // material parameters
+    T density {static_cast<T>(1500.0)};
+
     T youngs_modules {static_cast<T>(4e5)};
     T poisson_ratio {static_cast<T>(.3)};
+
+    // particle-mpm properties
     T particle_yield_stress {static_cast<T>(1e9)};
     T particle_plasticity {true};
     T particle_linear_corotated {false};
 
+    // cloth-mpm properties
+    T cloth_gamma {static_cast<T>(0.)};
+    T cloth_K {static_cast<T>(100000.)};
+    T cloth_c_F {static_cast<T>(0.)};
+
     T sdf_friction {static_cast<T>(.5)};
+    T rpic_damping {static_cast<T>(.0)};
 
     T substep_dt {static_cast<T>(1e-3)};
     bool write_files {false};

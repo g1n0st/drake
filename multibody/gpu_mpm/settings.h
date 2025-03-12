@@ -67,40 +67,9 @@ namespace config {
     // cuda device
 	constexpr int DEFAULT_CUDA_BLOCK_SIZE = 128;
 
-	// shake use 100
-	// roll use 1000
-	template<class T> constexpr T DENSITY;
-	template<> constexpr float DENSITY<float> = 1500.f;
-	template<> constexpr double DENSITY<double> = 1500.;
-
-	template<class T> constexpr T GAMMA;
-	template<> constexpr float GAMMA<float> = 0.f;
-	template<> constexpr double GAMMA<double> = 0.;
-
-	// NOTE (changyu):
-	// for tshirt/cloth folding demo, K=100000
-	// for bagging demo, K=400000
-	template<class T> constexpr T K;
-	template<> constexpr float K<float> = 100000.f;
-	template<> constexpr double K<double> = 100000.;
-
-	// NOTE (changyu):
-	// for tshirt/cloth folding demo, V=0.8
-	// for bagging demo, K=0.2
-	template<class T> constexpr T V;
-	template<> constexpr float V<float> = .0f;
-	template<> constexpr double V<double> = .0;
-
-	template<class T> constexpr T c_F;
-	template<> constexpr float c_F<float> = .0f;
-	template<> constexpr double c_F<double> = .0;
-
 	// gravity
 	constexpr uint32_t GRAVITY_AXIS = 2;
-
-	template<class T> constexpr T GRAVITY;
-	template<> constexpr float GRAVITY<float> = -9.8f;
-	template<> constexpr double GRAVITY<double> = -9.8;
+	constexpr GpuT GRAVITY = GpuT(-9.8);
 };
 
 }  // namespace gmpm

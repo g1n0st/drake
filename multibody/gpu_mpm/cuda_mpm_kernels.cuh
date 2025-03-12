@@ -110,7 +110,7 @@ inline void fixed_corotated_PK1_2D(const T* F, T* dphi_dF, const T mu, const T l
 
 template<typename T>
 __device__ __host__
-inline void compute_dphi_dF(const T* F, T* dphi_dF, const T E, const T nu) {
+inline void compute_dphi_dF(const T* F, T* dphi_dF, const T E, const T nu, const T gamma, const T K, const T c_F) {
     // A00=0, A01=1, A02=2
     // A10=3, A11=4, A12=5
     // A20=6, A21=7, A22=8
@@ -133,11 +133,11 @@ inline void compute_dphi_dF(const T* F, T* dphi_dF, const T E, const T nu) {
     matmul<3, 3, 3, T>(Q, P_hat, P_plane);
 
     T rr = R[2] * R[2] + R[5] * R[5];
-    T g = config::GAMMA<T> * rr;
-    T gp = config::GAMMA<T>;
+    T g = gamma * rr;
+    T gp = gamma;
     T fp = 0;
     if (R[8] < T(1.)) {
-        fp = -config::K<T> * (T(1.) - R[8]) * (T(1.) - R[8]);
+        fp = -K * (T(1.) - R[8]) * (T(1.) - R[8]);
     }
 
     T A[9];
@@ -180,12 +180,12 @@ inline void compute_dphi_dF(const T* F, T* dphi_dF, const T E, const T nu) {
 
 template<typename T>
 __device__ __host__
-inline void project_strain(T* F) {
+inline void project_strain(T* F, const T gamma, const T K, const T c_F) {
     T Q[9], R[9];
     givens_QR<3, 3, T>(F, Q, R);
 
     // return mapping
-    if (config::GAMMA<T> == T(0.)) { // CASE 1: no friction
+    if (gamma == T(0.)) { // CASE 1: no friction
         R[8] = min(R[8], T(1.));
         R[2] = T(0.);
         R[5] = T(0.);
@@ -202,8 +202,8 @@ inline void project_strain(T* F) {
     }
     else {
         T rr = R[2] * R[2] + R[5] * R[5];
-        const T gamma_over_k = config::GAMMA<T> / config::K<T>;
-        T zz = config::c_F<T> * (R[8] - T(1.)) * (R[8] - T(1.));
+        const T gamma_over_k = gamma / K;
+        T zz = c_F * (R[8] - T(1.)) * (R[8] - T(1.));
         T f = (gamma_over_k * gamma_over_k) * rr - (zz * zz);
         if (f > T(0.)) {
             T c = zz / (gamma_over_k * sqrt(rr));
@@ -230,7 +230,10 @@ __global__ void calc_fem_state_and_force_kernel(
     T* taus,
     const T dt,
     const T E, 
-    const T nu) {
+    const T nu,
+    const T gamma,
+    const T K,
+    const T c_F) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     int face_pid = index_mappings[idx];
     if (idx < n_faces) {
@@ -262,7 +265,7 @@ __global__ void calc_fem_state_and_force_kernel(
         ctF[7] = F[7];
         ctF[8] = dt * C[6] * F[2] + dt * C[7] * F[5] + (T(1.0) + dt * C[8]) * F[8];
 
-        project_strain(ctF);
+        project_strain(ctF, gamma, K, c_F);
 
         T d0[3], d1[3];
         #pragma unroll
@@ -292,7 +295,7 @@ __global__ void calc_fem_state_and_force_kernel(
         }
 
         T VP_local[9];
-        compute_dphi_dF(ctF, VP_local, E, nu);
+        compute_dphi_dF(ctF, VP_local, E, nu, gamma, K, c_F);
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             VP_local[i] *= volumes[face_pid];
@@ -636,7 +639,8 @@ __global__ void particle_to_grid_kernel(const GridConfig<T> gconf,
     uint32_t* g_touched_flags,
     T* g_masses,
     T* g_momentum,
-    const T dt) {
+    const T dt,
+    const T density) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -684,7 +688,7 @@ __global__ void particle_to_grid_kernel(const GridConfig<T> gconf,
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
-        const T mass = volumes[idx] * config::DENSITY<T>;
+        const T mass = volumes[idx] * density;
         const T* vel = &velocities[idx * 3];
 
         T B[9];
@@ -716,7 +720,7 @@ __global__ void particle_to_grid_kernel(const GridConfig<T> gconf,
                     val[2] = vel[1] * val[0];
                     val[3] = vel[2] * val[0];
                     // apply gravity
-                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY<T> * dt;
+                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY * dt;
 
                     val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
                     val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
@@ -1256,7 +1260,8 @@ __global__ void grid_to_particle_kernel(
     T* affine_matrices,
     const T* g_masses,
     const T* g_momentum,
-    const T dt) {
+    const T dt,
+    const T rpic_damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     // In [Fei et.al 2021],
     // we spill the B-spline weights (nine floats for each thread) by storing them into the shared memory
@@ -1349,15 +1354,16 @@ __global__ void grid_to_particle_kernel(
             velocities[idx * 3 + 2] = new_v[2];
 
             transpose<3, 3, T>(new_C, new_CT);
-            affine_matrices[idx * 9 + 0] = ((config::V<T> + T(1.)) * T(.5)) * new_C[0] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[0];
-            affine_matrices[idx * 9 + 1] = ((config::V<T> + T(1.)) * T(.5)) * new_C[1] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[1];
-            affine_matrices[idx * 9 + 2] = ((config::V<T> + T(1.)) * T(.5)) * new_C[2] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[2];
-            affine_matrices[idx * 9 + 3] = ((config::V<T> + T(1.)) * T(.5)) * new_C[3] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[3];
-            affine_matrices[idx * 9 + 4] = ((config::V<T> + T(1.)) * T(.5)) * new_C[4] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[4];
-            affine_matrices[idx * 9 + 5] = ((config::V<T> + T(1.)) * T(.5)) * new_C[5] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[5];
-            affine_matrices[idx * 9 + 6] = ((config::V<T> + T(1.)) * T(.5)) * new_C[6] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[6];
-            affine_matrices[idx * 9 + 7] = ((config::V<T> + T(1.)) * T(.5)) * new_C[7] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[7];
-            affine_matrices[idx * 9 + 8] = ((config::V<T> + T(1.)) * T(.5)) * new_C[8] + ((config::V<T> - T(1.)) * T(.5)) * new_CT[8];
+            const T V = (1 - rpic_damping);
+            affine_matrices[idx * 9 + 0] = ((V + T(1.)) * T(.5)) * new_C[0] + ((V - T(1.)) * T(.5)) * new_CT[0];
+            affine_matrices[idx * 9 + 1] = ((V + T(1.)) * T(.5)) * new_C[1] + ((V - T(1.)) * T(.5)) * new_CT[1];
+            affine_matrices[idx * 9 + 2] = ((V + T(1.)) * T(.5)) * new_C[2] + ((V - T(1.)) * T(.5)) * new_CT[2];
+            affine_matrices[idx * 9 + 3] = ((V + T(1.)) * T(.5)) * new_C[3] + ((V - T(1.)) * T(.5)) * new_CT[3];
+            affine_matrices[idx * 9 + 4] = ((V + T(1.)) * T(.5)) * new_C[4] + ((V - T(1.)) * T(.5)) * new_CT[4];
+            affine_matrices[idx * 9 + 5] = ((V + T(1.)) * T(.5)) * new_C[5] + ((V - T(1.)) * T(.5)) * new_CT[5];
+            affine_matrices[idx * 9 + 6] = ((V + T(1.)) * T(.5)) * new_C[6] + ((V - T(1.)) * T(.5)) * new_CT[6];
+            affine_matrices[idx * 9 + 7] = ((V + T(1.)) * T(.5)) * new_C[7] + ((V - T(1.)) * T(.5)) * new_CT[7];
+            affine_matrices[idx * 9 + 8] = ((V + T(1.)) * T(.5)) * new_C[8] + ((V - T(1.)) * T(.5)) * new_CT[8];
 
             // Advection
             positions[idx * 3 + 0] += new_v[0] * dt;
@@ -1519,6 +1525,7 @@ __global__ void contact_particle_to_grid_kernel(
     T* g_Hess,
     T* g_Grad,
     const T dt,
+    const T density,
     const T friction_mu,
     const T stiffness,
     const T epsv,
@@ -1570,7 +1577,7 @@ __global__ void contact_particle_to_grid_kernel(
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
-        const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        const T mass = volumes[contact_mpm_id[idx]] * density;
         const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
         const T* particle_v = &contact_vel[idx * 3];
 
@@ -1742,6 +1749,7 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
     T* g_dE1,
     T* g_d2E1,
     const T dt,
+    const T density,
     const T friction_mu,
     const T stiffness,
     const T epsv,
@@ -1804,7 +1812,7 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
             }
         }
 
-        const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        const T mass = volumes[contact_mpm_id[idx]] * density;
         const T* v_p_n = &velocities[contact_mpm_id[idx] * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
@@ -1968,6 +1976,7 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     T* F_Bq_W_tau,
     T* F_Bq_W_f,
     const T dt,
+    const T density,
     const T friction_mu,
     const T stiffness,
     const T epsv,
@@ -1976,7 +1985,7 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     if (idx < n_contacts) {
         // Use negative contact energy gradient as the impulse 
         // instead of particle mdv when accumulating impulses on rigid bodies
-        const T mass = volumes[contact_mpm_id[idx]] * config::DENSITY<T>;
+        const T mass = volumes[contact_mpm_id[idx]] * density;
         const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
         const T* particle_v = &contact_vel[idx * 3];
 
