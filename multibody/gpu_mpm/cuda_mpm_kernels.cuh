@@ -1225,6 +1225,233 @@ __global__ void update_grid_kernel(
                     check(ghh_down_p, ghh_down_v, false);
                 }
 
+                // for allegro bagging cloth demo
+                else if constexpr (MPM_BOUNDARY_CONDITION == 115) {
+                    constexpr T delay = 3.0;
+                    T t = times_elapsed;
+                    constexpr T gripper_xy = 0.1 / 2.0;
+                    constexpr T gripper_z = 0.04 / 2.0;
+                    
+                    constexpr T l_x = 0.34 - 0.03 - 0.01;
+                    constexpr T h_x = 0.66 + 0.027 + 0.01;
+                    constexpr T l_z = 0.39-2e-4 - 0.01;
+                    constexpr T h_z = 0.41+2e-4 + 0.01;
+                    
+                    constexpr T initial_free_duration = 0.25;
+                    constexpr T initial_loose_duration = 0.25;
+                    constexpr T free_duration = 4.0 + delay;
+                    constexpr T bagging_duration = 1.0 - initial_loose_duration;
+                    constexpr T static_duration = 1.0;
+                    constexpr T final_loose_duration = 1.0;
+                    constexpr T bagging_v = 0.1;
+
+                    T gll_up_p[3];
+                    T glh_up_p[3];
+                    T ghl_up_p[3];
+                    T ghh_up_p[3];
+                    T gll_down_p[3];
+                    T glh_down_p[3];
+                    T ghl_down_p[3];
+                    T ghh_down_p[3];
+
+                    T gll_up_v[3];
+                    T glh_up_v[3];
+                    T ghl_up_v[3];
+                    T ghh_up_v[3];
+                    T gll_down_v[3];
+                    T glh_down_v[3];
+                    T ghl_down_v[3];
+                    T ghh_down_v[3];
+
+                    const auto& assign = [](T *x, const T a, const T b, const T c) {
+                        x[0] = a; 
+                        x[1] = b; 
+                        x[2] = c;
+                    };
+
+                    const auto& check = [&](const T *gx, const T* gv, const bool is_up, const bool is_fixed = true) {
+                        if (is_up) {
+                            if (
+                                pos[0] >= gx[0] - gripper_xy && pos[0] <= gx[0] + gripper_xy &&
+                                pos[1] >= gx[1] - gripper_xy && pos[1] <= gx[1] + gripper_xy &&
+                                pos[2] >= gx[2] - gripper_z
+                            ) {
+                                dist = gx[2] - gripper_z - pos[2];
+                                normal[0] = T(0.);
+                                normal[1] = T(0.);
+                                normal[2] = T(-1.);
+                                diff_vel[0] = gv[0] - g_vel[0];
+                                diff_vel[1] = gv[1] - g_vel[1];
+                                diff_vel[2] = gv[2] - g_vel[2];
+                                dotnv = dot<3>(normal, diff_vel);
+                                inside = true;
+                                fixed = is_fixed;
+                            }
+                        } else {
+                            if (
+                                pos[0] >= gx[0] - gripper_xy && pos[0] <= gx[0] + gripper_xy &&
+                                pos[1] >= gx[1] - gripper_xy && pos[1] <= gx[1] + gripper_xy &&
+                                pos[2] <= gx[2] + gripper_z
+                            ) {
+                                dist = pos[2] - gx[2] - gripper_z;
+                                normal[0] = T(0.);
+                                normal[1] = T(0.);
+                                normal[2] = T(1.);
+                                diff_vel[0] = gv[0] - g_vel[0];
+                                diff_vel[1] = gv[1] - g_vel[1];
+                                diff_vel[2] = gv[2] - g_vel[2];
+                                dotnv = dot<3>(normal, diff_vel);
+                                inside = true;
+                                fixed = is_fixed;
+                            }
+                        }
+                    };
+
+                    if (t < initial_free_duration) {
+                        assign(gll_up_p, l_x, l_x, h_z);
+                        assign(glh_up_p, l_x, h_x, h_z);
+                        assign(ghl_up_p, h_x, l_x,  h_z);
+                        assign(ghh_up_p, h_x, h_x, h_z);
+                        assign(gll_down_p, l_x, l_x, l_z);
+                        assign(glh_down_p, l_x, h_x, l_z);
+                        assign(ghl_down_p, h_x, l_x,  l_z);
+                        assign(ghh_down_p, h_x, h_x, l_z);
+
+                        assign(gll_up_v, 0, 0, 0);
+                        assign(glh_up_v, 0, 0, 0);
+                        assign(ghl_up_v, 0, 0, 0);
+                        assign(ghh_up_v, 0, 0, 0);
+                        assign(gll_down_v, 0, 0, 0);
+                        assign(glh_down_v, 0, 0, 0);
+                        assign(ghl_down_v, 0, 0, 0);
+                        assign(ghh_down_v, 0, 0, 0);
+                    } else if (t < initial_free_duration + initial_loose_duration) {
+                        double dt = t - initial_free_duration;
+                        assign(gll_up_p, l_x + dt * bagging_v, l_x + dt * bagging_v, h_z);
+                        assign(glh_up_p, l_x + dt * bagging_v, h_x - dt * bagging_v, h_z);
+                        assign(ghl_up_p, h_x - dt * bagging_v, l_x + dt * bagging_v,  h_z);
+                        assign(ghh_up_p, h_x - dt * bagging_v, h_x - dt * bagging_v, h_z);
+                        assign(gll_down_p, l_x + dt * bagging_v, l_x + dt * bagging_v, l_z);
+                        assign(glh_down_p, l_x + dt * bagging_v, h_x - dt * bagging_v, l_z);
+                        assign(ghl_down_p, h_x - dt * bagging_v, l_x + dt * bagging_v,  l_z);
+                        assign(ghh_down_p, h_x - dt * bagging_v, h_x - dt * bagging_v, l_z);
+
+                        assign(gll_up_v, + bagging_v, + bagging_v, 0);
+                        assign(glh_up_v, + bagging_v, - bagging_v, 0);
+                        assign(ghl_up_v, - bagging_v, + bagging_v, 0);
+                        assign(ghh_up_v, - bagging_v, - bagging_v, 0);
+                        assign(gll_down_v, + bagging_v, + bagging_v, 0);
+                        assign(glh_down_v, + bagging_v, - bagging_v, 0);
+                        assign(ghl_down_v, - bagging_v, + bagging_v, 0);
+                        assign(ghh_down_v, - bagging_v, - bagging_v, 0);
+                    } else if (t < free_duration + initial_loose_duration + initial_free_duration) {
+                        double dt = initial_loose_duration;
+                        assign(gll_up_p, l_x + dt * bagging_v, l_x + dt * bagging_v, h_z);
+                        assign(glh_up_p, l_x + dt * bagging_v, h_x - dt * bagging_v, h_z);
+                        assign(ghl_up_p, h_x - dt * bagging_v, l_x + dt * bagging_v,  h_z);
+                        assign(ghh_up_p, h_x - dt * bagging_v, h_x - dt * bagging_v, h_z);
+                        assign(gll_down_p, l_x + dt * bagging_v, l_x + dt * bagging_v, l_z);
+                        assign(glh_down_p, l_x + dt * bagging_v, h_x - dt * bagging_v, l_z);
+                        assign(ghl_down_p, h_x - dt * bagging_v, l_x + dt * bagging_v,  l_z);
+                        assign(ghh_down_p, h_x - dt * bagging_v, h_x - dt * bagging_v, l_z);
+                    
+                        assign(gll_up_v, 0, 0, 0);
+                        assign(glh_up_v, 0, 0, 0);
+                        assign(ghl_up_v, 0, 0, 0);
+                        assign(ghh_up_v, 0, 0, 0);
+                        assign(gll_down_v, 0, 0, 0);
+                        assign(glh_down_v, 0, 0, 0);
+                        assign(ghl_down_v, 0, 0, 0);
+                        assign(ghh_down_v, 0, 0, 0);
+                    } else if (t < free_duration + bagging_duration + initial_loose_duration + initial_free_duration) {
+                        double dt = (t - free_duration - initial_free_duration);
+                        assign(gll_up_p, l_x + dt * bagging_v, l_x + dt * bagging_v, h_z);
+                        assign(glh_up_p, l_x + dt * bagging_v, h_x - dt * bagging_v, h_z);
+                        assign(ghl_up_p, h_x - dt * bagging_v, l_x + dt * bagging_v,  h_z);
+                        assign(ghh_up_p, h_x - dt * bagging_v, h_x - dt * bagging_v, h_z);
+                        assign(gll_down_p, l_x + dt * bagging_v, l_x + dt * bagging_v, l_z);
+                        assign(glh_down_p, l_x + dt * bagging_v, h_x - dt * bagging_v, l_z);
+                        assign(ghl_down_p, h_x - dt * bagging_v, l_x + dt * bagging_v,  l_z);
+                        assign(ghh_down_p, h_x - dt * bagging_v, h_x - dt * bagging_v, l_z);
+                    
+                        assign(gll_up_v, + bagging_v, + bagging_v, 0);
+                        assign(glh_up_v, + bagging_v, - bagging_v, 0);
+                        assign(ghl_up_v, - bagging_v, + bagging_v, 0);
+                        assign(ghh_up_v, - bagging_v, - bagging_v, 0);
+                        assign(gll_down_v, + bagging_v, + bagging_v, 0);
+                        assign(glh_down_v, + bagging_v, - bagging_v, 0);
+                        assign(ghl_down_v, - bagging_v, + bagging_v, 0);
+                        assign(ghh_down_v, - bagging_v, - bagging_v, 0);
+                    } else if (t < free_duration + bagging_duration + initial_loose_duration + initial_free_duration + static_duration) {
+                        double total_dur = initial_loose_duration + bagging_duration;
+                        assign(gll_up_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, h_z);
+                        assign(glh_up_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, h_z);
+                        assign(ghl_up_p, h_x - total_dur * bagging_v, l_x + total_dur * bagging_v,  h_z);
+                        assign(ghh_up_p, h_x - total_dur * bagging_v, h_x - total_dur * bagging_v, h_z);
+                        assign(gll_down_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, l_z);
+                        assign(glh_down_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, l_z);
+                        assign(ghl_down_p, h_x - total_dur * bagging_v, l_x + total_dur * bagging_v,  l_z);
+                        assign(ghh_down_p, h_x - total_dur * bagging_v, h_x - total_dur * bagging_v, l_z);
+                    
+                        assign(gll_up_v, 0, 0, 0);
+                        assign(glh_up_v, 0, 0, 0);
+                        assign(ghl_up_v, 0, 0, 0);
+                        assign(ghh_up_v, 0, 0, 0);
+                        assign(gll_down_v, 0, 0, 0);
+                        assign(glh_down_v, 0, 0, 0);
+                        assign(ghl_down_v, 0, 0, 0);
+                        assign(ghh_down_v, 0, 0, 0);
+                    } else {
+                        double total_dur = initial_loose_duration + bagging_duration;
+                        double dt = 100.0;
+                        double ddt = min((t - (free_duration + bagging_duration + initial_loose_duration + initial_free_duration + static_duration)), final_loose_duration);
+                        assign(gll_up_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, h_z + ddt * bagging_v);
+                        assign(glh_up_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, h_z + ddt * bagging_v);
+                        assign(ghl_up_p, h_x - (total_dur - dt) * bagging_v, l_x + (total_dur - dt) * bagging_v,  h_z + dt * bagging_v);
+                        assign(ghh_up_p, h_x - (total_dur - dt) * bagging_v, h_x - (total_dur - dt) * bagging_v, h_z + dt * bagging_v);
+                        assign(gll_down_p, l_x + total_dur * bagging_v, l_x + total_dur * bagging_v, l_z + ddt * bagging_v);
+                        assign(glh_down_p, l_x + total_dur * bagging_v, h_x - total_dur * bagging_v, l_z + ddt * bagging_v);
+                        assign(ghl_down_p, h_x - (total_dur - dt) * bagging_v, l_x + (total_dur - dt) * bagging_v,  l_z - dt * bagging_v);
+                        assign(ghh_down_p, h_x - (total_dur - dt) * bagging_v, h_x - (total_dur - dt) * bagging_v, l_z - dt * bagging_v);
+
+                        assign(gll_up_v, 0, 0, ddt < final_loose_duration ? + bagging_v : 0);
+                        assign(glh_up_v, 0, 0, ddt < final_loose_duration ? + bagging_v : 0);
+                        assign(ghl_up_v, bagging_v, -bagging_v, + bagging_v);
+                        assign(ghh_up_v, bagging_v, +bagging_v, + bagging_v);
+                        assign(gll_down_v, 0, 0, ddt < final_loose_duration ? + bagging_v : 0);
+                        assign(glh_down_v, 0, 0, ddt < final_loose_duration ? + bagging_v : 0);
+                        assign(ghl_down_v, bagging_v, -bagging_v, - bagging_v);
+                        assign(ghh_down_v, bagging_v, +bagging_v, - bagging_v);
+                    }
+
+                    check(gll_up_p, gll_up_v, true);
+                    check(glh_up_p, glh_up_v, true);
+                    check(ghl_up_p, ghl_up_v, true);
+                    check(ghh_up_p, ghh_up_v, true);
+                    check(gll_down_p, gll_down_v, false);
+                    check(glh_down_p, glh_down_v, false);
+                    check(ghl_down_p, ghl_down_v, false);
+                    check(ghh_down_p, ghh_down_v, false);
+
+                    // hanging block
+                    T zeros[3] = {0, 0, 0};
+                    T hb1[3] = {0.65, 0.9, 0.3};
+                    check(hb1, zeros, false, false);
+
+                    T ground_dist = pos[2] - T(0.04);
+                    if (ground_dist < 0) {
+                        normal[0] = T(0.);
+                        normal[1] = T(0.);
+                        normal[2] = T(1.);
+                        dist = ground_dist;
+                        inside = true;
+                        diff_vel[0] = -g_vel[0];
+                        diff_vel[1] = -g_vel[1];
+                        diff_vel[2] = -g_vel[2];
+                        dotnv = dot<3>(diff_vel, normal);
+                    }
+                }
+
                 // NOTE (changyu): fixed, inside, dotnv, diff_vel, n = self.sdf.check(pos, vel)
                 if (inside) {
                     if (fixed) {

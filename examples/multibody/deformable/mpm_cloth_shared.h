@@ -59,6 +59,45 @@ using Eigen::Vector3d;
 using Eigen::Vector4d;
 using Eigen::VectorXd;
 
+[[maybe_unused]] void AddCloth(DeformableModel<double> *deformable_model, int res_x, int res_y, double z_axis, double xy_offset=0.0, double x_offset=0.0, double dx=0.014) {
+  const double lx = dx * res_x;
+  const double ly = dx * res_y;
+  int length = res_x;
+  int width = res_y;
+
+  auto p = [&](int i, int j) {
+    return i * width + j;
+  };
+
+  {
+    std::vector<Eigen::Vector3d> inital_pos;
+    std::vector<Eigen::Vector3d> inital_vel;
+    std::vector<int> indices;
+    for (int i = 0; i < length; ++i) {
+      for (int j = 0; j < width; ++j) {
+        inital_pos.emplace_back((0.5 - 0.5 * lx) + i * dx + xy_offset + x_offset, (0.5 - 0.5 * ly) + j * dx + xy_offset, z_axis);
+        inital_vel.emplace_back(0., 0., 0.);
+      }
+    }
+
+    for (int i = 0; i < length; ++i) {
+      for (int j = 0; j < width; ++j) {
+        if (i < length - 1 && j < width - 1) {
+          indices.push_back(p(i, j));
+          indices.push_back(p(i+1, j));
+          indices.push_back(p(i, j+1));
+
+          indices.push_back(p(i+1, j+1));
+          indices.push_back(p(i, j+1));
+          indices.push_back(p(i+1, j));
+        }
+      }
+    }
+
+    deformable_model->RegisterMpmCloth(inital_pos, inital_vel, indices);
+  }
+}
+
 [[maybe_unused]] void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis, double xy_offset=0.0, double x_offset=0.0, double dx=0.014) {
   const double l = dx * res;
   int length = res;
