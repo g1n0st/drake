@@ -1,4 +1,5 @@
 #include <math.h>
+
 #include <fstream>
 #include <memory>
 
@@ -14,8 +15,6 @@
 #include "drake/geometry/scene_graph.h"
 #include "drake/math/rigid_transform.h"
 #include "drake/multibody/fem/deformable_body_config.h"
-#include "drake/visualization/visualization_config.h"
-#include "drake/visualization/visualization_config_functions.h"
 #include "drake/multibody/parsing/parser.h"
 #include "drake/multibody/plant/deformable_model.h"
 #include "drake/multibody/plant/multibody_plant.h"
@@ -25,30 +24,33 @@
 #include "drake/systems/analysis/simulator.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/diagram_builder.h"
+#include "drake/visualization/visualization_config.h"
+#include "drake/visualization/visualization_config_functions.h"
 
-DEFINE_double(E, 5e5, "Young's modulus of the deformable body [Pa].");
-DEFINE_double(rho, 15000, "density of the rigid box.");
+DEFINE_double(E, 5e6, "Young's modulus of the deformable body [Pa].");
+DEFINE_double(ratio, 150, "ratio of density of box to deformable");
 DEFINE_double(nu, 0.4, "Poisson's ratio of the deformable body, unitless.");
 DEFINE_double(beta, 0.01,
               "Stiffness damping coefficient for the deformable body [1/s].");
-DEFINE_double(hydro_modulus, 1e8, "Hydroelastic modulus [Pa].");
+DEFINE_double(hydro_modulus, 1e7, "Hydroelastic modulus [Pa].");
 
-DEFINE_bool(write_files, false, "Enable dumping MPM data to files.");
+DEFINE_bool(write_files, true, "Enable dumping MPM data to files.");
 DEFINE_double(simulation_time, 5.0, "Desired duration of the simulation [s].");
-DEFINE_int32(res, 5000, "MPM Particle Number.");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
-DEFINE_double(time_step, 1e-3,
+DEFINE_double(time_step, 1e-4,
               "Discrete time step for the system [s]. Must be positive.");
-DEFINE_double(substep, 1e-4,
-              "Discrete time step for the substepping scheme [s]. Must be positive.");
+DEFINE_double(
+    substep, 1e-5,
+    "Discrete time step for the substepping scheme [s]. Must be positive.");
 DEFINE_string(contact_approximation, "sap",
               "Type of convex contact approximation. See "
               "multibody::DiscreteContactApproximation for details. Options "
               "are: 'sap', 'lagged', and 'similar'.");
 
-DEFINE_double(stiffness, 1e4, "Contact Stiffness.");
-DEFINE_double(friction, 1.0, "Contact Friction.");
-DEFINE_double(damping, 100.0,
+DEFINE_double(stiffness, 5e4, "Contact Stiffness.");
+DEFINE_double(friction, 0.8, "Contact Friction.");
+DEFINE_double(
+    damping, 100.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
 
@@ -68,23 +70,38 @@ using drake::multibody::DeformableBodyId;
 using drake::multibody::DeformableModel;
 using drake::multibody::ModelInstanceIndex;
 using drake::multibody::MultibodyPlantConfig;
-using drake::multibody::Parser;
 using drake::multibody::PackageMap;
+using drake::multibody::Parser;
 using drake::multibody::PrismaticJoint;
 using drake::multibody::RigidBody;
 using drake::multibody::SpatialInertia;
 using drake::multibody::fem::DeformableBodyConfig;
+using drake::multibody::gmpm::MpmConfigParams;
 using drake::systems::BasicVector;
 using drake::systems::Context;
 using Eigen::Vector2d;
 using Eigen::Vector3d;
 using Eigen::Vector4d;
 using Eigen::VectorXd;
-using drake::multibody::gmpm::MpmConfigParams;
 
 namespace drake {
 namespace examples {
 namespace {
+
+std::vector<Vector3d> MakeInitialPositions(Vector3d min_corner,
+                                           Vector3d max_corner,
+                                           int num_per_dim) {
+  std::vector<Vector3d> positions;
+  Vector3d delta = (max_corner - min_corner) / (num_per_dim - 1);
+  for (int i = 0; i < num_per_dim; ++i) {
+    for (int j = 0; j < num_per_dim; ++j) {
+      for (int k = 0; k < num_per_dim; ++k) {
+        positions.push_back(min_corner + Vector3d(i, j, k).cwiseProduct(delta));
+      }
+    }
+  }
+  return positions;
+}
 
 class DummyYBoxController : public drake::systems::LeafSystem<double> {
  public:
@@ -102,8 +119,9 @@ class DummyYBoxController : public drake::systems::LeafSystem<double> {
     state_value << 0.5, 0;
     output->set_value(state_value);
   }
-  private:
-    const multibody::MultibodyPlant<double>& plant_;
+
+ private:
+  const multibody::MultibodyPlant<double>& plant_;
 };
 
 class DummyZBoxController : public drake::systems::LeafSystem<double> {
@@ -209,7 +227,6 @@ class XBoxController : public drake::systems::LeafSystem<double> {
     is_right_ = is_right;
     initial_pos_ = initial_pos + 0.5;
     box_width_ = box_width;
-    target_movement_ = target_movement_ * box_width;
   }
   void CalcDesiredState(const Context<double>& context,
                         drake::systems::BasicVector<double>* output) const {
@@ -236,7 +253,7 @@ class XBoxController : public drake::systems::LeafSystem<double> {
   bool is_right_;
   double move_start_ = 0.0;
   double move_duration_ = 0.4;
-  double target_movement_ = 0.5;
+  double target_movement_ = 0.1; 
   double box_width_;
 };
 
@@ -254,9 +271,10 @@ int do_main() {
   ProximityProperties rigid_hydro_props;
 
   const CoulombFriction<double> surface_friction(1.0, 1.0);
+  const CoulombFriction<double> zero_friction(0.0, 0.0);
   AddContactMaterial(FLAGS_damping, {}, surface_friction,
                      &compliant_hydro_props);
-  AddContactMaterial(FLAGS_damping, {}, surface_friction, &rigid_hydro_props);
+  AddContactMaterial(FLAGS_damping, {}, zero_friction, &rigid_hydro_props);
 
   AddCompliantHydroelasticProperties(0.01, FLAGS_hydro_modulus,
                                      &compliant_hydro_props);
@@ -272,8 +290,7 @@ int do_main() {
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground,
                                "ground_visual", std::move(illustration_props));
 
-  double box_width = 0.4 / 4;
-  double ratio = 10.0;
+  double box_width = 0.1;
 
   // a dummy box for lifting in y-direction
   const drake::multibody::UnitInertia<double> unit_inertia_y(0, 0, 0);
@@ -290,7 +307,8 @@ int do_main() {
       .set_default_translation(0.5);
   const auto actuator_y_index =
       plant.AddJointActuator("y actuator", prismatic_joint_y).index();
-  auto dummy_y_box_controller = builder.template AddSystem<DummyYBoxController>(plant);
+  auto dummy_y_box_controller =
+      builder.template AddSystem<DummyYBoxController>(plant);
   plant.get_mutable_joint_actuator(actuator_y_index)
       .set_controller_gains({1e7, 1});
 
@@ -308,7 +326,7 @@ int do_main() {
   plant.GetMutableJointByName<PrismaticJoint>("translate_z_joint")
       .set_default_translation(box_width / 2.0 + 0.5);
   auto dummy_z_box_controller = builder.template AddSystem<DummyZBoxController>(
-      plant, box_width / 2.0 + 0.5, box_width + 0.5);
+      plant, box_width / 2.0 + 0.5, box_width);
   const auto actuator_z_index =
       plant.AddJointActuator("z prismatic joint actuator", prismatic_joint_z)
           .index();
@@ -319,51 +337,50 @@ int do_main() {
   ModelInstanceIndex left_box_model_instance =
       plant.AddModelInstance("left_box_instance");
   const SpatialInertia<double> left_box_spatial =
-      SpatialInertia<double>::SolidBoxWithDensity(FLAGS_rho, box_width / 6.0,
-                                                  box_width * 1.4, box_width * 1.0);
+      SpatialInertia<double>::SolidBoxWithDensity(
+          200000.0, box_width / 3.0, box_width * 1.4, box_width * 1.0);
   const RigidBody<double>& left_box =
       plant.AddRigidBody("left_box", left_box_model_instance, left_box_spatial);
   const auto& left_prismatic_joint_x = plant.AddJoint<PrismaticJoint>(
       "left_translate_x_joint", dummy_z_body, RigidTransformd(), left_box,
       std::nullopt, Vector3d::UnitX());
   plant.GetMutableJointByName<PrismaticJoint>("left_translate_x_joint")
-      .set_default_translation(-(1.5 + 0.5 / 6.0) * box_width + 0.5);
+      .set_default_translation(-(1.5 + 0.5 / 3.0) * box_width + 0.5);
   const auto left_actuator_x_index =
       plant.AddJointActuator("left x actuator", left_prismatic_joint_x).index();
-  double stiffness = (2.0 + ratio) / 0.1 * 3;
-  stiffness = 1e7;
+  double stiffness = (2.0 + FLAGS_ratio) / box_width * 3;
   plant.get_mutable_joint_actuator(left_actuator_x_index)
       .set_controller_gains({stiffness, 1});
   auto left_box_controller = builder.template AddSystem<XBoxController>(
-      plant, false, -(1.5 + 0.5 / 6.0) * box_width, box_width);
+      plant, false, -(1.5 + 0.5 / 3.0) * box_width, box_width);
 
   // box controlled on the right
   ModelInstanceIndex right_box_model_instance =
       plant.AddModelInstance("right_box_instance");
   const SpatialInertia<double> right_box_spatial =
-      SpatialInertia<double>::SolidBoxWithDensity(FLAGS_rho, box_width / 4.0,
-                                                  box_width * 1.4, box_width * 1.0);
+      SpatialInertia<double>::SolidBoxWithDensity(
+          200000.0, box_width / 4.0, box_width * 1.4, box_width * 1.0);
   const RigidBody<double>& right_box = plant.AddRigidBody(
       "right_box", right_box_model_instance, right_box_spatial);
   const auto& right_prismatic_joint_x = plant.AddJoint<PrismaticJoint>(
       "right_translate_x_joint", dummy_z_body, RigidTransformd(), right_box,
       std::nullopt, Vector3d::UnitX());
   plant.GetMutableJointByName<PrismaticJoint>("right_translate_x_joint")
-      .set_default_translation((1.5 + 0.5 / 6.0) * box_width + 0.5);
+      .set_default_translation((1.5 + 0.5 / 3.0) * box_width + 0.5);
   const auto right_actuator_x_index =
       plant.AddJointActuator("right x actuator", right_prismatic_joint_x)
           .index();
   plant.get_mutable_joint_actuator(right_actuator_x_index)
       .set_controller_gains({stiffness, 1});
   auto right_box_controller = builder.template AddSystem<XBoxController>(
-      plant, true, (1.5 + 0.5 / 6.0) * box_width, box_width);
+      plant, true, (1.5 + 0.5 / 3.0) * box_width, box_width);
 
   unused(left_prismatic_joint_x, right_prismatic_joint_x);
 
   ModelInstanceIndex free_body_model_instance =
       plant.AddModelInstance("free_body_instance");
   const SpatialInertia<double> free_body_box_spatial =
-      SpatialInertia<double>::SolidBoxWithDensity(FLAGS_rho, box_width,
+      SpatialInertia<double>::SolidBoxWithDensity(100 * FLAGS_ratio, box_width,
                                                   box_width, box_width);
   const RigidBody<double>& free_box = plant.AddRigidBody(
       "free_box", free_body_model_instance, free_body_box_spatial);
@@ -377,19 +394,21 @@ int do_main() {
   const Vector4<double> grey(0.5, 0.5, 0.5, 1.0);
   unused(light_blue, red, green, blue, dark_blue, orange);
 
-  plant.RegisterVisualGeometry(left_box, RigidTransformd::Identity(),
-                               Box(box_width / 6.0, box_width * 1.4, box_width * 1.0),
-                               "LeftCubeV", grey);
+  plant.RegisterVisualGeometry(
+      left_box, RigidTransformd::Identity(),
+      Box(box_width / 3.0, box_width * 1.4, box_width * 1.1), "LeftCubeV",
+      grey);
   plant.RegisterCollisionGeometry(
       left_box, RigidTransformd::Identity(),
-      Box(box_width / 6.0, box_width * 1.4, box_width), "LeftCube",
+      Box(box_width / 3.0, box_width * 1.4, box_width * 1.1), "LeftCube",
       compliant_hydro_props);
-  plant.RegisterVisualGeometry(right_box, RigidTransformd::Identity(),
-                               Box(box_width / 6.0, box_width * 1.4, box_width * 1.0),
-                               "RightCubeV", grey);
+  plant.RegisterVisualGeometry(
+      right_box, RigidTransformd::Identity(),
+      Box(box_width / 3.0, box_width * 1.4, box_width * 1.1), "RightCubeV",
+      grey);
   plant.RegisterCollisionGeometry(
       right_box, RigidTransformd::Identity(),
-      Box(box_width / 6.0, box_width * 1.4, box_width), "RightCube",
+      Box(box_width / 3.0, box_width * 1.4, box_width * 1.1), "RightCube",
       compliant_hydro_props);
 
   plant.RegisterVisualGeometry(free_box, RigidTransformd::Identity(),
@@ -402,37 +421,41 @@ int do_main() {
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
 
-  const int res = FLAGS_res;
-  std::vector<Eigen::Vector3d> inital_pos;
-  std::vector<Eigen::Vector3d> inital_vel;
+  const double slop = 0.005;
+  const int num_per_dim = 12;
+  const std::vector<Eigen::Vector3d> inital_pos = MakeInitialPositions(
+      {0.5 - box_width * 1.5, 0.5 - box_width * 0.5 + slop, 0.5 + 0.0 + slop},
+      {0.5 - box_width * 0.5, 0.5 + box_width * 0.5 - slop, 0.5 + box_width},
+      num_per_dim);
+  const std::vector<Eigen::Vector3d> inital_pos2 = MakeInitialPositions(
+      {0.5 + box_width * 0.5, 0.5 - box_width * 0.5 + slop, 0.5 + 0.0 + slop},
+      {0.5 + box_width * 1.5, 0.5 + box_width * 0.5 - slop, 0.5 + box_width},
+      num_per_dim);
+  const int num_particles_per_box = inital_pos.size();
+  const std::vector<Eigen::Vector3d> inital_vel(inital_pos.size(),
+                                                Vector3d{0, 0, 0});
+  const double particle_vol =
+      box_width * box_width * box_width / num_particles_per_box;
+  deformable_model.RegisterMpmParticle(inital_pos, inital_vel, particle_vol);
+  deformable_model.RegisterMpmParticle(inital_pos2, inital_vel, particle_vol);
 
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_real_distribution<float> dis(-box_width / 2, box_width / 2);
-
-  for (int i = 0; i < res / 2; ++i) {
-    inital_pos.emplace_back(dis(gen) -1.0 * box_width + 0.5, dis(gen) + 0.5, dis(gen) + box_width / 2.0 + 0.5);
-    inital_vel.emplace_back(0, 0, 0);
-  }
-
-  for (int i = 0; i < res / 2; ++i) {
-    inital_pos.emplace_back(dis(gen) +1.0 * box_width + 0.5, dis(gen) + 0.5, dis(gen) + box_width / 2.0 + 0.5);
-    inital_vel.emplace_back(0, 0, 0);
-  }
-
-//   deformable_model.RegisterMpmParticle(inital_pos, inital_vel);
-
-const int ppc = 8;
-    deformable_model.RegisterMpmParticle(
-    {0.5 -box_width * 1.5 , 0.5  -box_width * 0.5, 0.5 + 0.0}, 
-    {0.5 -box_width * 0.5 , 0.5 + box_width * 0.5, 0.5 + box_width}, 
-    ppc);
-    deformable_model.RegisterMpmParticle(
-    {0.5 +box_width * 0.5 , 0.5  -box_width * 0.5, 0.5 + 0.0}, 
-    {0.5 +box_width * 1.5 , 0.5 + box_width * 0.5, 0.5 + box_width}, 
-    ppc);
+  //   const int ppc = 8;
+  //   deformable_model.RegisterMpmParticle(
+  //       {0.5 - box_width * 1.5, 0.5 - box_width * 0.5, 0.5 + 0.0},
+  //       {0.5 - box_width * 0.5, 0.5 + box_width * 0.5, 0.5 + box_width},
+  //       ppc);
+  //   deformable_model.RegisterMpmParticle(
+  //       {0.5 + box_width * 0.5, 0.5 - box_width * 0.5, 0.5 + 0.0},
+  //       {0.5 + box_width * 1.5, 0.5 + box_width * 0.5, 0.5 + box_width},
+  //       ppc);
 
   MpmConfigParams mpm_config;
+  mpm_config.domain_bits = 5;
+  mpm_config.density = 100.0;
+  mpm_config.rpic_damping = 0.2;
+  mpm_config.youngs_modules = 5e5;
+  mpm_config.poisson_ratio = .4;
+
   mpm_config.substep_dt = FLAGS_substep;
   mpm_config.write_files = FLAGS_write_files;
   mpm_config.contact_stiffness = FLAGS_stiffness;
@@ -459,30 +482,36 @@ const int ppc = 8;
 
   /* Add a visualizer that emits LCM messages for visualization. */
   geometry::DrakeVisualizerParams visualize_params;
-  visualize_params.show_mpm = geometry::DrakeVisualizerParams::ShowMpmOpt::kParticleMpm;
-  auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(&builder, scene_graph, nullptr, visualize_params);
+  visualize_params.show_mpm =
+      geometry::DrakeVisualizerParams::ShowMpmOpt::kParticleMpm;
+  visualize_params.publish_period = 0.001;
+  auto& visualizer = geometry::DrakeVisualizerd::AddToBuilder(
+      &builder, scene_graph, nullptr, visualize_params);
 
-  // NOTE (changyu): MPM shortcut port shuould be explicit connected for visualization.
-  builder.Connect(plant.get_output_port(
-    plant.deformable_model().mpm_output_port_index()), 
-    visualizer.mpm_input_port());
+  // NOTE (changyu): MPM shortcut port shuould be explicit connected for
+  // visualization.
+  builder.Connect(
+      plant.get_output_port(plant.deformable_model().mpm_output_port_index()),
+      visualizer.mpm_input_port());
 
   // meshcat viz
   auto meshcat = std::make_shared<geometry::Meshcat>();
   if (FLAGS_write_files) {
-      auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
-      meshcat_params.show_mpm = drake::geometry::MeshcatVisualizerParams::ShowMpmOpt::kParticleMpm;
-      auto& meshcat_visualizer = drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
-          &builder, scene_graph, meshcat, meshcat_params);
-      visualization::ApplyVisualizationConfig(
-          visualization::VisualizationConfig{
-              .default_proximity_color = geometry::Rgba{1, 0, 0, 0.25},
-              .enable_alpha_sliders = true,
-          },
-          &builder, nullptr, nullptr, nullptr, meshcat);
-      
-      builder.Connect(plant.get_output_port(
-        plant.deformable_model().mpm_output_port_index()), 
+    auto meshcat_params = drake::geometry::MeshcatVisualizerParams();
+    meshcat_params.show_mpm =
+        drake::geometry::MeshcatVisualizerParams::ShowMpmOpt::kParticleMpm;
+    auto& meshcat_visualizer =
+        drake::geometry::MeshcatVisualizer<double>::AddToBuilder(
+            &builder, scene_graph, meshcat, meshcat_params);
+    visualization::ApplyVisualizationConfig(
+        visualization::VisualizationConfig{
+            .default_proximity_color = geometry::Rgba{1, 0, 0, 0.25},
+            .enable_alpha_sliders = true,
+        },
+        &builder, nullptr, nullptr, nullptr, meshcat);
+
+    builder.Connect(
+        plant.get_output_port(plant.deformable_model().mpm_output_port_index()),
         meshcat_visualizer.mpm_input_port());
   }
 
@@ -508,7 +537,7 @@ const int ppc = 8;
     simulator.AdvanceTo(FLAGS_simulation_time);
     meshcat->StopRecording();
     meshcat->PublishRecording();
-    std::ofstream htmlFile("/home/changyu/drake/shake.html");
+    std::ofstream htmlFile("/home/xuchenhan/drake/shake.html");
     htmlFile << meshcat->StaticHtml();
     htmlFile.close();
   } else {
