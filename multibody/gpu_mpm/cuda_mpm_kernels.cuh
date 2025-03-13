@@ -39,7 +39,8 @@ __global__ void initialize_fem_state_kernel(
     T *velocities,
     T *volumes,
     T *deformation_gradients,
-    T *Dm_inverses) {
+    T *Dm_inverses,
+    const T thickness) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_faces) {
         int v0 = indices[idx * 3 + 0];
@@ -81,9 +82,7 @@ __global__ void initialize_fem_state_kernel(
 
         T D0xD1[3];
         cross_product3(D0, D1, D0xD1);
-        // NOTE (changyu): hard-code thickness as 1mm.
-        // The parameter shouldn't vary with grid dx.
-        T volume_4 = norm<3>(D0xD1) / T(8.) * T(0.001);
+        T volume_4 = norm<3>(D0xD1) / T(8.) * T(thickness);
 
         volumes[idx] += volume_4;
         atomicAdd(&volumes[v0], volume_4);

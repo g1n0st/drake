@@ -41,6 +41,7 @@ struct MpmConfigParams {
     T cloth_gamma {static_cast<T>(0.)};
     T cloth_K {static_cast<T>(100000.)};
     T cloth_c_F {static_cast<T>(0.)};
+    T cloth_thickness {static_cast<T>(0.001)};
 
     T sdf_friction {static_cast<T>(.5)};
     T rpic_damping {static_cast<T>(.0)};

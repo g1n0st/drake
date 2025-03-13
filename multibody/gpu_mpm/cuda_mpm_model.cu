@@ -150,7 +150,7 @@ void GpuMpmState<T>::Finalize() {
             initialize_fem_state_kernel<<<
             (this->n_faces() + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
             (this->n_faces(), this->indices(), this->current_positions(), this->current_velocities(), this->current_volumes(),
-            this->deformation_gradients(), this->Dm_inverses())
+            this->deformation_gradients(), this->Dm_inverses(), this->config().cloth_thickness)
             ));
     }
 }

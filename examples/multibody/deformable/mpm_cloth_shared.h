@@ -59,8 +59,7 @@ using Eigen::Vector3d;
 using Eigen::Vector4d;
 using Eigen::VectorXd;
 
-[[maybe_unused]] void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis, double xy_offset=0.0, double x_offset=0.0) {
-  double dx = 0.014;
+[[maybe_unused]] void AddCloth(DeformableModel<double> *deformable_model, int res, double z_axis, double xy_offset=0.0, double x_offset=0.0, double dx=0.014) {
   const double l = dx * res;
   int length = res;
   int width = res;
