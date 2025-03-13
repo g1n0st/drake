@@ -455,6 +455,8 @@ int do_main() {
   mpm_config.rpic_damping = 0.2;
   mpm_config.youngs_modules = 5e5;
   mpm_config.poisson_ratio = .4;
+  mpm_config.particle_plasticity = false;
+  mpm_config.particle_linear_corotated = true;
 
   mpm_config.substep_dt = FLAGS_substep;
   mpm_config.write_files = FLAGS_write_files;
