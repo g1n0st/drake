@@ -215,7 +215,7 @@ int do_main() {
   plant.RegisterVisualGeometry(plant.world_body(), X_WG, ground, "ground_visual", std::move(illustration_props));
 
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, FLAGS_res, 0.15);
+  AddCloth(&deformable_model, FLAGS_res, 0.15, 0, 0, 0.007);
   // AddClothFromFile(&deformable_model, "/home/changyu/Desktop/tshirt.obj");
 
   MpmConfigParams mpm_config;

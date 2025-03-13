@@ -211,8 +211,7 @@ int do_main() {
   AddRigidBox("box4");
 
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, FLAGS_res, 0.5);
-  // AddClothFromFile(&deformable_model, "/home/changyu/Desktop/tshirt.obj");
+  AddCloth(&deformable_model, FLAGS_res, 0.5, 0, 0, 0.007);
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;

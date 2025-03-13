@@ -141,6 +141,7 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state, bool enforce_bc_only) co
     
     if (enforce_bc_only) {
         if (false) {}
+        GRID_OP_WITH_BC(0, true)
         GRID_OP_WITH_BC(1, true)
         GRID_OP_WITH_BC(2, true)
         GRID_OP_WITH_BC(3, true)
@@ -152,6 +153,7 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state, bool enforce_bc_only) co
     }
     else {
         if (false) {}
+        GRID_OP_WITH_BC(0, false)
         GRID_OP_WITH_BC(1, false)
         GRID_OP_WITH_BC(2, false)
         GRID_OP_WITH_BC(3, false)

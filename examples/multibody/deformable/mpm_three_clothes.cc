@@ -46,9 +46,9 @@ int do_main() {
   plant.RegisterVisualGeometry(plant.world_body(), X_WG_BALL, ball, "ball_visual", std::move(illustration_props));
 
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, FLAGS_res, 0.75, -0.08);
-  AddCloth(&deformable_model, FLAGS_res, 0.85, +0.08);
-  AddCloth(&deformable_model, FLAGS_res, 0.95, -0.08);
+  AddCloth(&deformable_model, FLAGS_res, 0.75, -0.08, 0, 0.007);
+  AddCloth(&deformable_model, FLAGS_res, 0.85, +0.08, 0, 0.007);
+  AddCloth(&deformable_model, FLAGS_res, 0.95, -0.08, 0, 0.007);
 
   MpmConfigParams mpm_config;
   mpm_config.substep_dt = FLAGS_substep;
