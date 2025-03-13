@@ -696,7 +696,7 @@ __global__ void particle_to_grid_kernel(const GridConfig<T> gconf,
         const T* stress = &taus[idx * 9];
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * gconf.G_DX_INV) * stress[i] + C[i] * mass;
+            B[i] = (-dt * gconf.G_D_INV) * stress[i] + C[i] * mass;
         }
 
         T val[4];
