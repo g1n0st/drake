@@ -345,7 +345,7 @@ int do_main() {
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   deformable_model.RegisterMpmParticle(
       {0.05 + 0.5 - 0.16, 0.0 + 0.5 - 0.06, 0.05 + 0.5 - 0.05},
-      {0.05 + 0.5 + 0.16, 0.0 + 0.5 + 0.06, 0.05 + 0.5 + 0.05}, FLAGS_ppc);
+      {0.05 + 0.5 + 0.16, 0.0 + 0.5 + 0.06, 0.05 + 0.5 + 0.05}, FLAGS_ppc, 1.0 / 64.0);
 
   MpmConfigParams mpm_config;
   mpm_config.domain_bits = 6;
