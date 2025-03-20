@@ -227,10 +227,11 @@ void GpuMpmSolver<T>::CopyContactPairs(GpuMpmState<T> *state, const MpmParticleC
 }
 
 template<typename T>
-void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
+void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt, double &CONTACT_JACOBI_time, double &CONTACT_LINE_SEARCH_time) const {
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
 
+    long long st_jacobi = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
     const uint32_t &touched_cells_cnt = touched_blocks_cnt * state->grid_config().G_BLOCK_VOLUME;
 
@@ -407,6 +408,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
             return std::make_pair(x, dx_negative);
         };
 
+        long long st_line_search = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         bool global_line_search_satisfied = false;
         while (!global_line_search_satisfied) {
             // The one evaluation per iteration.
@@ -461,6 +463,8 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
                 global_alpha = root;
             }
         }
+        long long ed_line_search = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        CONTACT_LINE_SEARCH_time += (ed_line_search - st_line_search) / 1000.0;
 
         CUDA_SAFE_CALL((
             apply_global_line_search_grid_kernel<<<
@@ -513,6 +517,10 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
         dt, state->config().density,
         state->config().contact_friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping)
         ));
+    
+    CUDA_SAFE_CALL(cudaDeviceSynchronize());
+    long long ed_jacobi = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    CONTACT_JACOBI_time += (ed_jacobi - st_jacobi) / 1000.0;
 }
 
 template class GpuMpmSolver<config::GpuT>;

@@ -28,7 +28,7 @@ public:
     void SyncParticleStateToCpu(GpuMpmState<T> *state) const;
     void Dump(const GpuMpmState<T> &state, std::string filename) const;
     void CopyContactPairs(GpuMpmState<T> *state, const MpmParticleContactPairs<T> &contact_pairs) const;
-    void UpdateContact(GpuMpmState<T> *state, const T& dt) const;
+    void UpdateContact(GpuMpmState<T> *state, const T& dt, double &CONTACT_JACOBI_time, double &CONTACT_LINE_SEARCH_time) const;
 };
 
 }  // namespace gmpm

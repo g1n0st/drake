@@ -221,6 +221,32 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
   void CalcAbstractStates(const systems::Context<T>& context,
                           systems::State<T>* update) const {
+    static double other_time = 0;
+    static double P2G_time = 0;
+    static double SORT_time = 0;
+    static double FORCE_time = 0;
+    static double GRID_time = 0;
+    static double CONTACT_QUERY_time = 0;
+    static double CONTACT_JACOBI_time = 0;
+    static double CONTACT_LINE_SEARCH_time = 0;
+    static double G2P_time = 0;
+    static double SYNC_time = 0;
+    long long st_stage = 0, ed_stage = 0;
+
+#define PROFILE(func, stage_time) \
+    mpm_solver_.GpuSync(); \
+    st_stage = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count(); \
+    (func); \
+    mpm_solver_.GpuSync(); \
+    ed_stage = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count(); \
+    stage_time += (ed_stage - st_stage) / 1000.0;
+
+    static long long st_profile = 0, ed_profile = 0;
+    st_profile = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    if (ed_profile != 0) {
+      other_time += (st_profile - ed_profile) / 1000.0;
+    }
+
     if (deformable_model_->ExistsMpmModel()) {
       using GpuT = gmpm::config::GpuT;
       gmpm::GpuMpmState<GpuT>& mutable_mpm_state = 
@@ -235,27 +261,29 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       GpuT dt_left = dt;
       int substep = 0;
       long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-      InitalizeExternalContactForces(context, &mutable_mpm_state);
+      PROFILE(InitalizeExternalContactForces(context, &mutable_mpm_state), SYNC_time);
       gmpm::MpmParticleContactPairs<GpuT> mpm_contact_pairs;
 
+      bool first = false;
       while (dt_left > 0) {
         GpuT ddt = std::min(dt_left, substep_dt);
         dt_left -= ddt;
-        mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
-        mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
-        mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
-        mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
-        mpm_solver_.UpdateGrid(&mutable_mpm_state);
+        PROFILE(mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state), SYNC_time);
+        PROFILE(mpm_solver_.RebuildMapping(&mutable_mpm_state, first), SORT_time);
+        first = false;
+        PROFILE(mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt), FORCE_time);
+        PROFILE(mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt), P2G_time);
+        PROFILE(mpm_solver_.UpdateGrid(&mutable_mpm_state), GRID_time);
 
         // NOTE (changyu): update contact information at each substep for weak coupling scheme
-        CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs, deformable_model_->cpu_mpm_model().config.ignore_face_contact);
-        mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
-        mpm_solver_.UpdateContact(&mutable_mpm_state, ddt);
-        mpm_solver_.UpdateGrid(&mutable_mpm_state, /*ENFORCE_BC_ONLY=*/true);
-        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
+        PROFILE(CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs, deformable_model_->cpu_mpm_model().config.ignore_face_contact), CONTACT_QUERY_time);
+        PROFILE(mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs), SYNC_time);
+        mpm_solver_.UpdateContact(&mutable_mpm_state, ddt, CONTACT_JACOBI_time, CONTACT_LINE_SEARCH_time);
+        PROFILE(mpm_solver_.UpdateGrid(&mutable_mpm_state, /*ENFORCE_BC_ONLY=*/true), GRID_time);
+        PROFILE(mpm_solver_.GridToParticle(&mutable_mpm_state, ddt), G2P_time);
         substep += 1;
       }
-      FinalizeExternalContactForces(&mutable_mpm_state, dt);
+      PROFILE(FinalizeExternalContactForces(&mutable_mpm_state, dt), SYNC_time);
       mutable_mpm_state.times_elapsed += dt;
 
       // logging
@@ -265,6 +293,21 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       if (deformable_model_->cpu_mpm_model().config.write_files) {
         mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
       }
+    }
+
+    ed_profile = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    if (context.get_time() >= 16.9) {
+      printf("other_time: %.3lf\n", other_time);
+      printf("SORT: %.3lf\n", SORT_time);
+      printf("P2G: %.3lf\n", P2G_time);
+      printf("FORCE: %.3lf\n", FORCE_time);
+      printf("GRID: %.3lf\n", GRID_time);
+      printf("G2P: %.3lf\n", G2P_time);
+      printf("SYNC: %.3lf\n", SYNC_time);
+      printf("CONTACT_QUERY: %.3lf\n", CONTACT_QUERY_time);
+      printf("CONTACT_JACOBI: %.3lf\n", CONTACT_JACOBI_time);
+      printf("CONTACT_LINE_SEARCH: %.3lf\n", CONTACT_LINE_SEARCH_time);
+      throw;
     }
   }
 
