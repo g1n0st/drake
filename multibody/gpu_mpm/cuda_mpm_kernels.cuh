@@ -2189,7 +2189,6 @@ template<typename T>
 __global__ void apply_contact_impulse_to_rigid_bodies(
     const size_t n_contacts,
     const T* contact_pos,
-    const T* contact_vel_star,
     const T* contact_vel,
     const T* volumes,
     const T* velocities,

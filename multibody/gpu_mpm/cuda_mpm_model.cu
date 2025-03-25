@@ -233,10 +233,6 @@ void GpuMpmState<T>::Destroy() {
         CUDA_SAFE_CALL(cudaFree(d_contact_vel_));
         d_contact_vel_ = nullptr;
     }
-    if (d_contact_vel_star_) {
-        CUDA_SAFE_CALL(cudaFree(d_contact_vel_star_));
-        d_contact_vel_star_ = nullptr;
-    }
     if (d_contact_dist_) {
         CUDA_SAFE_CALL(cudaFree(d_contact_dist_));
         d_contact_dist_ = nullptr;
@@ -326,9 +322,6 @@ void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
         if (d_contact_vel_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_vel_));
         }
-        if (d_contact_vel_star_) {
-            CUDA_SAFE_CALL(cudaFree(d_contact_vel_star_));
-        }
         if (d_contact_dist_) {
             CUDA_SAFE_CALL(cudaFree(d_contact_dist_));
         }
@@ -351,7 +344,6 @@ void GpuMpmState<T>::ReallocateContacts(size_t num_contacts) {
         cudaMalloc(&d_contact_rigid_id_, sizeof(uint32_t) * contact_buffer_size);
         cudaMalloc(&d_contact_pos_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_vel_, sizeof(T) * 3 * contact_buffer_size);
-        cudaMalloc(&d_contact_vel_star_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_dist_, sizeof(T) * contact_buffer_size);
         cudaMalloc(&d_contact_normal_, sizeof(T) * 3 * contact_buffer_size);
         cudaMalloc(&d_contact_rigid_v_, sizeof(T) * 3 * contact_buffer_size);

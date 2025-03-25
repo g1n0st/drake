@@ -149,8 +149,6 @@ public:
     T* contact_pos() { return d_contact_pos_; }
     const T* contact_vel() const { return d_contact_vel_; }
     T* contact_vel() { return d_contact_vel_; }
-    const T* contact_vel_star() const { return d_contact_vel_star_; }
-    T* contact_vel_star() { return d_contact_vel_star_; }
     const T* contact_dist() const { return d_contact_dist_; }
     T* contact_dist() { return d_contact_dist_; }
     const T* contact_normal() const { return d_contact_normal_; }
@@ -251,7 +249,6 @@ private:
     uint32_t* d_contact_sort_ids_ = nullptr;
     T* d_contact_pos_ = nullptr;
     T* d_contact_vel_ = nullptr;
-    T* d_contact_vel_star_ = nullptr;
     T* d_contact_dist_ = nullptr;
     T* d_contact_normal_ = nullptr;
     T* d_contact_rigid_v_ = nullptr;
