@@ -289,7 +289,6 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
             state->contact_pos(), 
             state->contact_vel(), 
             state->current_velocities(),
-            state->current_volumes(),
             state->contact_mpm_id(), 
             state->contact_dist(), 
             state->contact_normal(), 
@@ -297,7 +296,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
             state->contact_sort_keys(), 
             state->grid_Hess(),
             state->grid_Grad(),
-            dt, state->config().density,
+            dt,
             state->config().contact_friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping)
             ));
     
@@ -322,7 +321,6 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
                 state->contact_pos(), 
                 state->contact_vel(), 
                 state->current_velocities(),
-                state->current_volumes(),
                 state->contact_mpm_id(), 
                 state->contact_dist(), 
                 state->contact_normal(), 
@@ -332,7 +330,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
                 global_E1_d,
                 global_dE1_d,
                 global_d2E1_d,
-                dt, state->config().density,
+                dt,
                 state->config().contact_friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping,
                 current_alpha)
                 ));
@@ -498,11 +496,11 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
     CUDA_SAFE_CALL((apply_contact_impulse_to_rigid_bodies<<<
         (n_contacts + config::DEFAULT_CUDA_BLOCK_SIZE - 1) / config::DEFAULT_CUDA_BLOCK_SIZE, config::DEFAULT_CUDA_BLOCK_SIZE>>>
         (n_contacts, state->contact_pos(), state->contact_vel(), 
-        state->current_volumes(), state->current_velocities(),
+        state->current_velocities(),
         state->contact_dist(), state->contact_normal(), state->contact_rigid_v(),
         state->contact_mpm_id(), state->contact_rigid_id(), 
         state->contact_rigid_p_WB(), state->F_Bq_W_tau(), state->F_Bq_W_f(),
-        dt, state->config().density,
+        dt,
         state->config().contact_friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping)
         ));
 }

@@ -1742,7 +1742,6 @@ __global__ void contact_particle_to_grid_kernel(
     const T* contact_pos,
     const T* contact_vel,
     const T* velocities,
-    const T* volumes,
     const uint32_t* contact_mpm_id,
     const T* contact_dist,
     const T* contact_normal,
@@ -1751,7 +1750,6 @@ __global__ void contact_particle_to_grid_kernel(
     T* g_Hess,
     T* g_Grad,
     const T dt,
-    const T density,
     const T friction_mu,
     const T stiffness,
     const T epsv,
@@ -1803,7 +1801,6 @@ __global__ void contact_particle_to_grid_kernel(
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
-        const T mass = volumes[contact_mpm_id[idx]] * density;
         const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
         const T* particle_v = &contact_vel[idx * 3];
 
@@ -1964,7 +1961,6 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
     const T* contact_pos,
     const T* contact_vel,
     const T* velocities,
-    const T* volumes,
     const uint32_t* contact_mpm_id,
     const T* contact_dist,
     const T* contact_normal,
@@ -1975,7 +1971,6 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
     T* g_dE1,
     T* g_d2E1,
     const T dt,
-    const T density,
     const T friction_mu,
     const T stiffness,
     const T epsv,
@@ -2038,7 +2033,6 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
             }
         }
 
-        const T mass = volumes[contact_mpm_id[idx]] * density;
         const T* v_p_n = &velocities[contact_mpm_id[idx] * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
@@ -2190,7 +2184,6 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     const size_t n_contacts,
     const T* contact_pos,
     const T* contact_vel,
-    const T* volumes,
     const T* velocities,
     const T* contact_dist,
     const T* contact_normal,
@@ -2201,7 +2194,6 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     T* F_Bq_W_tau,
     T* F_Bq_W_f,
     const T dt,
-    const T density,
     const T friction_mu,
     const T stiffness,
     const T epsv,
@@ -2210,7 +2202,6 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     if (idx < n_contacts) {
         // Use negative contact energy gradient as the impulse 
         // instead of particle mdv when accumulating impulses on rigid bodies
-        const T mass = volumes[contact_mpm_id[idx]] * density;
         const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
         const T* particle_v = &contact_vel[idx * 3];
 
