@@ -120,7 +120,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   void CalcMpmContactPairs(
       const systems::Context<T>& context, gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state,
       gmpm::MpmParticleContactPairs<gmpm::config::GpuT>* result,
-      const bool ignore_face_contact) const {
+      const bool ignore_face_contact, const gmpm::config::GpuT margin) const {
     using GpuT = gmpm::config::GpuT;
     DRAKE_ASSERT(result != nullptr);
     long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -142,10 +142,10 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       // always remember it is type GpuT and should be casted to type T explicitly.
       std::vector<geometry::SignedDistanceToPoint<T>> p_to_geometries =
           query_object.geometry_state().ComputeSignedDistanceToPoint(
-            mpm_state->positions_host()[p].template cast<T>(), T(0));
-      // identify those that are in contact, i.e. signed_distance < 0
+            mpm_state->positions_host()[p].template cast<T>(), T(margin));
+      // NOTE: register a contact point whenever (phi0 > -margin) instead of only registering contact points when phi0 > 0.
       for (const auto& p2geometry : p_to_geometries) {
-        if (p2geometry.distance < 0) {
+        if (p2geometry.distance < margin) {
           // if particle is inside rigid body, i.e. in contact
           // note: normal direction
           // NOTE (changyu): we treat each collision pair as an individual collision particle,
@@ -244,17 +244,27 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
         mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
-        mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
+        mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt, false, true);
         mpm_solver_.UpdateGrid(&mutable_mpm_state);
 
-        // NOTE (changyu): update contact information at each substep for weak coupling scheme
-        CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs, deformable_model_->cpu_mpm_model().config.ignore_face_contact);
-        mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
-        mpm_solver_.UpdateContact(&mutable_mpm_state, ddt);
-        mpm_solver_.UpdateGrid(&mutable_mpm_state, /*ENFORCE_BC_ONLY=*/true);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
         substep += 1;
       }
+
+      mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
+      mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
+      mpm_solver_.ParticleToGrid(&mutable_mpm_state, dt, true, false);
+      mpm_solver_.UpdateGrid(&mutable_mpm_state);
+
+      // NOTE (changyu): update contact information at each substep for strong coupling scheme
+      CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs, 
+        deformable_model_->cpu_mpm_model().config.ignore_face_contact,
+        deformable_model_->cpu_mpm_model().config.margin);
+      mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
+      mpm_solver_.UpdateContact(&mutable_mpm_state, dt);
+      mpm_solver_.UpdateGrid(&mutable_mpm_state, /*ENFORCE_BC_ONLY=*/true);
+      mpm_solver_.ContactGridToParticle(&mutable_mpm_state, dt);
+      mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, dt, true);
       FinalizeExternalContactForces(&mutable_mpm_state, dt);
       mutable_mpm_state.times_elapsed += dt;
 

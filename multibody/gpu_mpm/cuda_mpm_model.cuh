@@ -81,6 +81,8 @@ public:
     const T* current_volumes() const { return particle_buffer_[current_particle_buffer_id_].d_volumes; }
     T* current_affine_matrices() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
     const T* current_affine_matrices() const { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices; }
+    T* current_affine_matrices_star() { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices_star; }
+    const T* current_affine_matrices_star() const { return particle_buffer_[current_particle_buffer_id_].d_affine_matrices_star; }
 
     int* current_pids() { return particle_buffer_[current_particle_buffer_id_].d_pids; }
     const int* current_pids() const { return particle_buffer_[current_particle_buffer_id_].d_pids; }
@@ -93,6 +95,7 @@ public:
     T* next_velocities() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_velocities; }
     T* next_volumes() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_volumes; }
     T* next_affine_matrices() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices; }
+    T* next_affine_matrices_star() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_affine_matrices_star; }
     int* next_pids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_pids; }
     uint32_t* next_sort_keys() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_keys; }
     uint32_t* next_sort_ids() { return particle_buffer_[current_particle_buffer_id_ ^ 1].d_sort_ids; }
@@ -149,6 +152,8 @@ public:
     T* contact_pos() { return d_contact_pos_; }
     const T* contact_vel() const { return d_contact_vel_; }
     T* contact_vel() { return d_contact_vel_; }
+    const T* contact_vel_star() const { return d_contact_vel_star_; }
+    T* contact_vel_star() { return d_contact_vel_star_; }
     const T* contact_dist() const { return d_contact_dist_; }
     T* contact_dist() { return d_contact_dist_; }
     const T* contact_normal() const { return d_contact_normal_; }
@@ -226,6 +231,7 @@ private:
         T* d_velocities = nullptr;  // size: n_faces + n_verts
         T* d_volumes = nullptr;     // size: n_faces + n_verts
         T* d_affine_matrices = nullptr; // size: n_faces + n_verts
+        T* d_affine_matrices_star = nullptr; // size: n_faces + n_verts
 
         // used to work with index_mapping to get the original -> reordered mapping.
         int* d_pids = nullptr; // size: n_faces + n_verts
@@ -249,6 +255,7 @@ private:
     uint32_t* d_contact_sort_ids_ = nullptr;
     T* d_contact_pos_ = nullptr;
     T* d_contact_vel_ = nullptr;
+    T* d_contact_vel_star_ = nullptr;
     T* d_contact_dist_ = nullptr;
     T* d_contact_normal_ = nullptr;
     T* d_contact_rigid_v_ = nullptr;
