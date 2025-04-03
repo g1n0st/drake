@@ -214,13 +214,14 @@ inline void project_strain(T* F, const T gamma, const T K, const T c_F) {
     matmul<3, 3, 3, T>(Q, R, F);
 }
 
-template<typename T>
+template<typename T, bool POST_CONTACT>
 __global__ void calc_fem_state_and_force_kernel(
     const size_t n_faces,
     const int* indices,
     const int* index_mappings,
     const T* volumes,
     const T* affine_matrices,
+    const T* affine_matrices_star,
     const T* Dm_inverses,
     T* positions, 
     T* velocities,
@@ -246,7 +247,18 @@ __global__ void calc_fem_state_and_force_kernel(
         }
 
         T* F = &deformation_gradients[idx * 9];
-        const T* C = &affine_matrices[face_pid * 9];
+        T C[9];
+        if constexpr(POST_CONTACT) {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                C[i] = (affine_matrices[face_pid * 9 + i] - affine_matrices_star[face_pid * 9 + i]);
+            }
+        } else {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                C[i] = affine_matrices[face_pid * 9 + i];
+            }
+        }
         T ctF[9]; // cotangent F
 
         // Eq.4 in Jiang et.al 2017, dE_p, β(x̂) = (∇x̂)p dE,n_p, β
@@ -332,11 +344,12 @@ __global__ void calc_fem_state_and_force_kernel(
     }
 }
 
-template<typename T>
+template<typename T, bool POST_CONTACT>
 __global__ void calc_particle_state_and_force_kernel(
     const size_t n_particles,
     const T* volumes,
     const T* affine_matrices,
+    const T* affine_matrices_star,
     T* deformation_gradients,
     T* taus,
     const T dt,
@@ -348,7 +361,18 @@ __global__ void calc_particle_state_and_force_kernel(
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
     if (idx < n_particles) {
         T* F = &deformation_gradients[idx * 9];
-        const T* C = &affine_matrices[idx * 9];
+        T C[9];
+        if constexpr(POST_CONTACT) {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                C[i] = (affine_matrices[idx * 9 + i] - affine_matrices_star[idx * 9 + i]);
+            }
+        } else {
+            #pragma unroll
+            for (int i = 0; i < 9; ++i) {
+                C[i] = affine_matrices[idx * 9 + i];
+            }
+        }
         
         float new_F[9];
         new_F[0] = (T(1.) + dt * C[0]) * F[0] + dt * C[1] * F[3] + dt * C[2] * F[6];
@@ -625,7 +649,7 @@ __global__ void compute_sorted_state_kernel(const size_t n_particles,
     }
 }
 
-template<typename T, int BLOCK_DIM>
+template<typename T, int BLOCK_DIM, bool APPLY_GRAVITY=true, bool APPLY_ELASTICITY=true>
 __global__ void particle_to_grid_kernel(const GridConfig<T> gconf, 
     const size_t n_particles,
     const T* positions, 
@@ -695,7 +719,12 @@ __global__ void particle_to_grid_kernel(const GridConfig<T> gconf,
         const T* stress = &taus[idx * 9];
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
-            B[i] = (-dt * gconf.G_D_INV) * stress[i] + C[i] * mass;
+            if constexpr (APPLY_ELASTICITY) {
+                const T* stress = &taus[idx * 9];
+                B[i] = (-dt * gconf.G_D_INV) * stress[i] + C[i] * mass;
+            } else {
+                B[i] = C[i] * mass;
+            }
         }
 
         T val[4];
@@ -719,15 +748,19 @@ __global__ void particle_to_grid_kernel(const GridConfig<T> gconf,
                     val[2] = vel[1] * val[0];
                     val[3] = vel[2] * val[0];
                     // apply gravity
-                    val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY * dt;
+                    if constexpr (APPLY_GRAVITY) {
+                        val[config::GRAVITY_AXIS + 1] += val[0] * config::GRAVITY * dt;
+                    }
 
                     val[1] += (B[0] * xi_minus_xp[0] + B[1] * xi_minus_xp[1] + B[2] * xi_minus_xp[2]) * weight;
                     val[2] += (B[3] * xi_minus_xp[0] + B[4] * xi_minus_xp[1] + B[5] * xi_minus_xp[2]) * weight;
                     val[3] += (B[6] * xi_minus_xp[0] + B[7] * xi_minus_xp[1] + B[8] * xi_minus_xp[2]) * weight;
-                    const T* force = &forces[idx * 3];
-                    val[1] += force[0] * dt * weight;
-                    val[2] += force[1] * dt * weight;
-                    val[3] += force[2] * dt * weight;
+                    if constexpr (APPLY_ELASTICITY) {
+                        const T* force = &forces[idx * 3];
+                        val[1] += force[0] * dt * weight;
+                        val[2] += force[1] * dt * weight;
+                        val[3] += force[2] * dt * weight;
+                    }
 
                     for (int iter = 1; iter <= mark; iter <<= 1) {
                         T tmp[4]; 
@@ -1477,15 +1510,17 @@ __global__ void update_grid_kernel(
     }
 }
 
-template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER>
+template<typename T, int BLOCK_DIM, bool CONTACT_TRANSFER, bool POST_CONTACT>
 __global__ void grid_to_particle_kernel(
     const GridConfig<T> gconf,
     const size_t n_particles,
     T* positions, 
     T* velocities,
     T* affine_matrices,
+    T* affine_matrices_star,
     const T* g_masses,
     const T* g_momentum,
+    const T* g_v_star,
     const T dt,
     const T rpic_damping) {
     uint32_t idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -1514,15 +1549,19 @@ __global__ void grid_to_particle_kernel(
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
+        T old_v[3];
         T new_v[3];
         T new_C[9], new_CT[9];
+        T old_C[9], old_CT[9];
         #pragma unroll
         for (int i = 0; i < 3; ++i) {
             new_v[i] = 0;
+            old_v[i] = 0;
         }
         #pragma unroll
         for (int i = 0; i < 9; ++i) {
             new_C[i] = 0;
+            old_C[i] = 0;
         }
 
         #pragma unroll
@@ -1546,6 +1585,11 @@ __global__ void grid_to_particle_kernel(
                         new_v[0] += weight * g_v[0];
                         new_v[1] += weight * g_v[1];
                         new_v[2] += weight * g_v[2];
+                        if constexpr (POST_CONTACT) {
+                            old_v[0] += weight * g_v_star[target_cell_index * 3 + 0];
+                            old_v[1] += weight * g_v_star[target_cell_index * 3 + 1];
+                            old_v[2] += weight * g_v_star[target_cell_index * 3 + 2];
+                        }
                     } else {
                         new_v[0] += weight * g_v[0];
                         new_v[1] += weight * g_v[1];
@@ -1565,6 +1609,17 @@ __global__ void grid_to_particle_kernel(
                         new_C[6] += 4 * gconf.G_DX_INV * weight * g_v[2] * xi_minus_xp[0];
                         new_C[7] += 4 * gconf.G_DX_INV * weight * g_v[2] * xi_minus_xp[1];
                         new_C[8] += 4 * gconf.G_DX_INV * weight * g_v[2] * xi_minus_xp[2];
+                        if constexpr (POST_CONTACT) {
+                            old_C[0] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[0];
+                            old_C[1] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[1];
+                            old_C[2] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 0] * xi_minus_xp[2];
+                            old_C[3] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[0];
+                            old_C[4] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[1];
+                            old_C[5] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 1] * xi_minus_xp[2];
+                            old_C[6] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[0];
+                            old_C[7] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[1];
+                            old_C[8] += 4 * gconf.G_DX_INV * weight * g_v_star[target_cell_index * 3 + 2] * xi_minus_xp[2];
+                        }
                     }
                 }
             }
@@ -1581,27 +1636,48 @@ __global__ void grid_to_particle_kernel(
 
             transpose<3, 3, T>(new_C, new_CT);
             const T V = (1 - rpic_damping);
-            affine_matrices[idx * 9 + 0] = ((V + T(1.)) * T(.5)) * new_C[0] + ((V - T(1.)) * T(.5)) * new_CT[0];
-            affine_matrices[idx * 9 + 1] = ((V + T(1.)) * T(.5)) * new_C[1] + ((V - T(1.)) * T(.5)) * new_CT[1];
-            affine_matrices[idx * 9 + 2] = ((V + T(1.)) * T(.5)) * new_C[2] + ((V - T(1.)) * T(.5)) * new_CT[2];
-            affine_matrices[idx * 9 + 3] = ((V + T(1.)) * T(.5)) * new_C[3] + ((V - T(1.)) * T(.5)) * new_CT[3];
-            affine_matrices[idx * 9 + 4] = ((V + T(1.)) * T(.5)) * new_C[4] + ((V - T(1.)) * T(.5)) * new_CT[4];
-            affine_matrices[idx * 9 + 5] = ((V + T(1.)) * T(.5)) * new_C[5] + ((V - T(1.)) * T(.5)) * new_CT[5];
-            affine_matrices[idx * 9 + 6] = ((V + T(1.)) * T(.5)) * new_C[6] + ((V - T(1.)) * T(.5)) * new_CT[6];
-            affine_matrices[idx * 9 + 7] = ((V + T(1.)) * T(.5)) * new_C[7] + ((V - T(1.)) * T(.5)) * new_CT[7];
-            affine_matrices[idx * 9 + 8] = ((V + T(1.)) * T(.5)) * new_C[8] + ((V - T(1.)) * T(.5)) * new_CT[8];
+            if constexpr (POST_CONTACT) {
+                transpose<3, 3, T>(old_C, old_CT);
 
-            // Advection
-            positions[idx * 3 + 0] += new_v[0] * dt;
-            positions[idx * 3 + 1] += new_v[1] * dt;
-            positions[idx * 3 + 2] += new_v[2] * dt;
+                affine_matrices[idx * 9 + 0] = ((V + T(1.)) * T(.5)) * new_C[0] + ((V - T(1.)) * T(.5)) * new_CT[0];
+                affine_matrices[idx * 9 + 1] = ((V + T(1.)) * T(.5)) * new_C[1] + ((V - T(1.)) * T(.5)) * new_CT[1];
+                affine_matrices[idx * 9 + 2] = ((V + T(1.)) * T(.5)) * new_C[2] + ((V - T(1.)) * T(.5)) * new_CT[2];
+                affine_matrices[idx * 9 + 3] = ((V + T(1.)) * T(.5)) * new_C[3] + ((V - T(1.)) * T(.5)) * new_CT[3];
+                affine_matrices[idx * 9 + 4] = ((V + T(1.)) * T(.5)) * new_C[4] + ((V - T(1.)) * T(.5)) * new_CT[4];
+                affine_matrices[idx * 9 + 5] = ((V + T(1.)) * T(.5)) * new_C[5] + ((V - T(1.)) * T(.5)) * new_CT[5];
+                affine_matrices[idx * 9 + 6] = ((V + T(1.)) * T(.5)) * new_C[6] + ((V - T(1.)) * T(.5)) * new_CT[6];
+                affine_matrices[idx * 9 + 7] = ((V + T(1.)) * T(.5)) * new_C[7] + ((V - T(1.)) * T(.5)) * new_CT[7];
+                affine_matrices[idx * 9 + 8] = ((V + T(1.)) * T(.5)) * new_C[8] + ((V - T(1.)) * T(.5)) * new_CT[8];
 
-            // printf("v=\n");
-            // printf("[%.8lf   %.8lf   %.8lf]\n", new_v[0], new_v[1], new_v[2]);
-            // printf("C=\n");
-            // printf("[[%.8lf   %.8lf   %.8lf] \n", new_C[0], new_C[1], new_C[2]);
-            // printf(" [%.8lf   %.8lf   %.8lf] \n", new_C[3], new_C[4], new_C[5]);
-            // printf(" [%.8lf   %.8lf   %.8lf]]\n", new_C[6], new_C[7], new_C[8]);
+                affine_matrices_star[idx * 9 + 0] = ((V + T(1.)) * T(.5)) * old_C[0] + ((V - T(1.)) * T(.5)) * old_CT[0];
+                affine_matrices_star[idx * 9 + 1] = ((V + T(1.)) * T(.5)) * old_C[1] + ((V - T(1.)) * T(.5)) * old_CT[1];
+                affine_matrices_star[idx * 9 + 2] = ((V + T(1.)) * T(.5)) * old_C[2] + ((V - T(1.)) * T(.5)) * old_CT[2];
+                affine_matrices_star[idx * 9 + 3] = ((V + T(1.)) * T(.5)) * old_C[3] + ((V - T(1.)) * T(.5)) * old_CT[3];
+                affine_matrices_star[idx * 9 + 4] = ((V + T(1.)) * T(.5)) * old_C[4] + ((V - T(1.)) * T(.5)) * old_CT[4];
+                affine_matrices_star[idx * 9 + 5] = ((V + T(1.)) * T(.5)) * old_C[5] + ((V - T(1.)) * T(.5)) * old_CT[5];
+                affine_matrices_star[idx * 9 + 6] = ((V + T(1.)) * T(.5)) * old_C[6] + ((V - T(1.)) * T(.5)) * old_CT[6];
+                affine_matrices_star[idx * 9 + 7] = ((V + T(1.)) * T(.5)) * old_C[7] + ((V - T(1.)) * T(.5)) * old_CT[7];
+                affine_matrices_star[idx * 9 + 8] = ((V + T(1.)) * T(.5)) * old_C[8] + ((V - T(1.)) * T(.5)) * old_CT[8];
+
+                positions[idx * 3 + 0] += (new_v[0] - old_v[0]) * dt;
+                positions[idx * 3 + 1] += (new_v[1] - old_v[1]) * dt;
+                positions[idx * 3 + 2] += (new_v[2] - old_v[2]) * dt;
+            }
+            else {
+                affine_matrices[idx * 9 + 0] = ((V + T(1.)) * T(.5)) * new_C[0] + ((V - T(1.)) * T(.5)) * new_CT[0];
+                affine_matrices[idx * 9 + 1] = ((V + T(1.)) * T(.5)) * new_C[1] + ((V - T(1.)) * T(.5)) * new_CT[1];
+                affine_matrices[idx * 9 + 2] = ((V + T(1.)) * T(.5)) * new_C[2] + ((V - T(1.)) * T(.5)) * new_CT[2];
+                affine_matrices[idx * 9 + 3] = ((V + T(1.)) * T(.5)) * new_C[3] + ((V - T(1.)) * T(.5)) * new_CT[3];
+                affine_matrices[idx * 9 + 4] = ((V + T(1.)) * T(.5)) * new_C[4] + ((V - T(1.)) * T(.5)) * new_CT[4];
+                affine_matrices[idx * 9 + 5] = ((V + T(1.)) * T(.5)) * new_C[5] + ((V - T(1.)) * T(.5)) * new_CT[5];
+                affine_matrices[idx * 9 + 6] = ((V + T(1.)) * T(.5)) * new_C[6] + ((V - T(1.)) * T(.5)) * new_CT[6];
+                affine_matrices[idx * 9 + 7] = ((V + T(1.)) * T(.5)) * new_C[7] + ((V - T(1.)) * T(.5)) * new_CT[7];
+                affine_matrices[idx * 9 + 8] = ((V + T(1.)) * T(.5)) * new_C[8] + ((V - T(1.)) * T(.5)) * new_CT[8];
+
+                positions[idx * 3 + 0] += new_v[0] * dt;
+                positions[idx * 3 + 1] += new_v[1] * dt;
+                positions[idx * 3 + 2] += new_v[2] * dt;
+            }
         }
     }
 }
@@ -1623,8 +1699,8 @@ __global__ void initialize_contact_velocities(const size_t n_contacts,
 // SAP model
 template<typename T>
 __device__ void compute_contact_grad_and_hess(
-    const T phi0, const T dt, const T stiffness, const T epsv, const T damping, const T friction_mu, 
-    const T *v0, const T *v_next,
+    const T phi_star, const T dt, const T stiffness, const T epsv, const T damping, const T friction_mu, 
+    const T *v_star, const T *v_next,
     T *C_Hess, T *C_Grad) {
     /* Solves the contact problem for a single particle against a rigid body
         assuming the rigid body has infinite mass and inertia.
@@ -1663,8 +1739,8 @@ __device__ void compute_contact_grad_and_hess(
 
     // NOTE (changyu): in math eqns from (https://arxiv.org/pdf/2312.03908) and in code,
     // ϕ differs by a sign.
-    const T phi = phi0 - dt * v_next[kZAxis];
-    // If (-ϕ0 - δt vn)+ or (1 − dvn)+ equals zero, no impulse should be applied
+    const T phi = phi_star - dt * (v_next[kZAxis] - v_star[kZAxis]);
+    // If (-ϕ* - δt (vn - v*))+ or (1 − dvn)+ equals zero, no impulse should be applied
     if (T(1.) - damping * v_next[kZAxis] <= 0 || phi <= 0) { // Quick exits
         #pragma unroll
         for (int i = 0; i < 9; ++i) C_Hess[i] = 0;
@@ -1674,32 +1750,34 @@ __device__ void compute_contact_grad_and_hess(
     else {
         // normal component (Compliant Contact)
         // fn(ϕ, vn) = k (−ϕ)+ (1 − dvn)+
-        // γn(vn) = n(vn; ϕ0) = δt fn(ϕ0 + δt vn, vn)
-        //        = δt k (-ϕ0 - δt vn)+ (1 − dvn)+
-        const T yn = dt * stiffness * (phi0 - dt * v_next[kZAxis]) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
+       // γn(vn) = n(vn; ϕ*) = δt fn(ϕ* + δt (vn - v*), vn)
+        //        = δt k (-ϕ* - δt (vn - v*))+ (1 − dvn)+
+        const T yn = dt * stiffness * (phi_star - dt * (v_next[kZAxis] - v_star[kZAxis])) * (T(1.) - damping * v_next[kZAxis]); // Eq. 13
 
         // ∂²ln / ∂vn² = - δt ∂ fn / ∂vn
-        //               = - δt ∂ fn(ϕ0 + δt vn, vn) / ∂vn
-        //               = - δt k ∂ (-ϕ0 - δt vn)+ (1 − dvn)+ / ∂vn
-        // when both (-ϕ0 - δt vn) > 0 and (1 − dvn) > 0 satisfied
-        //               = - δt k ∂ (-ϕ0 - δt vn) (1 − dvn) / ∂vn
-        //               = - δt k ∂ (-ϕ0 - δt vn + ϕ0 dvn + d δt vn²) / ∂vn
-        //               = - δt k (- δt + ϕ0 d + 2 d δt vn)
-        const T d2lndvn2 = - dt * stiffness * (-dt -phi0 * damping + T(2.) * damping * dt * v_next[kZAxis]); // Eq. 8
-
+        //               = - δt ∂ fn(ϕ* + δt (vn - v*), vn) / ∂vn
+        //               = - δt k ∂ (-ϕ* - δt (vn - v*))+ (1 − dvn)+ / ∂vn
+        // when both (-ϕ* - δt (vn - v*)) > 0 and (1 − dvn) > 0 satisfied
+        //               = - δt k ∂ (-ϕ* - δt vn + δt v*) (1 − dvn) / ∂vn
+        //               = - δt k ∂ (-ϕ* - δt vn + δt v* + ϕ* d vn + d δt vn² - d δt v* vn) / ∂vn
+        //               = - δt k (- δt + ϕ* d + 2 d δt vn - d δt v*)
+        const T d2lndvn2 = -dt * stiffness * (-dt 
+                                              + (-phi_star) * damping 
+                                              + T(2.) * damping * dt * v_next[kZAxis] 
+                                              - damping * dt * v_star[kZAxis]); // Eq. 8
         // frictional component (Lagged Model)
         // For a physical model of compliance for which γn is only a function of vn
 
-        // γn0 = δt fn(ϕ0, vn0) = δt k (−ϕ0)+ (1 − dvn0)+
-        const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
+        // γn* = δt fn(ϕ*, vn*) = δt k (−ϕ*)+ (1 − dvn*)+
+        const T yn_star = max(stiffness * dt * phi_star * (T(1.) - damping * v_star[kZAxis]), T(0.));
 
         const T ts_coeff = sqrt(v_next[0] * v_next[0] + v_next[1] * v_next[1] + epsv * epsv);
         const T ts_hat[2] = {v_next[0] / ts_coeff, v_next[1] / ts_coeff}; // Eq. 18
 
-        // γt = -μ * γn0 * t̂_s 
+        // γt = -μ * γn* * t̂_s 
         const T yt[2] = {
-            -friction_mu * yn0 * ts_hat[0], 
-            -friction_mu * yn0 * ts_hat[1]
+            -friction_mu * yn_star * ts_hat[0], 
+            -friction_mu * yn_star * ts_hat[1]
         }; // Eq. 33
 
         T P_ts_hat[4];
@@ -1708,8 +1786,8 @@ __device__ void compute_contact_grad_and_hess(
             T(1.) - P_ts_hat[0], -P_ts_hat[1],
             -P_ts_hat[2], T(1.) - P_ts_hat[3]
         };
-        const T d2ltdvt2_coeff = friction_mu * yn0 / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
-        // ∂²lt / ∂vt² = μ * γn0 * (P⊥(t̂_s) / (||v_t||_s + ε_s))
+        const T d2ltdvt2_coeff = friction_mu * yn_star / ts_coeff; // Eq. 33, ts_coeff = ts_soft_norm + epsv
+        // ∂²lt / ∂vt² = μ * γn* * (P⊥(t̂_s) / (||v_t||_s + ε_s))
         const T d2ltdvt2[4] = {
             d2ltdvt2_coeff * P_perp_ts_hat[0],
             d2ltdvt2_coeff * P_perp_ts_hat[1],
@@ -1741,7 +1819,7 @@ __global__ void contact_particle_to_grid_kernel(
     const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
-    const T* velocities,
+    const T* contact_vel_star,
     const uint32_t* contact_mpm_id,
     const T* contact_dist,
     const T* contact_normal,
@@ -1801,16 +1879,16 @@ __global__ void contact_particle_to_grid_kernel(
             weights[threadIdx.x][2][i] = T(0.5) * (fx[i] - T(0.5)) * (fx[i] - T(0.5));
         }
 
-        const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
+        const T* particle_v_star = &contact_vel_star[idx * 3];
         const T* particle_v = &contact_vel[idx * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
-        T phi0 = -contact_dist[idx];
+        T phi_star = -contact_dist[idx];
 
-        T vn_rel_W[3] = {
-            particle_vn[0] - contact_rigid_v[idx * 3 + 0],
-            particle_vn[1] - contact_rigid_v[idx * 3 + 1],
-            particle_vn[2] - contact_rigid_v[idx * 3 + 2]
+        T v_star_rel_W[3] = {
+            particle_v_star[0] - contact_rigid_v[idx * 3 + 0],
+            particle_v_star[1] - contact_rigid_v[idx * 3 + 1],
+            particle_v_star[2] - contact_rigid_v[idx * 3 + 2]
         };
         T v_rel_W[3] = {
             particle_v[0] - contact_rigid_v[idx * 3 + 0],
@@ -1823,12 +1901,12 @@ __global__ void contact_particle_to_grid_kernel(
         make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
         transpose<3, 3, T>(R_WC, R_CW);
 
-        T vn_C[3], v_next_C[3]; // in the contact local coordinate
-        matmul<3, 3, 1, T>(R_CW, vn_rel_W, vn_C);
+        T v_star_C[3], v_next_C[3]; // in the contact local coordinate
+        matmul<3, 3, 1, T>(R_CW, v_star_rel_W, v_star_C);
         matmul<3, 3, 1, T>(R_CW, v_rel_W, v_next_C);
 
         T lc_Hess_C[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-        compute_contact_grad_and_hess(phi0, dt, stiffness, epsv, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
+        compute_contact_grad_and_hess(phi_star, dt, stiffness, epsv, damping, friction_mu, v_star_C, v_next_C, lc_Hess_C, lc_Grad_C);
         
         
         // hess and grad in the world local coordinate
@@ -1960,7 +2038,7 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
     const size_t n_particles,
     const T* contact_pos,
     const T* contact_vel,
-    const T* velocities,
+    const T* contact_vel_star,
     const uint32_t* contact_mpm_id,
     const T* contact_dist,
     const T* contact_normal,
@@ -2033,15 +2111,15 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
             }
         }
 
-        const T* v_p_n = &velocities[contact_mpm_id[idx] * 3];
+        const T* v_p_star = &contact_vel_star[idx * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
-        T phi0 = -contact_dist[idx];
+        T phi_star = -contact_dist[idx];
 
-        T vn_rel_W[3] = {
-            v_p_n[0] - contact_rigid_v[idx * 3 + 0],
-            v_p_n[1] - contact_rigid_v[idx * 3 + 1],
-            v_p_n[2] - contact_rigid_v[idx * 3 + 2]
+        T v_star_rel_W[3] = {
+            v_p_star[0] - contact_rigid_v[idx * 3 + 0],
+            v_p_star[1] - contact_rigid_v[idx * 3 + 1],
+            v_p_star[2] - contact_rigid_v[idx * 3 + 2]
         };
         T v_current_rel_W[3] = {
             v_p_current[0] - contact_rigid_v[idx * 3 + 0],
@@ -2060,39 +2138,53 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
         make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
         transpose<3, 3, T>(R_WC, R_CW);
 
-        T vn_C[3], v_current_C[3], v_next_C[3]; // in the contact local coordinate
-        matmul<3, 3, 1, T>(R_CW, vn_rel_W, vn_C);
+        T v_star_C[3], v_current_C[3], v_next_C[3]; // in the contact local coordinate
+        matmul<3, 3, 1, T>(R_CW, v_star_rel_W, v_star_C);
         matmul<3, 3, 1, T>(R_CW, v_current_rel_W, v_current_C);
         matmul<3, 3, 1, T>(R_CW, v_next_rel_W, v_next_C);
 
         // lc(v_p(v_i))
-        auto lc = [&](const T* v, const T* v0) {
+        auto lc = [&](const T* v, const T* v_star) {
             // frictional component (Lagged Model)
-            // lt(v_t) = μ * γn0 * ||v_t||_s
-            const T yn0 = max(stiffness * dt * phi0 * (T(1.) - damping * v0[kZAxis]), T(0.));
-            const T lt = friction_mu * yn0 * (sqrt(v[0] * v[0] + v[1] * v[1] + epsv * epsv) - epsv); // Eq. 33
+            // lt(v_t) = μ * (γn*) * ||v_t||_s
+            const T yn_star = max(stiffness * dt * phi_star * (T(1.) - damping * v_star[kZAxis]), T(0.));
+            const T lt = friction_mu * yn_star * (sqrt(v[0] * v[0] + v[1] * v[1] + epsv * epsv) - epsv); // Eq. 33
 
             // normal component (Compliant Contact)
 
-            // vˆ = min(−ϕ0 / δt, 1 / d),
-            T v_hat = min(phi0 / dt, T(1.) / damping);
+            // we need to find the v such that −ϕ = 0
+            // Starting with −ϕ = −ϕ* - dt * (v - v*)
+            // Setting -ϕ = 0 and solving for v, we get v = (-ϕ*) / dt + v*
+            // vˆ = min(−ϕ* / δt, 1 / d),
+            T v_hat = min(phi_star / dt + v_star[kZAxis], T(1.) / damping);
 
-            // N(vn) = N+(min(vn, vˆ); f0)
+            // N(vn) = N+(min(vn, vˆ); f*)
             const T min_vn_v_hat = min(v_hat, v[kZAxis]);
 
-            // N+(vn; ϕ0) = δt k [−vn (ϕ0 + 1/2 δt vn) + d vn²/2 (ϕ0 + 2/3 δt vn)]
-            //            = δt k [−ϕ0 vn  - 1/2 δt vn² + 1/2 d ϕ0 vn² + 1/3 d δt vn³]
-            //            = δt k [1/3 d δt vn³ + 1/2 (d ϕ0 - δt) vn² - ϕ0 vn]
-            //            = ln_A vn³ + ln_B vn² + ln_C vn
+            // N+(vn; ϕ*) = ∫ n(vn; ϕ*) ∂vn
+            //            = ∫ δt fn(ϕ* + δt (vn - v*), vn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt (vn - v*))+ (1 − dvn)+ ∂vn
+
+            // when both (-ϕ* - δt (vn - v*)) > 0 and (1 − dvn) > 0 satisfied
+            //            = ∫ δt k (-ϕ* - δt (vn - v*)) (1 − dvn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt vn + δt v*) (1 − dvn) ∂vn
+            //            = ∫ δt k (-ϕ* - δt vn + δt v* + d ϕ* vn + d δt vn² - d δt v* vn) ∂vn
+
+            //            = ∫ δt k (d δt vn² + d ϕ* vn - δt vn - d δt v* vn -ϕ* + δt v*) ∂vn
+            //            = ∫ δt k [ d δt vn² + (d ϕ* - δt - d δt v*) vn -ϕ* + δt v*] ∂vn
+            //            = δt k [ 1/3 d δt vn³ + 1/2 (d ϕ* - δt - d δt v*) vn² + (-ϕ* + δt v*) vn]
+            //            = 1/3 δt² k d vn³ + 1/2 δt k (d ϕ* - δt - d δt v*) + δt k (-ϕ* + δt v*) vn
+            //            = N_A vn³ + N_B vn² + N_C vn
+
             // where N_A = 1/3 δt² k d,
-            //       N_B = 1/2 δt k (d ϕ0 - δt) 
-            //       N_C = δt k * (-ϕ0)
+            //       N_B = 1/2 δt k (d ϕ* - δt - d δt v*) 
+            //       N_C = δt k * (-ϕ* + δt v*)
             const T N_A = T(1. / 3.) * dt * dt * stiffness * damping;
-            const T N_B = T(1. / 2.) * dt * stiffness * (-damping * phi0 - dt);
-            const T N_C = dt * stiffness * phi0;
+            const T N_B = T(1. / 2.) * dt * stiffness * (-damping * phi_star - dt - damping * dt * v_star[kZAxis]);
+            const T N_C = dt * stiffness * (phi_star + dt * v_star[kZAxis]);
             const T N_vn = N_A * min_vn_v_hat * min_vn_v_hat * min_vn_v_hat 
-                       + N_B * min_vn_v_hat * min_vn_v_hat 
-                       + N_C * min_vn_v_hat;
+                         + N_B * min_vn_v_hat * min_vn_v_hat 
+                         + N_C * min_vn_v_hat;
             
             // ln(vn) = −N(vn),
             const T ln = -N_vn; 
@@ -2100,9 +2192,9 @@ __global__ void grid_to_particle_contact_term_line_search_kernel(
             return lt + ln;
         };
 
-        atomicAdd(g_E1, lc(v_next_C, vn_C));
+        atomicAdd(g_E1, lc(v_next_C, v_star_C));
         T lc_Hess_C[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-        compute_contact_grad_and_hess(phi0, dt, stiffness, epsv, damping, friction_mu, vn_C, v_next_C, lc_Hess_C, lc_Grad_C);
+        compute_contact_grad_and_hess(phi_star, dt, stiffness, epsv, damping, friction_mu, v_star_C, v_next_C, lc_Hess_C, lc_Grad_C);
         T global_dir_C[3];
         matmul<3, 3, 1, T>(R_CW, vp_search_dir_W, global_dir_C);
         atomicAdd(g_dE1, dot<3>(lc_Grad_C, global_dir_C));
@@ -2184,7 +2276,7 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     const size_t n_contacts,
     const T* contact_pos,
     const T* contact_vel,
-    const T* velocities,
+    const T* contact_vel_star,
     const T* contact_dist,
     const T* contact_normal,
     const T* contact_rigid_v,
@@ -2202,16 +2294,16 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
     if (idx < n_contacts) {
         // Use negative contact energy gradient as the impulse 
         // instead of particle mdv when accumulating impulses on rigid bodies
-        const T* particle_vn = &velocities[contact_mpm_id[idx] * 3];
+        const T* particle_v_star = &contact_vel_star[idx * 3];
         const T* particle_v = &contact_vel[idx * 3];
 
         T nhat_W[3] = {contact_normal[idx * 3 + 0], contact_normal[idx * 3 + 1], contact_normal[idx * 3 + 2]};
-        T phi0 = -contact_dist[idx];
+        T phi_star = -contact_dist[idx];
 
-        T vn_rel_W[3] = {
-            particle_vn[0] - contact_rigid_v[idx * 3 + 0],
-            particle_vn[1] - contact_rigid_v[idx * 3 + 1],
-            particle_vn[2] - contact_rigid_v[idx * 3 + 2]
+        T v_star_rel_W[3] = {
+            particle_v_star[0] - contact_rigid_v[idx * 3 + 0],
+            particle_v_star[1] - contact_rigid_v[idx * 3 + 1],
+            particle_v_star[2] - contact_rigid_v[idx * 3 + 2]
         };
         T v_rel_W[3] = {
             particle_v[0] - contact_rigid_v[idx * 3 + 0],
@@ -2224,12 +2316,12 @@ __global__ void apply_contact_impulse_to_rigid_bodies(
         make_from_one_unit_vector(nhat_W, kZAxis, R_WC);
         transpose<3, 3, T>(R_WC, R_CW);
 
-        T vn_C[3], v_next_C[3]; // in the contact local coordinate
-        matmul<3, 3, 1, T>(R_CW, vn_rel_W, vn_C);
+        T v_star_C[3], v_next_C[3]; // in the contact local coordinate
+        matmul<3, 3, 1, T>(R_CW, v_star_C, v_star_C);
         matmul<3, 3, 1, T>(R_CW, v_rel_W, v_next_C);
 
         T lc_Hess_C_unused[9], lc_Grad_C[3]; // hess and grad in the contact local coordinate
-        compute_contact_grad_and_hess(phi0, dt, stiffness, epsv, damping, friction_mu, vn_C, v_next_C, lc_Hess_C_unused, lc_Grad_C);
+        compute_contact_grad_and_hess(phi_star, dt, stiffness, epsv, damping, friction_mu, v_star_C, v_next_C, lc_Hess_C_unused, lc_Grad_C);
         
         
         // grad in the world local coordinate

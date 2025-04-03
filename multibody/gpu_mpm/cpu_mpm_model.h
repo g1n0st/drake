@@ -54,6 +54,7 @@ struct MpmConfigParams {
     T contact_friction_mu {static_cast<T>(0.0)};
     int mpm_bc {-1};
     bool ignore_face_contact {false};
+    T margin {static_cast<T>(1.0)};
 };
 
 template<typename T = config::GpuT>
