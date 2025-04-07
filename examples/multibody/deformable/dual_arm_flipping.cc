@@ -44,7 +44,7 @@ DEFINE_string(contact_approximation, "sap",
               "are: 'sap', 'lagged', and 'similar'.");
 
 DEFINE_double(stiffness, 200.0, "Contact Stiffness.");
-DEFINE_double(friction, 2.0, "Contact Friction.");
+DEFINE_double(friction, 3.0, "Contact Friction.");
 DEFINE_double(damping, 1.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
@@ -235,7 +235,7 @@ class IiwaController : public drake::systems::LeafSystem<double> {
         } else if (T <= 4.0) {
             dX.setZero(); // hold
         } else if (T <= 6.0) {
-            dX(5) = +0.0025 * rate / 2.0;  // up
+            dX(5) = +0.003 * rate / 2.0;  // up
         }
     }
 
@@ -301,7 +301,7 @@ int do_main() {
   multibody::Parser left_parser(&plant, "left");
   multibody::Parser right_parser(&plant, "right");
 
-  const std::string iiwa_filename = PackageMap{}.ResolveUrl("package://drake_models/iiwa_description/sdf/iiwa7_no_collision.sdf");
+  const std::string iiwa_filename = PackageMap{}.ResolveUrl("package://drake_models/iiwa_description/sdf/iiwa7_with_box_collision.sdf");
   auto left_iiwa = left_parser.AddModels(iiwa_filename)[0];
   auto right_iiwa = right_parser.AddModels(iiwa_filename)[0];
 
