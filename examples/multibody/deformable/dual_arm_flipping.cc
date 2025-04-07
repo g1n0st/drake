@@ -374,15 +374,15 @@ int do_main() {
 
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  AddCloth(&deformable_model, 2, 0.01, -0.2, 0.25);
-  // AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt_real.obj", 0.05, 0.05, 0.05, 2.0);
+  // AddCloth(&deformable_model, 2, 0.01, -0.2, 0.25);
+  AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt_real.obj", 0.05, 0.05, 0.05, 2.0);
   // deformable_model.RegisterMpmParticle({Vector3d(0)}, {Vector3d(0)}, 1.0);
 
   MpmConfigParams mpm_config;
   mpm_config.domain_bits = 8;
   mpm_config.grid_block_spacing = 2.0;
   mpm_config.density = 1000.0;
-  mpm_config.cloth_K = 100000.0;
+  mpm_config.cloth_K = 1000000.0;
   mpm_config.rpic_damping = 0.5;
   mpm_config.youngs_modules = 4e5;
   mpm_config.poisson_ratio = 0.3;
