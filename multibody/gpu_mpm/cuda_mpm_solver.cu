@@ -149,6 +149,7 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state, bool enforce_bc_only) co
         GRID_OP_WITH_BC(114, true) // bagging box
         GRID_OP_WITH_BC(115, true) // bagging cloth
         GRID_OP_WITH_BC(222, true) // folding
+        GRID_OP_WITH_BC(777, true) // flipping
         GRID_OP_WITH_BC(-1, true)
     }
     else {
@@ -161,6 +162,7 @@ void GpuMpmSolver<T>::UpdateGrid(GpuMpmState<T> *state, bool enforce_bc_only) co
         GRID_OP_WITH_BC(114, false) // bagging box
         GRID_OP_WITH_BC(115, false) // bagging cloth
         GRID_OP_WITH_BC(222, false) // folding
+        GRID_OP_WITH_BC(777, false) // flipping
         GRID_OP_WITH_BC(-1, false)
     }
 }
@@ -231,6 +233,11 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
     const auto &n_contacts = state->num_contacts();
     if (!n_contacts) return;
 
+    T friction_mu = state->config().contact_friction_mu;
+    if (state->times_elapsed >= 6.0 && state->times_elapsed <= 13.5) {
+        friction_mu = 0.0;
+    }
+
     const uint32_t &touched_blocks_cnt = state->grid_touched_cnt_host();
     const uint32_t &touched_cells_cnt = touched_blocks_cnt * state->grid_config().G_BLOCK_VOLUME;
 
@@ -241,7 +248,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
         ));
 
     // If we don't converge in 2000 iterations, we probably will never converge anyway...    
-    const int max_newton_iterations = 2000;
+    const int max_newton_iterations = 20;
     const T kRelTol = 5e-2;
     // Set the absolute tolerance close to machine epsilon so that we almost always exit based on the relative tolerance.
     const T kAbsTol = 16 * std::numeric_limits<T>::epsilon();
@@ -297,7 +304,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
             state->grid_Hess(),
             state->grid_Grad(),
             dt,
-            state->config().contact_friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping)
+            friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping)
             ));
     
         CUDA_SAFE_CALL((
@@ -331,7 +338,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
                 global_dE1_d,
                 global_d2E1_d,
                 dt,
-                state->config().contact_friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping,
+                friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping,
                 current_alpha)
                 ));
             CUDA_SAFE_CALL((
@@ -501,7 +508,7 @@ void GpuMpmSolver<T>::UpdateContact(GpuMpmState<T> *state, const T& dt) const {
         state->contact_mpm_id(), state->contact_rigid_id(), 
         state->contact_rigid_p_WB(), state->F_Bq_W_tau(), state->F_Bq_W_f(),
         dt,
-        state->config().contact_friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping)
+        friction_mu, state->config().contact_stiffness, state->config().contact_epsv, state->config().contact_damping)
         ));
 }
 

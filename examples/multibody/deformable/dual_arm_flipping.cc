@@ -30,7 +30,7 @@
 #include "drake/examples/multibody/deformable/mpm_cloth_shared.h"
 
 DEFINE_bool(write_files, true, "Enable dumping MPM data to files.");
-DEFINE_double(simulation_time, 9.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 16.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
 DEFINE_double(res, 50, "Cloth Res");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
@@ -154,12 +154,13 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
   }
   void CalcDesiredState(const Context<double>& context,
                         drake::systems::BasicVector<double>* output) const {
+    const double T = context.get_time();
     if (is_left_) {
-        if (context.get_time() < 3.5) {
+        if (T < 3.5) {
         output->set_value(open_state_);
-        } else if (context.get_time() < 5.0) {
+        } else if (T < 5.0) {
         // gripper gripping from 0.5 to 0.8, then hold until 2.2
-        double t = std::max(std::min((context.get_time() - 3.5) / (0.2), 1.0), 0.0);
+        double t = std::max(std::min((T - 3.5) / (0.2), 1.0), 0.0);
         Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
                                     std::min(t, 1.0) * closed_state_;
         output->set_value(q_and_v);
@@ -168,7 +169,23 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
         output->set_value(closed_state_);
         }
     } else {
-        output->set_value(closed_state_);
+        if (T < 9.0) {
+            output->set_value(closed_state_);
+        } else if (T < 9.5) {
+            double t = std::max(std::min((T - 9.0) / (0.5), 1.0), 0.0);
+            Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * closed_state_ +
+                                        std::min(t, 1.0) * open_state_;
+            output->set_value(q_and_v);
+        } else if (T < 10.5) {
+            output->set_value(open_state_);
+        } else if (T < 11.0) {
+            double t = std::max(std::min((T - 10.5) / (0.5), 1.0), 0.0);
+            Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
+                                        std::min(t, 1.0) * closed_state_;
+            output->set_value(q_and_v);
+        } else {
+            output->set_value(closed_state_);
+        }
     }
   }
 
@@ -252,8 +269,18 @@ class IiwaController : public drake::systems::LeafSystem<double> {
             dX(0) = -0.015 * rate;  // turn
         } else if (T < 6.0) {
             // Do Nothing
-        } else if (T < 8.0) {
+        } else if (T < 8.5) {
             dX(4) = +0.003 * rate;  // right
+        } else if (T < 10.5) {
+            dX(5) = 0.002 * rate / 2.0;  // move up
+            dX(0) = +0.011 * rate / 2.0;  // turn
+        } else if (T < 11.0) {
+            // Grasp
+        } else if (T < 13.0) {
+            dX(5) = -0.002 * rate / 2.0;  // move down
+            dX(0) = -0.011 * rate / 2.0;  // turn
+        } else if (T < 15.5) {
+            dX(4) = -0.003 * rate;  // left
         }
     }
 
@@ -347,8 +374,8 @@ int do_main() {
 
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  // AddCloth(&deformable_model, FLAGS_res, 0.01, -0.2, 0.25);
-  AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt_real.obj", 0.05, 0.05, 0.05, 2.0);
+  AddCloth(&deformable_model, 2, 0.01, -0.2, 0.25);
+  // AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt_real.obj", 0.05, 0.05, 0.05, 2.0);
   // deformable_model.RegisterMpmParticle({Vector3d(0)}, {Vector3d(0)}, 1.0);
 
   MpmConfigParams mpm_config;
@@ -367,9 +394,7 @@ int do_main() {
   mpm_config.contact_stiffness = FLAGS_stiffness;
   mpm_config.contact_damping = FLAGS_damping;
   mpm_config.contact_friction_mu = FLAGS_friction;
-  if (use_mpm_ground) {
-    mpm_config.mpm_bc = 222;
-  }
+  mpm_config.mpm_bc = 777;
   deformable_model.SetMpmConfig(std::move(mpm_config));
 
   double Kp = 1e6;

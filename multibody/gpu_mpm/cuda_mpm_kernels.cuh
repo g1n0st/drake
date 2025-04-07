@@ -994,6 +994,34 @@ __global__ void update_grid_kernel(
                     }
                 }
 
+                // flipping
+                else if constexpr (MPM_BOUNDARY_CONDITION == 777) {
+                    normal[0] = T(0.);
+                    normal[1] = T(0.);
+                    normal[2] = T(1.);
+                    dist = pos[2] - T(0.02);
+                    if (dist < 0) {
+                        inside = true;
+                        diff_vel[0] = -g_vel[0];
+                        diff_vel[1] = -g_vel[1];
+                        diff_vel[2] = -g_vel[2];
+                        dotnv = dot<3>(diff_vel, normal);
+                    } else if (times_elapsed > 6.0) {
+                        dist = T(0.32) - pos[2];
+                        if (dist < 0) {
+                            inside = true;
+                            fixed = true;
+                            diff_vel[0] = -g_vel[0];
+                            diff_vel[1] = -g_vel[1];
+                            diff_vel[2] = -g_vel[2];
+                            normal[0] = T(0.);
+                            normal[1] = T(0.);
+                            normal[2] = T(-1.);
+                            dotnv = dot<3>(diff_vel, normal);
+                        }
+                    }
+                }
+
                 // four-corner suspension used for bagging demo
                 else if constexpr (MPM_BOUNDARY_CONDITION == 3) {
                     fixed = true;
