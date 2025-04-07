@@ -30,7 +30,7 @@
 #include "drake/examples/multibody/deformable/mpm_cloth_shared.h"
 
 DEFINE_bool(write_files, true, "Enable dumping MPM data to files.");
-DEFINE_double(simulation_time, 17.0, "Desired duration of the simulation [s].");
+DEFINE_double(simulation_time, 9.0, "Desired duration of the simulation [s].");
 DEFINE_int32(testcase, 0, "Test Case.");
 DEFINE_double(res, 50, "Cloth Res");
 DEFINE_double(realtime_rate, 1.0, "Desired real time rate.");
@@ -44,7 +44,7 @@ DEFINE_string(contact_approximation, "sap",
               "are: 'sap', 'lagged', and 'similar'.");
 
 DEFINE_double(stiffness, 200.0, "Contact Stiffness.");
-DEFINE_double(friction, 0.8, "Contact Friction.");
+DEFINE_double(friction, 2.0, "Contact Friction.");
 DEFINE_double(damping, 1.0,
     "Hunt and Crossley damping for the deformable body, only used when "
     "'contact_approximation' is set to 'lagged' or 'similar' [s/m].");
@@ -94,11 +94,11 @@ RigidTransformd FromXyzRpyDegree(const Vector3<double>& rpy_deg,
       math::RollPitchYaw<double>(rpy_deg * 3.1415926 / 180.0), p);
 }
 
-class LeftGripperRotator : public systems::LeafSystem<double> {
+class GripperRotator : public systems::LeafSystem<double> {
  public:
-  LeftGripperRotator() {
+  GripperRotator(bool is_left): is_left_(is_left) {
     this->DeclareVectorOutputPort("desired state", BasicVector<double>(7),
-                                   &LeftGripperRotator::CalcDesiredState);
+                                   &GripperRotator::CalcDesiredState);
     robot_state_index_ =
         this->DeclareVectorInputPort("robot_state", 7).get_index();
   }
@@ -114,10 +114,28 @@ class LeftGripperRotator : public systems::LeafSystem<double> {
     unused(t);
     const auto &robot_state = robot_state_input_port().Eval(context);
     VectorX<double> dX = Eigen::VectorXd::Zero(7);
+
+    // left rotator
+    if (is_left_) {
+
+    }
+
+    // right rotator
+    else {
+        if (t < 5.0) {
+
+        }
+        else if ((t >= 5.0) && (t <= 6.0)) {
+            dX[6] = (t - 5.0) * 1.5708;
+        } else {
+            dX[6] = 1.5708;
+        }
+    }
     output->set_value(dX + robot_state);
   }
 
   int robot_state_index_{};
+  bool is_left_;
 };
 
 class HandPoseController : public drake::systems::LeafSystem<double> {
@@ -128,8 +146,8 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
     open_state_(0) = -0.08;
     open_state_(1) = 0.08;
     closed_state_ = Eigen::VectorXd::Zero(4);
-    closed_state_(0) = -0.004;
-    closed_state_(1) = 0.004;
+    closed_state_(0) = -0.003;
+    closed_state_(1) = 0.003;
     this->DeclareVectorOutputPort(
         "WsgDesiredState", drake::systems::BasicVector<double>(size_),
         &HandPoseController::CalcDesiredState, {this->time_ticket()});
@@ -137,11 +155,11 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
   void CalcDesiredState(const Context<double>& context,
                         drake::systems::BasicVector<double>* output) const {
     if (is_left_) {
-        if (context.get_time() < 0.5) {
+        if (context.get_time() < 3.5) {
         output->set_value(open_state_);
-        } else if (context.get_time() < 2.0) {
+        } else if (context.get_time() < 5.0) {
         // gripper gripping from 0.5 to 0.8, then hold until 2.2
-        double t = std::max(std::min((context.get_time() - 0.5) / (0.3), 1.0), 0.0);
+        double t = std::max(std::min((context.get_time() - 3.5) / (0.2), 1.0), 0.0);
         Eigen::VectorXd q_and_v = std::max(1.0 - t, 0.0) * open_state_ +
                                     std::min(t, 1.0) * closed_state_;
         output->set_value(q_and_v);
@@ -150,7 +168,7 @@ class HandPoseController : public drake::systems::LeafSystem<double> {
         output->set_value(closed_state_);
         }
     } else {
-        output->set_value(open_state_);
+        output->set_value(closed_state_);
     }
   }
 
@@ -205,26 +223,37 @@ class IiwaController : public drake::systems::LeafSystem<double> {
     double rate = plant_.time_step() / 0.01;
     dX.setZero();
 
+    const double T = context.get_time();
     // left arm
     if (is_left_) {
-        if ((context.get_time() >= 0.0) && (context.get_time() <= 0.5)) {
-            dX(4) = -0.004 * rate;  // left
-            dX(5) = -0.0051 * rate;  // down
-        } else if (context.get_time() <= 1.0) {
+        if (T <= 1.5) {
+
+        }
+        else if ((T >= 1.5) && (T <= 3.5)) {
+            dX(4) = -0.004 * rate / 4.0;  // left
+            dX(5) = -0.00527 * rate / 4.0;  // down
+        } else if (T <= 4.0) {
             dX.setZero(); // hold
-        } else if (context.get_time() <= 1.8) {
-            dX(5) = +0.0025 * rate;  // up
+        } else if (T <= 6.0) {
+            dX(5) = +0.0025 * rate / 2.0;  // up
         }
     }
 
     // right arm
     else {
-        if ((context.get_time() >= 0.0) && (context.get_time() <= 0.5)) {
-            dX(4) = -0.004 * rate;  // left
-        } else if (context.get_time() <= 1.5) {
-            dX(5) = -0.0034 * rate;  // move
+        if (T <= 1.5) {
+
+        }
+        else if ((T >= 1.5) && (T <= 3.5)) {
+            dX(4) = -0.004 * rate / 4.0;  // left
+        } else if (T <= 4.5) {
+            dX(5) = -0.0037 * rate;  // move down
             dX(4) = -0.0018 * rate; // move, grasp the edge of the cloth
-            dX(0) = -0.01 * rate;  // turn
+            dX(0) = -0.015 * rate;  // turn
+        } else if (T < 6.0) {
+            // Do Nothing
+        } else if (T < 8.0) {
+            dX(4) = +0.003 * rate;  // right
         }
     }
 
@@ -319,17 +348,19 @@ int do_main() {
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
   // AddCloth(&deformable_model, FLAGS_res, 0.01, -0.2, 0.25);
-  AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt_10k.obj", 0.05, -0.05, -0.05, 1.5);
+  AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt_real.obj", 0.05, 0.05, 0.05, 2.0);
   // deformable_model.RegisterMpmParticle({Vector3d(0)}, {Vector3d(0)}, 1.0);
 
   MpmConfigParams mpm_config;
+  mpm_config.domain_bits = 8;
+  mpm_config.grid_block_spacing = 2.0;
   mpm_config.density = 1000.0;
   mpm_config.cloth_K = 100000.0;
-  mpm_config.rpic_damping = 0.2;
+  mpm_config.rpic_damping = 0.5;
   mpm_config.youngs_modules = 4e5;
   mpm_config.poisson_ratio = 0.3;
   mpm_config.cloth_thickness = 0.001;
-  mpm_config.initial_ignore_contact_period = 0.5;
+  mpm_config.initial_ignore_contact_period = 3.5;
 
   mpm_config.substep_dt = FLAGS_substep;
   mpm_config.write_files = FLAGS_write_files;
@@ -443,7 +474,8 @@ int do_main() {
       builder.template AddSystem<drake::systems::ConstantVectorSource>(
           Eigen::VectorXd::Zero(nv_iiwa));
 
-  auto left_gripper_rotator = builder.template AddSystem<LeftGripperRotator>();
+  auto left_gripper_rotator = builder.template AddSystem<GripperRotator>(true);
+  auto right_gripper_rotator = builder.template AddSystem<GripperRotator>(false);
   builder.Connect(plant.get_state_output_port(left_iiwa),
                   left_iiwa_controller->robot_state_input_port());
   builder.Connect(plant.get_state_output_port(right_iiwa),
@@ -460,10 +492,12 @@ int do_main() {
 
   builder.Connect(left_diff_ik->GetOutputPort("joint_positions"),
                   left_gripper_rotator->GetInputPort("robot_state"));
+  builder.Connect(right_diff_ik->GetOutputPort("joint_positions"),
+                  right_gripper_rotator->GetInputPort("robot_state"));
 
   builder.Connect(left_gripper_rotator->get_output_port(),
                   left_mux->get_input_port(0));
-  builder.Connect(right_diff_ik->GetOutputPort("joint_positions"),
+  builder.Connect(right_gripper_rotator->get_output_port(),
                   right_mux->get_input_port(0));
   builder.Connect(zero_vs->get_output_port(), left_mux->get_input_port(1));
   builder.Connect(zero_vs->get_output_port(), right_mux->get_input_port(1));

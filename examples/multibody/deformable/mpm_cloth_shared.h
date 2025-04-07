@@ -146,11 +146,19 @@ using Eigen::VectorXd;
     indices.push_back(mesh.triangles()[i].vertex(1));
     indices.push_back(mesh.triangles()[i].vertex(2));
   }
+  double x0 = 100.0, x1 = -100.0, y0 = 100.0, y1 = -100.0, z0 = 100.0, z1 = -100.0;
   for (int i = 0; i < mesh.num_vertices(); ++i) {
     inital_pos.emplace_back((mesh.vertices()[i][0] - 0.5) * scale + 0.5 + x_offset, 
                             (mesh.vertices()[i][2] - 0.5) * scale + 0.5 + y_offset, 
                             (mesh.vertices()[i][1] - 0.2) * scale + 0.2 + z_offset); // swap y-axis and z-axis
+    x0 = std::min(x0, inital_pos.back()[0]);
+    x1 = std::max(x1, inital_pos.back()[0]);
+    y0 = std::min(y0, inital_pos.back()[1]);
+    y1 = std::max(y1, inital_pos.back()[1]);
+    z0 = std::min(z0, inital_pos.back()[2]);
+    z1 = std::max(z1, inital_pos.back()[2]);
     inital_vel.emplace_back(0., 0., 0.);
   }
+  printf("[%.3lf %.3lf %.3lf] - [%.3lf %.3lf %.3lf]\n", x0, y0, z0, x1, y1, z1);
   deformable_model->RegisterMpmCloth(inital_pos, inital_vel, indices);
 }
