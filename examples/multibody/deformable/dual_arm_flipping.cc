@@ -240,6 +240,27 @@ class IiwaController : public drake::systems::LeafSystem<double> {
     double rate = plant_.time_step() / 0.01;
     dX.setZero();
 
+    // time = 0s
+    // Left State: -3.1323 0.0302 -3.1415 0.5512 0.4095 0.5067
+    // Right State: 3.1323 0.0302 3.1415 0.5512 0.1705 0.5067
+    if (is_left_) {
+        printf("Left State: %.4lf %.4lf %.4lf %.4lf %.4lf %.4lf\n", 
+        current_state_values(0), 
+        current_state_values(1), 
+        current_state_values(2), 
+        current_state_values(3), 
+        current_state_values(4), 
+        current_state_values(5));
+    } else {
+        printf("Right State: %.4lf %.4lf %.4lf %.4lf %.4lf %.4lf\n", 
+        current_state_values(0), 
+        current_state_values(1), 
+        current_state_values(2), 
+        current_state_values(3), 
+        current_state_values(4), 
+        current_state_values(5));
+    }
+
     const double T = context.get_time();
     // left arm
     if (is_left_) {
@@ -374,8 +395,8 @@ int do_main() {
 
   // mpm stuff
   DeformableModel<double>& deformable_model = plant.mutable_deformable_model();
-  // AddCloth(&deformable_model, 2, 0.01, -0.2, 0.25);
-  AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt_real.obj", 0.05, 0.05, 0.05, 2.0);
+  AddCloth(&deformable_model, 2, 0.01, -0.2, 0.25);
+  // AddClothFromFile(&deformable_model, "/home/changyu/drake/tshirt_real.obj", 0.05, 0.05, 0.05, 2.0);
   // deformable_model.RegisterMpmParticle({Vector3d(0)}, {Vector3d(0)}, 1.0);
 
   MpmConfigParams mpm_config;
