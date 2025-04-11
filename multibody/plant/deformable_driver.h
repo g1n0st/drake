@@ -244,7 +244,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
         mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
         mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
-        mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt, false, false);
+        mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt, false, true);
         mpm_solver_.UpdateGrid(&mutable_mpm_state);
         mpm_solver_.UpdateGrid(&mutable_mpm_state, /*ENFORCE_BC_ONLY=*/true);
         mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
@@ -255,6 +255,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
       mpm_solver_.ParticleToGrid(&mutable_mpm_state, dt, true, false);
       mpm_solver_.UpdateGrid(&mutable_mpm_state);
+      mpm_solver_.UpdateGrid(&mutable_mpm_state, /*ENFORCE_BC_ONLY=*/true);
 
       // NOTE (changyu): update contact information at each substep for strong coupling scheme
       CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs, 
