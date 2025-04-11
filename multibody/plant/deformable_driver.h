@@ -263,7 +263,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         deformable_model_->cpu_mpm_model().config.margin);
       mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
       mpm_solver_.UpdateContact(&mutable_mpm_state, dt);
-      mpm_solver_.UpdateGrid(&mutable_mpm_state, /*ENFORCE_BC_ONLY=*/true);
       mpm_solver_.ContactGridToParticle(&mutable_mpm_state, dt);
       mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, dt, true);
       FinalizeExternalContactForces(&mutable_mpm_state, dt);

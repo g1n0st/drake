@@ -1585,15 +1585,15 @@ __global__ void grid_to_particle_kernel(
                         new_v[0] += weight * g_v[0];
                         new_v[1] += weight * g_v[1];
                         new_v[2] += weight * g_v[2];
+                    } else {
+                        new_v[0] += weight * g_v[0];
+                        new_v[1] += weight * g_v[1];
+                        new_v[2] += weight * g_v[2];
                         if constexpr (POST_CONTACT) {
                             old_v[0] += weight * g_v_star[target_cell_index * 3 + 0];
                             old_v[1] += weight * g_v_star[target_cell_index * 3 + 1];
                             old_v[2] += weight * g_v_star[target_cell_index * 3 + 2];
                         }
-                    } else {
-                        new_v[0] += weight * g_v[0];
-                        new_v[1] += weight * g_v[1];
-                        new_v[2] += weight * g_v[2];
                         // printf("weight=%lf, g_v=(%lf %lf %lf)\n", weight, g_v[0], g_v[1], g_v[2]);
 
                         // printf("i=%d j=%d k=%d\n", i, j, k);

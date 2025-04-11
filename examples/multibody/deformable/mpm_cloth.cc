@@ -209,6 +209,7 @@ int do_main() {
         double z = (FLAGS_testcase == 100 || FLAGS_testcase == 111) ? 0.051 : (FLAGS_testcase == 3? 0.26 : 0.3 + k * 0.1);
         if (FLAGS_testcase == 2) z = 0.27;
         if (FLAGS_testcase == 5) z = 0.18;
+        if (FLAGS_testcase == 123) z = 0.049;
         double x = (0.5 - 0.5 * l) + i * dx + k * 0.01;
         double y = (0.5 - 0.5 * l) + j * dx + k * 0.01;
         inital_pos.emplace_back(x, y, z);
