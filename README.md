@@ -65,3 +65,19 @@ bazel run allegro_bagging_cloth --config omp --
 ``` bash
 bazel run dual_arm_flipping --config omp --
 ```
+
+## Bibtex
+
+If you use this code in your research, please use the following citation:
+
+``` bibtex
+@misc{yu2025convexformulationmaterialpoints,
+      title={A Convex Formulation of Material Points and Rigid Bodies with GPU-Accelerated Async-Coupling for Interactive Simulation}, 
+      author={Chang Yu and Wenxin Du and Zeshun Zong and Alejandro Castro and Chenfanfu Jiang and Xuchen Han},
+      year={2025},
+      eprint={2503.05046},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2503.05046}, 
+}
+```
