@@ -1,0 +1,90 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="rolling_pin">
+    <link name="handle">
+      <inertial>
+        <mass>0.3</mass> <!-- density 500 kg/m^3 -->
+        <inertia>
+          <ixx>6.28e-3</ixx>
+          <iyy>6.28e-3</iyy>
+          <izz>6.0e-5</izz>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="handle_visual">
+        <geometry>
+          <cylinder>
+            <radius>0.02</radius>
+            <length>0.5</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <diffuse>0.63 0.47 0.21 1.0</diffuse>
+        </material>
+      </visual>
+      <collision name="handle_collision">
+        <geometry>
+          <cylinder>
+            <radius>0.02</radius>
+            <length>0.5</length>
+          </cylinder>
+        </geometry>
+        <drake:proximity_properties>
+          <drake:mu_dynamic>1.5</drake:mu_dynamic>
+          <drake:mu_static>1.5</drake:mu_static>
+          <drake:mesh_resolution_hint>0.01</drake:mesh_resolution_hint>
+          <drake:hydroelastic_modulus>1e6</drake:hydroelastic_modulus>
+          <drake:hunt_crossley_dissipation>5</drake:hunt_crossley_dissipation>
+          <drake:compliant_hydroelastic/>
+        </drake:proximity_properties>
+      </collision>
+    </link>
+    <link name="roller">
+      <inertial>
+        <mass>0.27</mass> <!-- density 500 kg/m^3 -->
+        <inertia>
+          <ixx>6.28e-3</ixx>
+          <iyy>6.28e-3</iyy>
+          <izz>1.7e-4</izz>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="roller_visual">
+        <geometry>
+          <mesh>
+            <uri>roller.obj</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="roller_collision">
+        <geometry>
+          <cylinder>
+            <radius>0.03</radius>
+            <length>0.35</length>
+          </cylinder>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="pin" type="revolute">
+      <!-- Pose of the joint frame in the roller's frame (located at the point
+           mass) -->
+      <pose>0 0 0 0 0 0</pose>
+      <parent>handle</parent>
+      <child>roller</child>
+      <axis>
+        <xyz>0.0 0.0 1.0</xyz>
+        <limit>
+          <!-- The pin joint is not actuated. -->
+          <effort>0</effort>
+        </limit>
+        <dynamics>
+          <damping>0.0004</damping>
+        </dynamics>
+      </axis>
+    </joint>
+  </model>
+</sdf>

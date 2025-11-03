@@ -232,8 +232,7 @@ lcmt_viewer_geometry_data MakeDeformableSurfaceMesh(
   const Eigen::Matrix<unsigned int, Eigen::Dynamic, 3, Eigen::RowMajor>&
       triangles = render_mesh.indices;
   const int num_tris = render_mesh.indices.rows();
-  const int num_verts = render_mesh.positions.rows();
-  DRAKE_DEMAND(3 * num_verts == vertex_positions.size());
+  const int num_verts = vertex_positions.size() / 3;
   const int header_floats = 2;
   geometry_data.num_float_data = header_floats + 3 * num_tris + 3 * num_verts;
   geometry_data.float_data.resize(geometry_data.num_float_data);
@@ -520,6 +519,11 @@ DrakeVisualizer<T>::DrakeVisualizer(lcm::DrakeLcmInterface* lcm,
   query_object_input_port_ =
       this->DeclareAbstractInputPort("query_object", Value<QueryObject<T>>())
           .get_index();
+  
+  // NOTE (changyu): in DrakeVisualizer, there is no knowledge of multibody::gmpm::config::GpuT,
+  // Restrictly using float here.
+  mpm_input_port_ = this->DeclareAbstractInputPort("mpm", 
+    Value<multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>>()).get_index();
 
   // These cache entries depend on *nothing*.
   frame_data_cache_index_ =
@@ -554,8 +558,21 @@ EventStatus DrakeVisualizer<T>::SendGeometryMessage(
   SendDrawNonDeformableMessage(query_object, params_,
                                EvalDynamicFrameData(context),
                                ExtractDoubleOrThrow(context.get_time()), lcm_);
-  SendDeformableGeometriesMessage(
+  
+  if (params_.show_mpm == DrakeVisualizerParams::ShowMpmOpt::kClothMpm) {
+    const auto& mpm_object = 
+        mpm_input_port().template Eval<multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>>(context);
+    SendMpmMessage(
+        mpm_object, params_, ExtractDoubleOrThrow(context.get_time()), lcm_);
+  } else if (params_.show_mpm == DrakeVisualizerParams::ShowMpmOpt::kParticleMpm) {
+    const auto& mpm_object = 
+        mpm_input_port().template Eval<multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>>(context);
+    SendParticleMpmMessage(
+        mpm_object, params_, ExtractDoubleOrThrow(context.get_time()), lcm_);
+  } else {
+    SendDeformableGeometriesMessage(
       query_object, params_, ExtractDoubleOrThrow(context.get_time()), lcm_);
+  }
 
   return EventStatus::Succeeded();
 }
@@ -720,6 +737,55 @@ void DrakeVisualizer<T>::SendDeformableGeometriesMessage(
   message.num_geom = message.geom.size();
   std::string channel =
       MakeLcmChannelNameForRole("DRAKE_VIEWER_DEFORMABLE", params);
+  lcm::Publish(lcm, channel, message, time);
+}
+
+template <typename T>
+void DrakeVisualizer<T>::SendMpmMessage(
+    const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>& mpm_object, const DrakeVisualizerParams& params,
+    double time, lcm::DrakeLcmInterface* lcm) {
+  lcmt_viewer_link_data message{};
+  message.name = "mpm_object";
+  message.robot_num = 0;  // robot_num = 0 corresponds to world frame.
+  
+  // mesh indices
+  size_t face_count = mpm_object.indices.size() / 3;
+  Eigen::Map<const Eigen::Matrix<int, Eigen::Dynamic, 3, Eigen::RowMajor>> mapped_vec(mpm_object.indices.data(), face_count, 3);
+  internal::RenderMesh mpm_render_mesh;
+  mpm_render_mesh.indices = mapped_vec.cast<unsigned int>();
+
+  // mesh vertices
+  Eigen::Matrix<T, Eigen::Dynamic, 1> vertex_position(mpm_object.pos.size() * 3);
+  for (size_t i = 0; i < mpm_object.pos.size(); ++i) {
+      vertex_position(i * 3 + 0) = static_cast<double>(mpm_object.pos[i].x());
+      vertex_position(i * 3 + 1) = static_cast<double>(mpm_object.pos[i].y());
+      vertex_position(i * 3 + 2) = static_cast<double>(mpm_object.pos[i].z());
+  }
+
+  message.geom.emplace_back(MakeDeformableSurfaceMesh(
+          "MPM", vertex_position, mpm_render_mesh,
+          params.default_color));
+  message.num_geom = 1;
+  std::string channel = MakeLcmChannelNameForRole("DRAKE_VIEWER_DEFORMABLE", params);
+  lcm::Publish(lcm, channel, message, time);
+}
+
+template <typename T>
+void DrakeVisualizer<T>::SendParticleMpmMessage(
+    const multibody::gmpm::MpmPortData<multibody::gmpm::config::GpuT>& mpm_object, const DrakeVisualizerParams& params,
+    double time, lcm::DrakeLcmInterface* lcm) {
+  perception::PointCloud pcd(mpm_object.pos.size());
+  for (size_t i = 0; i < mpm_object.pos.size(); ++i) {
+    pcd.mutable_xyz(i) = mpm_object.pos[i].template cast<float>();
+  }
+
+  // cloud.mutable_rgbs() = (255.0 * (m2.array() + 0.0) / 2.0).cast<uint8_t>(); // if do not do this, color is black
+  lcmt_point_cloud message = ConvertPointCloudToMessage(pcd, time);
+  /* Note: the channel name must be "DRAKE_POINT_CLOUD.**" otherwise it would not be 
+  recognized by meldis. This is due to a special setting of handle in meldis. Here 
+  we just keep meldis unchanged, and set our channel name accordingly.*/
+  std::string channel = MakeLcmChannelNameForRole("DRAKE_POINT_CLOUD",
+                                                  params);
   lcm::Publish(lcm, channel, message, time);
 }
 

@@ -18,6 +18,11 @@
 #include "drake/multibody/plant/discrete_contact_data.h"
 #include "drake/multibody/plant/discrete_contact_pair.h"
 #include "drake/systems/framework/context.h"
+#include "drake/geometry/geometry_state.h"
+
+// NOTE (changyu): GPU MPM solver header files
+#include "drake/multibody/contact_solvers/contact_solver_results.h"
+#include "multibody/gpu_mpm/cuda_mpm_solver.cuh"
 
 namespace drake {
 namespace multibody {
@@ -108,6 +113,162 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
                    const DiscreteUpdateManager<T>* manager);
 
   ~DeformableDriver() override;
+
+  // NOTE (changyu): add for GPU MPM
+  bool ExistsMpmBody() const { return deformable_model_->ExistsMpmModel(); }
+  
+  void CalcMpmContactPairs(
+      const systems::Context<T>& context, gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state,
+      gmpm::MpmParticleContactPairs<gmpm::config::GpuT>* result,
+      const bool ignore_face_contact) const {
+    using GpuT = gmpm::config::GpuT;
+    DRAKE_ASSERT(result != nullptr);
+    long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    result->clear();
+    const geometry::QueryObject<T>& query_object =
+        manager_->plant().get_geometry_query_input_port().template Eval<geometry::QueryObject<T>>(context);
+    
+    // NOTE (changyu): make sure the pose is up-to-date at the time performing the distance query.
+    query_object.FullPoseUpdate();
+    const MultibodyTreeTopology& tree_topology = manager_->internal_tree().get_topology();
+
+    // loop over each particle
+#if defined(_OPENMP)
+#pragma omp parallel for num_threads(16)
+#endif
+    for (size_t p = ignore_face_contact ? mpm_state->n_faces() : 0; p < mpm_state->n_particles(); ++p) {
+      // compute the distance of this particle with each geometry in file
+      // NOTE (changyu): when access attributes in GpuMpmState,
+      // always remember it is type GpuT and should be casted to type T explicitly.
+      std::vector<geometry::SignedDistanceToPoint<T>> p_to_geometries =
+          query_object.geometry_state().ComputeSignedDistanceToPoint(
+            mpm_state->positions_host()[p].template cast<T>(), T(0));
+      // identify those that are in contact, i.e. signed_distance < 0
+      for (const auto& p2geometry : p_to_geometries) {
+        if (p2geometry.distance < 0) {
+          // if particle is inside rigid body, i.e. in contact
+          // note: normal direction
+          // NOTE (changyu): we treat each collision pair as an individual collision particle,
+          // i.e., if one mpm particle has multiple collision pairs, it will be treated as
+          // multiple collision particles and get independent impulse dv for each constraint.
+          const Eigen::VectorBlock<const VectorX<T>>& v = manager_->plant().GetVelocities(context);
+          const BodyIndex index_rigid =
+            manager_->geometry_id_to_body_index().at(p2geometry.id_G);
+          const TreeIndex tree_index_rigid =
+              tree_topology.body_to_tree_index(index_rigid);
+          Vector3<T> rigid_v = Vector3<T>::Zero();
+          if (tree_index_rigid.is_valid()) {
+            Matrix3X<T> Jv_v_WBc_W(3, manager_->plant().num_velocities());
+            const Body<T>& rigid_body = manager_->plant().get_body(index_rigid);
+            const Frame<T>& frame_W = manager_->plant().world_frame();
+            manager_->internal_tree().CalcJacobianTranslationalVelocity(
+                context, JacobianWrtVariable::kV, rigid_body.body_frame(), frame_W,
+                mpm_state->positions_host()[p].template cast<T>(), frame_W, frame_W,
+                &Jv_v_WBc_W);
+            Matrix3X<T> J_rigid =
+                Jv_v_WBc_W.middleCols(
+                    tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+                    tree_topology.num_tree_velocities(tree_index_rigid)).template cast<T>();
+            rigid_v = J_rigid * 
+                        v.segment(tree_topology.tree_velocities_start_in_v(tree_index_rigid),
+                                tree_topology.num_tree_velocities(tree_index_rigid))
+                                .template cast<T>();
+          }
+
+          #if defined(_OPENMP)
+          #pragma omp critical
+          #endif
+          {
+            result->push_back(
+                uint32_t(p), index_rigid, GpuT(p2geometry.distance),
+                p2geometry.grad_W.normalized().template cast<GpuT>(),
+                mpm_state->positions_host()[p],
+                rigid_v.template cast<GpuT>(),
+                mpm_state->external_forces_host().p_BoBq_B[index_rigid]
+                );
+          }
+        }
+      }
+    }
+    long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    printf("\033[32mcollision detection time=%lldms N(contacts)=%lu\033[0m\n", (after_ts - before_ts), result->size());
+  }
+
+  void InitalizeExternalContactForces(const systems::Context<T>& context, 
+                       gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state) const {
+    mpm_state->ReallocateExternelBodies(manager_->plant().num_bodies());
+    mpm_state->external_forces_host().resize(manager_->plant().num_bodies());
+    for (size_t i = 0; i < mpm_state->external_forces_host().size(); ++i) {
+      mpm_state->external_forces_host().p_BoBq_B[i] = 
+        manager_->plant().EvalBodyPoseInWorld(
+          context, manager_->plant().get_body(BodyIndex(i))).translation()
+          .template cast<gmpm::config::GpuT>();
+      mpm_state->external_forces_host().F_Bq_W_tau[i] = Vector3<gmpm::config::GpuT>::Zero();
+      mpm_state->external_forces_host().F_Bq_W_f[i] = Vector3<gmpm::config::GpuT>::Zero();
+    }
+  }
+
+  void FinalizeExternalContactForces(gmpm::GpuMpmState<gmpm::config::GpuT> *mpm_state, 
+                       const gmpm::config::GpuT &dt) const {
+    mpm_state->ExternelBodyForceToHost();
+    // Restore p_BoBq_B value and divide by dt to turn impulse into forces.
+    for (size_t i = 0; i < mpm_state->external_forces_host().size(); ++i) {
+      mpm_state->external_forces_host().p_BoBq_B[i] = Vector3<gmpm::config::GpuT>::Zero();
+      mpm_state->external_forces_host().F_Bq_W_tau[i] /= dt;
+      mpm_state->external_forces_host().F_Bq_W_f[i] /= dt;
+    }
+  }
+
+  void CalcAbstractStates(const systems::Context<T>& context,
+                          systems::State<T>* update) const {
+    if (deformable_model_->ExistsMpmModel()) {
+      using GpuT = gmpm::config::GpuT;
+      gmpm::GpuMpmState<GpuT>& mutable_mpm_state = 
+        update->template get_mutable_abstract_state<gmpm::GpuMpmState<GpuT>>(
+            deformable_model_->gpu_mpm_state_index()
+        );
+      GpuT dt = static_cast<GpuT>(manager_->plant().time_step());
+
+      // Dynamic Stage
+      int current_frame = std::round(context.get_time() / dt);
+      GpuT substep_dt = GpuT(deformable_model_->cpu_mpm_model().config.substep_dt);
+      GpuT dt_left = dt;
+      int substep = 0;
+      long long before_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      InitalizeExternalContactForces(context, &mutable_mpm_state);
+      gmpm::MpmParticleContactPairs<GpuT> mpm_contact_pairs;
+
+      while (dt_left > 0) {
+        GpuT ddt = std::min(dt_left, substep_dt);
+        dt_left -= ddt;
+        mpm_solver_.SyncParticleStateToCpu(&mutable_mpm_state);
+        mpm_solver_.RebuildMapping(&mutable_mpm_state, false);
+        mpm_solver_.CalcFemStateAndForce(&mutable_mpm_state, ddt);
+        mpm_solver_.ParticleToGrid(&mutable_mpm_state, ddt);
+        mpm_solver_.UpdateGrid(&mutable_mpm_state);
+
+        // NOTE (changyu): update contact information at each substep for weak coupling scheme
+        if (context.get_time() >= deformable_model_->cpu_mpm_model().config.initial_ignore_contact_period) {
+          CalcMpmContactPairs(context, &mutable_mpm_state, &mpm_contact_pairs, deformable_model_->cpu_mpm_model().config.ignore_face_contact);
+          mpm_solver_.CopyContactPairs(&mutable_mpm_state, mpm_contact_pairs);
+          mpm_solver_.UpdateContact(&mutable_mpm_state, ddt);
+        }
+        mpm_solver_.UpdateGrid(&mutable_mpm_state, /*ENFORCE_BC_ONLY=*/true);
+        mpm_solver_.GridToParticle(&mutable_mpm_state, ddt);
+        substep += 1;
+      }
+      FinalizeExternalContactForces(&mutable_mpm_state, dt);
+      mutable_mpm_state.times_elapsed += dt;
+
+      // logging
+      long long after_ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      // NOTE (changyu): time step info logging
+      printf("\033[32mframe=%d time=%lldms N(substeps)=%d\033[0m\n", current_frame, (after_ts - before_ts), substep);
+      if (deformable_model_->cpu_mpm_model().config.write_files) {
+        mpm_solver_.Dump(mutable_mpm_state, "test" + std::to_string(current_frame) + ".obj");
+      }
+    }
+  }
 
   int num_deformable_bodies() const { return deformable_model_->num_bodies(); }
 
@@ -366,6 +527,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   /* The integrator used to advance deformable body free motion states in
    time. */
   std::unique_ptr<fem::internal::DiscreteTimeIntegrator<T>> integrator_;
+
+  // NOTE (changyu): GPU MPM solver
+  gmpm::GpuMpmSolver<gmpm::config::GpuT> mpm_solver_;
 };
 
 }  // namespace internal

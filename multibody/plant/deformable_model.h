@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <array>
 
 #include "drake/common/eigen_types.h"
 #include "drake/common/identifier.h"
@@ -15,6 +16,11 @@
 #include "drake/multibody/plant/force_density_field.h"
 #include "drake/multibody/plant/physical_model.h"
 #include "drake/multibody/tree/rigid_body.h"
+
+// NOTE (changyu): GPU MPM state header files
+#include "drake/systems/framework/context.h"
+#include "multibody/gpu_mpm/cpu_mpm_model.h"
+#include "multibody/gpu_mpm/cuda_mpm_model.cuh"
 
 namespace drake {
 namespace multibody {
@@ -48,6 +54,138 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
   explicit DeformableModel(MultibodyPlant<T>* plant);
 
   ~DeformableModel() final;
+
+  // NOTE (changyu): MPM-related methods
+  bool ExistsMpmModel() const { return (cpu_mpm_model_ != nullptr); }
+
+  void SetMpmConfig(gmpm::MpmConfigParams<gmpm::config::GpuT> mpm_config) {
+    this->ThrowIfSystemResourcesDeclared(__func__);
+    ThrowIfNotDouble(__func__);
+    if constexpr (std::is_same_v<T, double>) {
+      cpu_mpm_model_->config = std::move(mpm_config);
+    }
+  }
+
+  void RegisterMpmCloth(
+    const std::vector<Vector3<T>>& pos,
+    const std::vector<Vector3<T>>& vel,
+    const std::vector<int> &indices
+  ) {
+    this->ThrowIfSystemResourcesDeclared(__func__);
+    ThrowIfNotDouble(__func__);
+    if constexpr (std::is_same_v<T, double>) {
+      using GpuT = gmpm::config::GpuT;
+      if (!ExistsMpmModel()) {
+        cpu_mpm_model_ = std::make_unique<gmpm::CpuMpmModel<GpuT>>();
+      }
+      
+      // cast T => GpuT
+      const auto & T2GpuT = [](const Vector3<T>& vec) -> Vector3<GpuT> {
+        return vec.template cast<GpuT>();
+      };
+      const auto &verts_offset = cpu_mpm_model_->pos.size();
+      cpu_mpm_model_->pos.resize(verts_offset + pos.size());
+      std::transform(pos.begin(), pos.end(), cpu_mpm_model_->pos.begin() + verts_offset, T2GpuT);
+      cpu_mpm_model_->vel.resize(verts_offset + vel.size());
+      std::transform(vel.begin(), vel.end(), cpu_mpm_model_->vel.begin() + verts_offset, T2GpuT);
+      for (const auto &v : indices) {
+        cpu_mpm_model_->indices.push_back(v + verts_offset);
+      }
+    }
+  }
+
+  void RegisterMpmParticle(
+    const std::vector<Vector3<T>>& pos,
+    const std::vector<Vector3<T>>& vel,
+    const T& vol = T(-1.)
+  ) {
+    this->ThrowIfSystemResourcesDeclared(__func__);
+    ThrowIfNotDouble(__func__);
+    if constexpr (std::is_same_v<T, double>) {
+      using GpuT = gmpm::config::GpuT;
+      if (!ExistsMpmModel()) {
+        cpu_mpm_model_ = std::make_unique<gmpm::CpuMpmModel<GpuT>>();
+      }
+      
+      // cast T => GpuT
+      const auto & T2GpuT = [](const Vector3<T>& vec) -> Vector3<GpuT> {
+        return vec.template cast<GpuT>();
+      };
+      const auto &verts_offset = cpu_mpm_model_->pos.size();
+      cpu_mpm_model_->pos.resize(verts_offset + pos.size());
+      std::transform(pos.begin(), pos.end(), cpu_mpm_model_->pos.begin() + verts_offset, T2GpuT);
+      cpu_mpm_model_->vel.resize(verts_offset + vel.size());
+      std::transform(vel.begin(), vel.end(), cpu_mpm_model_->vel.begin() + verts_offset, T2GpuT);
+
+      GpuT dx = GpuT(cpu_mpm_model_->config.grid_block_spacing) / GpuT(1 << cpu_mpm_model_->config.domain_bits);
+      GpuT default_vol = dx * dx * dx;
+      cpu_mpm_model_->vol.insert(cpu_mpm_model_->vol.end(), pos.size(), vol < 0 ? default_vol : GpuT(vol));
+    }
+  }
+
+  void RegisterMpmParticle(
+    const std::array<T, 3> minx,
+    const std::array<T, 3> maxx,
+    const T ppc,
+    const T dx
+  ) {
+    this->ThrowIfSystemResourcesDeclared(__func__);
+    ThrowIfNotDouble(__func__);
+    if constexpr (std::is_same_v<T, double>) {
+      using GpuT = gmpm::config::GpuT;
+      if (!ExistsMpmModel()) {
+        cpu_mpm_model_ = std::make_unique<gmpm::CpuMpmModel<GpuT>>();
+      }
+
+      GpuT gpuT_minx[3] = {GpuT(minx[0]), GpuT(minx[1]), GpuT(minx[2])};
+      GpuT gpuT_maxx[3] = {GpuT(maxx[0]), GpuT(maxx[1]), GpuT(maxx[2])};
+      const auto &pos = gmpm::sample_particle_mpm_box(gpuT_minx, gpuT_maxx, GpuT(ppc), GpuT(dx));
+      const GpuT vol = GpuT(maxx[0] - minx[0]) * GpuT(maxx[1] - minx[1]) * GpuT(maxx[2] - minx[2]) / GpuT(pos.size());
+      
+      cpu_mpm_model_->pos.insert(cpu_mpm_model_->pos.end(), pos.begin(), pos.end());
+      cpu_mpm_model_->vel.insert(cpu_mpm_model_->vel.end(), pos.size(), Vector3<GpuT>(0, 0, 0));
+      cpu_mpm_model_->vol.insert(cpu_mpm_model_->vol.end(), pos.size(), vol);
+    }
+  }
+
+  const gmpm::CpuMpmModel<gmpm::config::GpuT>& cpu_mpm_model() const {
+    if (!ExistsMpmModel()) {
+      throw std::logic_error("mpm_model(): No MPM Model registered");
+    }
+    return *cpu_mpm_model_;
+  }
+
+  const systems::AbstractStateIndex& gpu_mpm_state_index() const {
+    if (!ExistsMpmModel()) {
+      throw std::logic_error("mpm_model(): No MPM Model registered");
+    }
+    return gpu_mpm_state_index_;
+  }
+
+  const systems::OutputPortIndex& mpm_output_port_index() const {
+    this->ThrowIfSystemResourcesNotDeclared(__func__);
+    if (!ExistsMpmModel()) {
+      throw std::logic_error("mpm_output_port(): No MPM Model registered");
+    }
+    DRAKE_DEMAND(mpm_output_port_index_.is_valid());
+    return mpm_output_port_index_;
+  }
+
+  void DumpMpmData(const systems::Context<T>& context,
+                            AbstractValue* output) const {
+    if (ExistsMpmModel()) {
+      auto& mpm_port_data =
+        output->get_mutable_value<gmpm::MpmPortData<gmpm::config::GpuT>>();
+      const auto& mpm_state =
+        context.template get_abstract_state<gmpm::GpuMpmState<gmpm::config::GpuT>>(
+          gpu_mpm_state_index_);
+      const auto& dump_data = mpm_state.DumpCpuState();
+      mpm_port_data.pos = std::get<0>(dump_data);
+      mpm_port_data.indices = std::get<1>(dump_data);
+    } else {
+      std::logic_error("CopyVertexPositions(): No MPM Model registered");
+    }
+  }
 
   /** Returns the number of deformable bodies registered with this
    DeformableModel. */
@@ -347,6 +485,13 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
   std::map<MultibodyConstraintId, internal::DeformableRigidFixedConstraintSpec>
       fixed_constraint_specs_;
   systems::OutputPortIndex configuration_output_port_index_;
+
+  // NOTE (changyu): CPU MPM model used to config GPU counterpart
+  std::unique_ptr<gmpm::CpuMpmModel<gmpm::config::GpuT>> cpu_mpm_model_;
+  // NOTE (changyu): GPU MPM model
+  systems::AbstractStateIndex gpu_mpm_state_index_;
+  // NOTE (changyu): MPM output port for visualization
+  systems::OutputPortIndex mpm_output_port_index_;
 };
 
 }  // namespace multibody

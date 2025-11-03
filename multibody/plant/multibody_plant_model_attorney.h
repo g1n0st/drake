@@ -44,6 +44,12 @@ class MultibodyPlantModelAttorney {
     return plant->DeclareDiscreteState(model_value);
   }
 
+  static systems::AbstractStateIndex DeclareAbstractState(
+      MultibodyPlant<T>* plant, const AbstractValue& model_value) {
+    DRAKE_DEMAND(plant != nullptr);
+    return plant->DeclareAbstractState(model_value);
+  }
+
   static systems::LeafOutputPort<T>& DeclareAbstractOutputPort(
       MultibodyPlant<T>* plant, std::string name,
       typename systems::LeafOutputPort<T>::AllocCallback alloc_function,

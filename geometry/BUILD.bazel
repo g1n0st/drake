@@ -139,11 +139,15 @@ drake_cc_library(
         "//lcm:interface",
         "//systems/framework:context",
         "//systems/framework:leaf_system",
+        "//perception:point_cloud",
+        "//perception:point_cloud_to_lcm",
+        "//lcmtypes:point_cloud",
     ],
     deps = [
         "//lcm:drake_lcm",
         "//lcmtypes:viewer",
         "//systems/lcm:lcm_system_graphviz",
+        "//multibody/gpu_mpm:cuda_mpm",
     ],
 )
 
@@ -519,6 +523,7 @@ drake_cc_library(
         "//geometry/proximity:triangle_surface_mesh",
         "//math:geometric_transform",
         "//perception:point_cloud",
+        "//multibody/gpu_mpm:cuda_mpm",
     ],
     deps = [
         "//common:drake_export",

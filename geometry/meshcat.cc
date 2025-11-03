@@ -288,7 +288,7 @@ void SetLumpedObjectFromTriangleMesh(
   material->wireframeLineWidth = wireframe_line_width;
   material->vertexColors = false;
   material->side = side;
-  material->flatShading = true;
+  material->flatShading = false;
   object->material = std::move(material);
 
   internal::MeshData mesh;
@@ -1120,7 +1120,7 @@ class Meshcat::Impl {
     material->wireframeLineWidth = wireframe_line_width;
     material->vertexColors = true;
     material->side = side;
-    material->flatShading = true;
+    material->flatShading = false;
     data.object.material = std::move(material);
 
     internal::MeshData mesh;

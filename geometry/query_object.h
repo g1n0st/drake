@@ -850,15 +850,25 @@ class QueryObject {
 
   //@}
 
+  // Access the GeometryState associated with this QueryObject.
+  // @pre ThrowIfNotCallable() has been invoked prior to this.
+  const GeometryState<T>& geometry_state() const;
+
+  // Update poses for all rigid (non-deformable) geometries. This method does no
+  // work if this is a "baked" query object (see class docs for discussion).
+  void FullPoseUpdate() const {
+    // TODO(SeanCurtis-TRI): Modify this when the cache system is in place.
+    //  Ideally, QueryObject should never have to invoke any explicit state
+    //  updating call at all. It should simply request the geometry state and
+    //  rely on the fact that it will always get an up-to-date version.
+    if (scene_graph_) scene_graph_->FullPoseUpdate(*context_);
+  }
+
  private:
   // SceneGraph is the only class that may call set().
   friend class SceneGraph<T>;
   // Convenience class for testing.
   friend class QueryObjectTest;
-
-  // Access the GeometryState associated with this QueryObject.
-  // @pre ThrowIfNotCallable() has been invoked prior to this.
-  const GeometryState<T>& geometry_state() const;
 
   // Sets the query object to be *live*. That means the `context` and
   // `scene_graph` cannot be null.
@@ -870,16 +880,6 @@ class QueryObject {
     context_ = context;
     scene_graph_ = scene_graph;
     inspector_.set(&geometry_state());
-  }
-
-  // Update poses for all rigid (non-deformable) geometries. This method does no
-  // work if this is a "baked" query object (see class docs for discussion).
-  void FullPoseUpdate() const {
-    // TODO(SeanCurtis-TRI): Modify this when the cache system is in place.
-    //  Ideally, QueryObject should never have to invoke any explicit state
-    //  updating call at all. It should simply request the geometry state and
-    //  rely on the fact that it will always get an up-to-date version.
-    if (scene_graph_) scene_graph_->FullPoseUpdate(*context_);
   }
 
   // Update configurations for all deformable geometries. This method does no
