@@ -29,7 +29,7 @@ Run the following script to install system dependencies:
 
 ``` bash
 cd drake
-./setup/install_prereqs
+sudo ./setup/ubuntu/install_prereqs.sh
 ```
 
 This script will install all required packages and tools needed to build Drake and our extension.
