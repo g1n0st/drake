@@ -119,63 +119,49 @@ class MpmSolver {
       count = model.substep_count();
       double substep_dt = dt / count;
 
-      // Particles<T> temp_initial_particles = mpm_state.particles;
+      SparseGrid<T> temp_sparse_grid = mpm_state.sparse_grid;
+      Particles<T> temp_initial_particles = mpm_state.particles;
       Particles<T> temp_particles = mpm_state.particles;
 
-      // std::cout << "Inital Momentum" << mpm_state.particles.ComputeTotalMassMomentum().total_angular_momentum.norm() << std::endl;
-
-      for (int i = 0; i < count; ++i) {
-        // transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_particles));
-        transfer.P2G(temp_particles, mpm_state.sparse_grid,
-                    grid_data_free_motion, &(temp_scratch.transfer_scratch));
-        // std::cout << "P2G Momentum" << temp_sparse_grid.ComputeTotalMassMomentum(*grid_data_free_motion).total_angular_momentum.norm() << std::endl;
+      for (int i = 0; i <  count; ++i) {
+        transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_particles));
+        transfer.P2G(temp_particles, temp_sparse_grid,
+                    grid_data_free_motion, &(scratch->transfer_scratch));
 
         grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(substep_dt, model.gravity());
-        // std::cout << "Apply Force Momentum" << temp_sparse_grid.ComputeTotalMassMomentum(*grid_data_free_motion).total_angular_momentum.norm() << std::endl;
         if (params.apply_ground) {
-          UpdateCollisionNodesWithGround(mpm_state.sparse_grid,
-                                        &(temp_scratch.collision_nodes));
+          UpdateCollisionNodesWithGround(temp_sparse_grid,
+                                        &(scratch->collision_nodes));
 
-          grid_data_free_motion->ProjectionGround(temp_scratch.collision_nodes,
+          grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
                                                 params.sticky_ground);
         }
 
-        transfer.G2P(mpm_state.sparse_grid, *grid_data_free_motion, temp_particles, &temp_scratch.particles_data, &(temp_scratch.transfer_scratch));
-        temp_particles.SetVelocities(temp_scratch.particles_data.particle_velocites_next);
-        temp_particles.SetBMatrices(temp_scratch.particles_data.particle_B_matrices_next);
-        temp_particles.UpdateTrialDeformationGradients(substep_dt, temp_scratch.particles_data.particle_grad_v_next);
-        temp_particles.UpdateElasticDeformationGradientsAndStresses();
-
-        // std::cout << "G2P Momentum" << temp_particles.ComputeTotalMassMomentum().total_angular_momentum.norm() << std::endl;
+        transfer.G2P(temp_sparse_grid, *grid_data_free_motion, temp_particles, &scratch->particles_data, &(scratch->transfer_scratch));
+        transfer.UpdateParticlesState(scratch->particles_data, substep_dt, &temp_particles);
 
         // NOTE(changyu): Advect position here and map velocity field back is incorrect.
-        // temp_particles.AdvectParticles(substep_dt);
+        temp_particles.AdvectParticles(substep_dt);
       }
 
-
-      // NOTE(changyu): This is merely for finite difference (x*-xn)/dt, so we don't need this anymore.
-      /*
       temp_initial_particles.ResetToInitialOrder();
       temp_particles.ResetToInitialOrder();
 
       for (size_t i = 0; i < temp_initial_particles.num_particles(); ++i) {
-        temp_initial_particles.SetVelocityAt(i, temp_particles.GetVelocityAt(i));
-        temp_initial_particles.SetBMatrixAt(i, temp_particles.GetBMatrixAt(i));
+        // temp_initial_particles.SetVelocityAt(i, temp_particles.GetVelocityAt(i));
         // NOTE(changyu): Use v*=(x*-xn)/dt will have lagged effect even under constant graivty.
-        // temp_initial_particles.SetVelocityAt(i, (temp_particles.GetPositionAt(i) - temp_initial_particles.GetPositionAt(i)) / dt);
+        temp_initial_particles.SetVelocityAt(i, (temp_particles.GetPositionAt(i) - temp_initial_particles.GetPositionAt(i)) / dt);
       }
 
       transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_initial_particles));
       transfer.P2G(temp_initial_particles, temp_sparse_grid,
                     grid_data_free_motion, &(scratch->transfer_scratch));
-      std::cout << "P2G(Final) Momentum" << temp_sparse_grid.ComputeTotalMassMomentum(*grid_data_free_motion).total_angular_momentum.norm() << std::endl;
       if (params.apply_ground) {
         UpdateCollisionNodesWithGround(temp_sparse_grid,
                                         &(scratch->collision_nodes));
         grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
                                                 params.sticky_ground);
       }
-      */
       std::cout << "Substepping " << count << " iterations.\n"
                 << "num active nodes: "
                 << grid_data_free_motion->num_active_nodes() << std::endl;
@@ -275,7 +261,7 @@ class MpmSolver {
       if (sticky_ground) {
         (*v).segment(3 * node_idx, 3) = Vector3<T>(0, 0, 0);
       } else {
-        (*v)(3 * node_idx + 2) = (*v)(3 * node_idx + 2) <= 0.0 ? 0.0 : (*v)(3 * node_idx + 2);
+        (*v)(3 * node_idx + 2) = 0.0;
       }
     }
   }
