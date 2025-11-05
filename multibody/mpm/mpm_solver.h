@@ -151,6 +151,12 @@ class MpmSolver {
         // temp_initial_particles.SetVelocityAt(i, temp_particles.GetVelocityAt(i));
         // NOTE(changyu): Use v*=(x*-xn)/dt will have lagged effect even under constant graivty.
         temp_initial_particles.SetVelocityAt(i, (temp_particles.GetPositionAt(i) - temp_initial_particles.GetPositionAt(i)) / dt);
+
+        // Secant ∇v over the big step:
+        // From F^{n+1} ≈ (I + Δt ∇v) F^n  ⇒  ∇v ≈ (F^{n+1} (F^n)^{-1} - I) / Δt
+        T h = temp_sparse_grid.h();
+        const T D = T(1./4.) * h * h;
+        temp_initial_particles.SetBMatrixAt(i, ((temp_particles.GetElasticDeformationGradientAt(i) * temp_initial_particles.GetElasticDeformationGradientAt(i).inverse()) - Matrix3<T>::Identity()) / dt * D);
       }
 
       transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_initial_particles));
