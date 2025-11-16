@@ -5,9 +5,9 @@ def poisson_disk_sampling_internal_repository(
         mirrors = None):
     github_archive(
         name = name,
-        repository = "thinks/poisson-disk-sampling",
+        repository = "thinks/tph_poisson",
         commit = "b5d11d6325878c5e120364e673eadcd3df1cb473",
-        sha256 = "7ca1ba1d3454d64a884477b723ecb4d0ea5d4138a469b1bdb57e542b4f340499",  # noqa
+        sha256 = "1feb36cb9a10a115dc6bd5b1f0ed5e83574f18321f36f953db09d2ba8c4c1fcf",  # noqa
         build_file = ":package.BUILD.bazel",
         mirrors = mirrors,
     )

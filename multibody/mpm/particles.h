@@ -129,6 +129,15 @@ class Particles {
    */
   void Prepare(double h);
 
+  void ResetToInitialOrder() {
+    std::iota(permutation_.begin(), permutation_.end(), 0);
+    std::sort(permutation_.begin(), permutation_.end(),
+              [this](size_t i1, size_t i2) {
+                return initial_ids_[i1] < initial_ids_[i2];
+              });
+    Reorder(permutation_);
+  }
+
   /**
    * Splats particle data to p2g_pads. Particles in the same batch will have
    * their data splatted to the same p2g_pad.
@@ -174,6 +183,7 @@ class Particles {
 
   const std::vector<Vector3<T>>& positions() const { return positions_; }
   const std::vector<Vector3<T>>& velocities() const { return velocities_; }
+  const std::vector<int>& initial_ids() const { return initial_ids_; }
   const std::vector<T>& masses() const { return masses_; }
   const std::vector<T>& reference_volumes() const { return reference_volumes_; }
   const std::vector<Matrix3<T>>& trial_deformation_gradients() const {
@@ -500,6 +510,7 @@ class Particles {
   // gamma), where alpha and rho are the outer (block) row and column indices.
 
   // particle-wise data
+  std::vector<int> initial_ids_{};
   std::vector<Vector3<T>> positions_{};
   std::vector<Vector3<T>> velocities_{};
   std::vector<T> masses_{};
@@ -523,6 +534,7 @@ class Particles {
 
   // TODO(zeshunzong): Consider make struct Scratch and put the buffer data
   // inside scratch for better clarity. for reorder only
+  std::vector<int> temporary_int_field_{};
   std::vector<T> temporary_scalar_field_{};
   std::vector<Vector3<T>> temporary_vector_field_{};
   std::vector<Matrix3<T>> temporary_matrix_field_{};

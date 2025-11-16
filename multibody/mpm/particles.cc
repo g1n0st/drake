@@ -18,6 +18,7 @@ void Particles<T>::AddParticle(
     const Matrix3<T>& B_matrix) {
   positions_.emplace_back(position);
   velocities_.emplace_back(velocity);
+  initial_ids_.emplace_back(num_particles());
   masses_.emplace_back(mass);
   reference_volumes_.emplace_back(reference_volume);
   trial_deformation_gradients_.emplace_back(trial_deformation_gradient);
@@ -70,6 +71,10 @@ void Particles<T>::Prepare(double h) {
   std::iota(permutation_.begin(), permutation_.end(), 0);
   std::sort(permutation_.begin(), permutation_.end(),
             [this](size_t i1, size_t i2) {
+              // TODO(changyu): explicit integration with dt=1e-2 can only work by adding this. But why?
+              if (base_nodes_[i1] == base_nodes_[i2]) {
+                    return initial_ids_[i1] < initial_ids_[i2];
+                  }
               return internal::CompareIndex3DLexicographically(base_nodes_[i1],
                                                                base_nodes_[i2]);
             });
@@ -293,7 +298,7 @@ void Particles<T>::Reorder(const std::vector<size_t>& new_order) {
       continue;
     } else if (ind > i) {
       // TODO(zeshunzong): update this as more attributes are added
-
+      std::swap(initial_ids_[i], initial_ids_[ind]);
       std::swap(masses_[i], masses_[ind]);
       std::swap(reference_volumes_[i], reference_volumes_[ind]);
 
@@ -319,6 +324,11 @@ void Particles<T>::Reorder(const std::vector<size_t>& new_order) {
 template <typename T>
 void Particles<T>::Reorder2(const std::vector<size_t>& new_order) {
   DRAKE_DEMAND((new_order.size()) == num_particles());
+
+  for (size_t i = 0; i < num_particles(); ++i) {
+    temporary_int_field_[i] = initial_ids_[new_order[i]];
+  }
+  initial_ids_.swap(temporary_int_field_);
 
   for (size_t i = 0; i < num_particles(); ++i) {
     temporary_scalar_field_[i] = masses_[new_order[i]];
@@ -365,6 +375,7 @@ template <typename T>
 void Particles<T>::CheckAttributesSize() const {
   // by construction num_particles() = positions_.size()
   DRAKE_DEMAND(num_particles() == velocities_.size());
+  DRAKE_DEMAND(num_particles() == initial_ids_.size());
   DRAKE_DEMAND(num_particles() == masses_.size());
   DRAKE_DEMAND(num_particles() == reference_volumes_.size());
   DRAKE_DEMAND(num_particles() == trial_deformation_gradients_.size());

@@ -139,8 +139,20 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           update->template get_mutable_abstract_state<mpm::MpmState<T>>(
               deformable_model_->mpm_model().mpm_state_index());
 
-      UpdateParticlesFromGridData(context, grid_data_post_contact,
+      if (deformable_model_->mpm_model().integrator() == mpm::MpmIntegratorType::NewSubstep) {
+        double dt = manager_->plant().time_step();
+
+        mpm::MpmSolverScratch<T>& mpm_scratch =
+        manager_->plant()
+            .get_cache_entry(cache_indexes_.mpm_solver_scratch)
+            .get_mutable_cache_entry_value(context)
+            .template GetMutableValueOrThrow<mpm::MpmSolverScratch<T>>();
+
+        mpm_solver_->SolveSubsteps(&(mutable_mpm_state.sparse_grid), &(mutable_mpm_state.particles), grid_data_post_contact, *mpm_transfer_, deformable_model_->mpm_model(), dt, &mpm_scratch);
+      } else {
+        UpdateParticlesFromGridData(context, grid_data_post_contact,
                                   &(mutable_mpm_state.particles));
+      }
 
       // after mpm_state is updated, sort it to prepare for next step
       mpm_transfer_->SetUpTransfer(&(mutable_mpm_state.sparse_grid),
@@ -194,6 +206,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     mpm::GridData<T> grid_data_prev_step;
     mpm_transfer_->P2G(state.particles, state.sparse_grid, &grid_data_prev_step,
                        &(mpm_scratch.transfer_scratch));
+    std::cout << "grid_data_prev_step    num active nodes: "
+                << grid_data_prev_step.num_active_nodes() << std::endl;
     if (!deformable_model_->MpmUseSchur()) {
       grid_data_prev_step.GetFlattenedVelocities(result);
     } else {
@@ -243,7 +257,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       int mpm_dofs = grid_data_free_motion.num_active_nodes() * 3;
       VectorX<T> grid_v_post_contact_vec = results.v_next.tail(mpm_dofs);
 
-      grid_data_post_contact->SetVelocities(grid_v_post_contact_vec);
+      grid_data_post_contact->SetVelocitiesAdd(grid_v_post_contact_vec);
     } else {
       // the velocities of the contact nodes are directly obtained from contact
       // results
@@ -269,6 +283,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           not_in_contact_nodes_v_free_motion +
           mpm_schur.SolveForX(in_contact_nodes_v_next -
                               in_contact_nodes_v_free_motion);
+      std::cout << "dv not in contact: " << double(mpm_schur.SolveForX(in_contact_nodes_v_next -
+                              in_contact_nodes_v_free_motion).norm()) << std::endl;
 
       int count_in_contact = 0;
       int count_not_in_contact = 0;
@@ -285,6 +301,22 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         }
       }
     }
+
+    // Check CFL condition here
+    const mpm::MpmState<T>& state =
+        context.template get_abstract_state<mpm::MpmState<T>>(
+            deformable_model_->mpm_model().mpm_state_index());
+    double CFL_dt = 1000.0;
+    for (size_t i = 0; i < grid_data_post_contact->num_active_nodes(); i++) {
+        CFL_dt = std::min(CFL_dt, 0.5 * (state.sparse_grid.h() / double(grid_data_post_contact->GetVelocityAt(i).norm())));
+    }
+
+    double dt = manager_->plant().time_step();
+    std::cout << "dt=" << dt << " CFL_dt=" << CFL_dt << std::endl;
+    if (dt > CFL_dt) {
+        std::cout << "dt exceds CFL dt limit!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+    }
+    
   }
 
   void UpdateParticlesFromGridData(const systems::Context<T>& context,
@@ -310,8 +342,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
   }
 
   void WriteMpmParticlesToBgeo(const systems::Context<T>& context) const {
-    double dt = manager_->plant().time_step();
-    int current_step = std::round(context.get_time() / dt);
+    double visualize_dt = 1.0 / 24.0;
+    int current_step = std::round(context.get_time() / visualize_dt);
     const mpm::MpmState<T>& state =
         context.template get_abstract_state<mpm::MpmState<T>>(
             deformable_model_->mpm_model().mpm_state_index());
@@ -319,7 +351,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
         "./f" + std::to_string(current_step) + ".bgeo";
     mpm::internal::WriteParticlesToBgeo(
         output_filename, state.particles.positions(),
-        state.particles.velocities(), state.particles.masses());
+        state.particles.velocities(), state.particles.masses(), state.particles.initial_ids(), state.particles.elastic_deformation_gradients());
 
     // WriteAvgX(context, current_step);
     std::cout << "write " << output_filename << std::endl;
@@ -557,6 +589,17 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           jacobian_blocks;
       jacobian_blocks.reserve(2);
 
+      /*mpm::MpmSolverScratch<T>& mpm_scratch =
+        manager_->plant()
+            .get_cache_entry(cache_indexes_.mpm_solver_scratch)
+            .get_mutable_cache_entry_value(context)
+            .template GetMutableValueOrThrow<mpm::MpmSolverScratch<T>>();
+
+      const mpm::GridData<T>& grid_data_free_motion = EvalGridDataFreeMotion(context);
+      mpm_transfer_->G2P(state.sparse_grid, grid_data_free_motion, state.particles,
+                       &(mpm_scratch.particles_data),
+                       &(mpm_scratch.transfer_scratch));
+        */
       /* MPM part of Jacobian, note this is -J_mpm */
       if (!deformable_model_->MpmUseSchur()) {
         MatrixX<T> J_mpm;
@@ -580,8 +623,9 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
             contact_solvers::internal::MatrixBlock<T>(std::move(J_mpm)));
       }
 
-      vn += R_CW.matrix() * state.particles.GetVelocityAt(
-                                contact_pair.particle_in_contact_index);
+      // vn += R_CW.matrix() * mpm_scratch.particles_data.particle_velocites_next[contact_pair.particle_in_contact_index];
+      vn += R_CW.matrix() * state.particles.GetVelocityAt(contact_pair.particle_in_contact_index);
+
 
       /* Non-MPM (rigid) part of Jacobian */
       const BodyIndex index_B =
