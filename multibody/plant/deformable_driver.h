@@ -257,7 +257,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
       int mpm_dofs = grid_data_free_motion.num_active_nodes() * 3;
       VectorX<T> grid_v_post_contact_vec = results.v_next.tail(mpm_dofs);
 
-      grid_data_post_contact->SetVelocitiesAdd(grid_v_post_contact_vec);
+      grid_data_post_contact->SetVelocities(grid_v_post_contact_vec);
     } else {
       // the velocities of the contact nodes are directly obtained from contact
       // results
@@ -283,8 +283,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           not_in_contact_nodes_v_free_motion +
           mpm_schur.SolveForX(in_contact_nodes_v_next -
                               in_contact_nodes_v_free_motion);
-      std::cout << "dv not in contact: " << double(mpm_schur.SolveForX(in_contact_nodes_v_next -
-                              in_contact_nodes_v_free_motion).norm()) << std::endl;
 
       int count_in_contact = 0;
       int count_not_in_contact = 0;
