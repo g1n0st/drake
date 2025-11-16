@@ -248,7 +248,7 @@ class MpmModel {
                   transfer.ComputeGridDElasticEnergyDV2SparseBlockSymmetric(
                       deformation_state.particles(),
                       deformation_state.sparse_grid(),
-                      deformation_state.dPdFs(), integrator() == MpmIntegratorType::Implicit ? dt : 0.0);
+                      deformation_state.dPdFs(), dt);
       // add the mass part
       for (size_t i = 0; i < deformation_state.sparse_grid().num_active_nodes();
            ++i) {
