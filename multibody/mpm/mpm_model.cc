@@ -35,8 +35,7 @@ void MpmModel<T>::ComputeD2EnergyDV2(
     const MpmTransfer<T>& transfer,
     const DeformationState<T>& deformation_state, double dt,
     MatrixX<T>* hessian) const {
-  unused(dt);
-  ComputeD2ElasticEnergyDV2(transfer, deformation_state, 0, hessian);
+  ComputeD2ElasticEnergyDV2(transfer, deformation_state, dt, hessian);
   for (size_t i = 0; i < deformation_state.grid_data().num_active_nodes();
        ++i) {
     (*hessian)(3 * i, 3 * i) += deformation_state.grid_data().GetMassAt(i);
