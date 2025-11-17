@@ -132,7 +132,7 @@ class MpmSolver {
       scratch->v_prev = grid_data_free_motion->velocities();
 
       for (; count < params.max_newton_iter; ++count) {
-        deformation_state.UpdateFake(transfer, dt, scratch,
+        deformation_state.Update(transfer, dt, scratch,
                                 (!params.linear_constitutive_model));
         // find minus_gradient
         model.ComputeMinusDEnergyDV(transfer, scratch->v_prev, deformation_state,
