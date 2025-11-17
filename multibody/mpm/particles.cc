@@ -203,6 +203,30 @@ void Particles<T>::ComputeFsPsdPdFs(
   }
 }
 
+template <typename T>
+void Particles<T>::ComputeFsPsdPdFsFake(
+    const std::vector<Matrix3<T>>& particle_grad_v, double dt, 
+    std::vector<Matrix3<T>>* Fs, std::vector<Matrix3<T>>* Ps,
+    std::vector<Eigen::Matrix<T, 9, 9>>* dPdFs, bool project_pd) const {
+  DRAKE_ASSERT(particle_grad_v.size() == num_particles());
+  
+  for (size_t p = 0; p < num_particles(); ++p) {
+    Matrix3<T>& F = (*Fs)[p];
+    Matrix3<T>& P = (*Ps)[p];
+    Eigen::Matrix<T, 9, 9>& dPdF = (*dPdFs)[p];
+
+    auto fake_model = elastoplastic_models_[p]->Clone();
+    fake_model->Remake(0.1, 0.0);
+
+    F = (Matrix3<T>::Identity() + dt * particle_grad_v[p]) *
+        GetElasticDeformationGradientAt(p);
+    fake_model->CalcFirstPiolaStress(
+        elastic_deformation_gradients_[p], F, &P);
+    fake_model->CalcFirstPiolaStressDerivative(
+        elastic_deformation_gradients_[p], F, &dPdF, project_pd);
+  }
+}
+
 // TODO(zeshunzong): can be optimized a bit (computing only half)
 template <typename T>
 void Particles<T>::ComputePadHessianForOneBatch(

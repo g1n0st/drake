@@ -95,6 +95,16 @@ class DeformationState {
                                 dt, &Fs_, &Ps_, &dPdFs_, project_pd);
   }
 
+  void UpdateFake(const MpmTransfer<T>& transfer, double dt,
+              MpmSolverScratch<T>* scratch, bool project_pd = false) {
+    // TODO(zeshunzong): some other data is computed but not used in
+    // particles_data
+    transfer.G2P(sparse_grid_, grid_data_, particles_,
+                 &(scratch->particles_data), &(scratch->transfer_scratch));
+    particles_.ComputeFsPsdPdFsFake(scratch->particles_data.particle_grad_v_next,
+                                dt, &Fs_, &Ps_, &dPdFs_, project_pd);
+  }
+
   const std::vector<Matrix3<T>>& Fs() const { return Fs_; }
   const std::vector<Matrix3<T>>& Ps() const { return Ps_; }
   const std::vector<Eigen::Matrix<T, 9, 9>>& dPdFs() const { return dPdFs_; }

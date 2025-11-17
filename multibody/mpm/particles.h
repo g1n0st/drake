@@ -424,6 +424,12 @@ class Particles {
                         std::vector<Matrix3<T>>* Ps,
                         std::vector<Eigen::Matrix<T, 9, 9>>* dPdFs,
                         bool project_pd = false) const;
+  
+  void ComputeFsPsdPdFsFake(const std::vector<Matrix3<T>>& particle_grad_v,
+                        double dt, std::vector<Matrix3<T>>* Fs,
+                        std::vector<Matrix3<T>>* Ps,
+                        std::vector<Eigen::Matrix<T, 9, 9>>* dPdFs,
+                        bool project_pd = false) const;
 
   /**
    * Computes the part of elastic hessian (denoted `pad_hessian`) contributed by

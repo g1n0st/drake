@@ -27,6 +27,14 @@ class ElastoPlasticModel {
   const T& youngs_modulus() const { return youngs_modulus_; }
   const T& poissons_ratio() const { return poissons_ratio_; }
 
+  void Remake(T coeffA, T coeffB) {
+    youngs_modulus_ *= coeffA;
+    poissons_ratio_ *= coeffB;
+    lambda_ = youngs_modulus_ * poissons_ratio_ / (1 + poissons_ratio_) /
+              (1 - 2 * poissons_ratio_);
+    mu_ = youngs_modulus_ / (2 * (1 + poissons_ratio_));
+  }
+
   // Resets youngs_modulus and updates mu and lambda accordingly, keeping
   // current poissons_ratio.
   void set_E(const T& youngs_modulus) {
