@@ -68,7 +68,7 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
 
   bool ExistsMpmModel() const { return (mpm_model_ != nullptr); }
 
-  bool MpmUseSchur() const { return false; }
+  bool MpmUseSchur() const { return true; }
 
   const mpm::MpmModel<T>& mpm_model() const {
     if (mpm_model_ == nullptr) {
