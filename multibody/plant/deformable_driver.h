@@ -139,20 +139,8 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
           update->template get_mutable_abstract_state<mpm::MpmState<T>>(
               deformable_model_->mpm_model().mpm_state_index());
 
-      if (deformable_model_->mpm_model().integrator() == mpm::MpmIntegratorType::NewSubstep) {
-        double dt = manager_->plant().time_step();
-
-        mpm::MpmSolverScratch<T>& mpm_scratch =
-        manager_->plant()
-            .get_cache_entry(cache_indexes_.mpm_solver_scratch)
-            .get_mutable_cache_entry_value(context)
-            .template GetMutableValueOrThrow<mpm::MpmSolverScratch<T>>();
-
-        mpm_solver_->SolveSubsteps(&(mutable_mpm_state.sparse_grid), &(mutable_mpm_state.particles), grid_data_post_contact, *mpm_transfer_, deformable_model_->mpm_model(), dt, &mpm_scratch);
-      } else {
-        UpdateParticlesFromGridData(context, grid_data_post_contact,
+      UpdateParticlesFromGridData(context, grid_data_post_contact,
                                   &(mutable_mpm_state.particles));
-      }
 
       // after mpm_state is updated, sort it to prepare for next step
       mpm_transfer_->SetUpTransfer(&(mutable_mpm_state.sparse_grid),
@@ -206,8 +194,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     mpm::GridData<T> grid_data_prev_step;
     mpm_transfer_->P2G(state.particles, state.sparse_grid, &grid_data_prev_step,
                        &(mpm_scratch.transfer_scratch));
-    std::cout << "grid_data_prev_step    num active nodes: "
-                << grid_data_prev_step.num_active_nodes() << std::endl;
     if (!deformable_model_->MpmUseSchur()) {
       grid_data_prev_step.GetFlattenedVelocities(result);
     } else {
@@ -612,7 +598,6 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
 
       vn += R_CW.matrix() * state.particles.GetVelocityAt(
                                 contact_pair.particle_in_contact_index);
-
 
       /* Non-MPM (rigid) part of Jacobian */
       const BodyIndex index_B =

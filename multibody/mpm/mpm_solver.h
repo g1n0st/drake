@@ -32,43 +32,6 @@ class MpmSolver {
                  grid_data_prev_step, &(scratch->transfer_scratch));
   }
 
-  int SolveSubsteps(SparseGrid<T>* sparse_grid, 
-                    Particles<T>* particles,
-                    const mpm::GridData<T>& post_contact_grid_data,
-                    const MpmTransfer<T>& transfer,
-                    const MpmModel<T>& model, 
-                    double dt,
-                    MpmSolverScratch<T>* scratch) const {
-    if constexpr (!(std::is_same_v<T, double>)) {
-      throw;  // only supports double
-    }
-
-    mpm::GridData<T> grid_data = post_contact_grid_data;
-    double substep_dt = dt / model.substep_count();
-    for (int i = 0; i < model.substep_count(); ++i) {
-      transfer.G2P(*sparse_grid, grid_data, *particles, &scratch->particles_data, &(scratch->transfer_scratch));
-
-      transfer.UpdateParticlesState(scratch->particles_data, substep_dt, particles);
-      
-      particles->AdvectParticles(substep_dt);
-      
-      // NOTE(changyu): the last one P2G will not be counted and will be re-performed in SolveGridVelocities
-      transfer.SetUpTransfer(sparse_grid, particles);
-      transfer.P2G(*particles, *sparse_grid,
-                  &grid_data, &(scratch->transfer_scratch));
-
-      grid_data.ApplyExplicitForceImpulsesToVelocities(substep_dt, model.gravity());
-      if (model.newton_params().apply_ground) {
-        UpdateCollisionNodesWithGround(*sparse_grid,
-                                      &(scratch->collision_nodes));
-
-        grid_data.ProjectionGround(scratch->collision_nodes,
-                                              model.newton_params().sticky_ground);
-      }
-    }
-
-    return model.substep_count();
-  }
 
   int SolveGridVelocities(const NewtonParams& params,
                           const MpmState<T>& mpm_state,
@@ -81,24 +44,7 @@ class MpmSolver {
     }
 
     int count = 0;
-    if (model.integrator() == MpmIntegratorType::NewSubstep) {
-      count = model.substep_count();
-      double substep_dt = dt / count;
-      transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
-                    grid_data_free_motion, &(scratch->transfer_scratch));
-        grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(substep_dt, model.gravity());
-        if (params.apply_ground) {
-          UpdateCollisionNodesWithGround(mpm_state.sparse_grid,
-                                        &(scratch->collision_nodes));
-
-          grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
-                                                params.sticky_ground);
-        }
-      std::cout << "New Substepping " << count << " iterations.\n"
-                << "num active nodes: "
-                << grid_data_free_motion->num_active_nodes() << std::endl;
-    }
-    else if (model.integrator() == MpmIntegratorType::Explicit) {
+    if (model.integrator() == MpmIntegratorType::Explicit) {
         transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
                     grid_data_free_motion, &(scratch->transfer_scratch));
         grid_data_free_motion->ApplyExplicitForceImpulsesToVelocities(dt, model.gravity());
@@ -113,7 +59,7 @@ class MpmSolver {
                 << "num active nodes: "
                 << grid_data_free_motion->num_active_nodes() << std::endl;
     }
-    else if (model.integrator() == MpmIntegratorType::OldSubstep) {
+    else if (model.integrator() == MpmIntegratorType::Substep) {
       MpmSolverScratch<T> temp_scratch;
       // throw; // NOTE(changyu): This scheme is already proved wrong and deprecated. Will be deleted in future.
       count = model.substep_count();

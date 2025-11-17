@@ -137,8 +137,7 @@ struct MpmInitialObjectParameters {
 enum class MpmIntegratorType {
   Explicit,
   Implicit,
-  OldSubstep,
-  NewSubstep
+  Substep,
 };
 
 template <typename T>
