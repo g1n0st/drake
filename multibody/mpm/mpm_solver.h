@@ -32,7 +32,6 @@ class MpmSolver {
                  grid_data_prev_step, &(scratch->transfer_scratch));
   }
 
-
   int SolveGridVelocities(const NewtonParams& params,
                           const MpmState<T>& mpm_state,
                           const MpmTransfer<T>& transfer,
@@ -191,7 +190,6 @@ class MpmSolver {
                                                 params.sticky_ground);
       }
     }
-
     return count;
   }
 
