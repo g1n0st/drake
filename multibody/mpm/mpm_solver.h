@@ -202,6 +202,50 @@ class MpmSolver {
 
       }
     }
+
+    // NOTE (changyu): compute final residual
+    DeformationState<T> deformation_state_v_star(
+    mpm_state.particles, mpm_state.sparse_grid, *grid_data_free_motion);
+    // scratch->v_prev = grid_data_free_motion->velocities(); NOTE: v^n, do not modify it!
+    deformation_state_v_star.Update(transfer, dt, scratch,
+                              (!params.linear_constitutive_model));
+    // find minus_gradient
+    model.ComputeMinusDEnergyDV(transfer, scratch->v_prev, deformation_state_v_star,
+                                dt, &(scratch->minus_dEdv),
+                                &(scratch->transfer_scratch));
+    model.ComputeD2EnergyDV2(transfer, deformation_state_v_star, dt,
+                                  &(scratch->d2Edv2));
+    // In our discretization: m(v*) = -minus_dEdv, and A = d m / d v |_{v*} = d2Edv2.
+    Eigen::VectorX<T> m_free = -scratch->minus_dEdv;   // m(v*), momentum residual
+    const MatrixX<T>& A = scratch->d2Edv2;             // SPD candidate
+
+    // Residual norms: Euclidean and A^{-1}-norm (natural for SAP).
+    const T res_l2 = m_free.norm();
+    const T res_linf = m_free.cwiseAbs().maxCoeff();
+
+    // Compute ||m(v*)||_{A^{-1}} robustly via LDLT with tiny Tikhonov if needed.
+    auto Ainv_norm = [](const MatrixX<T>& A_local,
+                        const Eigen::Ref<const VectorX<T>>& r) -> T {
+      Eigen::LDLT<MatrixX<T>> ldlt(A_local);
+      if (ldlt.info() != Eigen::Success) {
+        MatrixX<T> Areg = A_local;
+        // Tikhonov regularization to handle near-singular cases.
+        using Scalar = typename MatrixX<T>::Scalar;
+        const Scalar eps = static_cast<Scalar>(1e-12);
+        Areg.diagonal().array() += eps;
+        ldlt.compute(Areg);
+      }
+      VectorX<T> z = ldlt.solve(r);
+      return std::sqrt(std::max<typename VectorX<T>::Scalar>(r.dot(z), 0.0));
+    };
+
+    const T res_Ainv = Ainv_norm(A, m_free);
+    std::cout << "\033[31m"
+              << "[SAP] Free-motion residual ||m(v*)||_2 = " << res_l2
+              << ", ||m(v*)||_inf = " << res_linf
+              << ", ||m(v*)||_{A^{-1}} = " << res_Ainv
+              << "\033[0m" << std::endl;
+
     return count;
   }
 
