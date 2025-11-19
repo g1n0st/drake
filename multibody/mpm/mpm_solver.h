@@ -42,6 +42,14 @@ class MpmSolver {
       throw;  // only supports double
     }
 
+    transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
+                  grid_data_free_motion, &(scratch->transfer_scratch));
+    scratch->v_prev = grid_data_free_motion->velocities();
+    if (params.apply_ground) {
+        std::cout << "applying ground" << std::endl;
+        UpdateCollisionNodesWithGround(mpm_state.sparse_grid,
+                                      &(scratch->collision_nodes));
+      }
     int count = 0;
     if (model.integrator() == MpmIntegratorType::Explicit) {
         transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
@@ -117,17 +125,9 @@ class MpmSolver {
     } 
     
     else {
-      transfer.P2G(mpm_state.particles, mpm_state.sparse_grid,
-                  grid_data_free_motion, &(scratch->transfer_scratch));
-      if (params.apply_ground) {
-        std::cout << "applying ground" << std::endl;
-        UpdateCollisionNodesWithGround(mpm_state.sparse_grid,
-                                      &(scratch->collision_nodes));
-      }
       count = 0;
       DeformationState<T> deformation_state(
           mpm_state.particles, mpm_state.sparse_grid, *grid_data_free_motion);
-      scratch->v_prev = grid_data_free_motion->velocities();
 
       for (; count < params.max_newton_iter; ++count) {
         deformation_state.Update(transfer, dt, scratch,
