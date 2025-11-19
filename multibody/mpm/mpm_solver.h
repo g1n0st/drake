@@ -189,6 +189,20 @@ class MpmSolver {
         grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
                                                 params.sticky_ground);
       }
+
+      const int G2P2G_smooth = 0;
+      for (int i = 0; i < G2P2G_smooth; ++i) {
+        SparseGrid<T> temp_sparse_grid = mpm_state.sparse_grid;
+        Particles<T> temp_initial_particles = mpm_state.particles;
+        Particles<T> temp_particles = mpm_state.particles;
+
+        transfer.SetUpTransfer(&(temp_sparse_grid), &(temp_particles));
+        transfer.G2P(temp_sparse_grid, *grid_data_free_motion, temp_particles, &scratch->particles_data, &(scratch->transfer_scratch));
+        transfer.UpdateParticlesStateVOnly(scratch->particles_data, &temp_particles);
+        transfer.P2G(temp_particles, temp_sparse_grid,
+                    grid_data_free_motion, &(scratch->transfer_scratch));
+
+      }
     }
     return count;
   }

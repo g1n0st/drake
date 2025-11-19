@@ -68,6 +68,13 @@ void MpmTransfer<T>::UpdateParticlesState(
 }
 
 template <typename T>
+void MpmTransfer<T>::UpdateParticlesStateVOnly(
+    const ParticlesData<T>& particles_data, Particles<T>* particles) const {
+  particles->SetVelocities(particles_data.particle_velocites_next);
+  particles->SetBMatrices(particles_data.particle_B_matrices_next);
+}
+
+template <typename T>
 void MpmTransfer<T>::ComputeGridElasticHessian(
     const Particles<T>& particles, const SparseGrid<T>& grid,
     const std::vector<Eigen::Matrix<T, 9, 9>>& dPdFs,
