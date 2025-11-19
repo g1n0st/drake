@@ -7,6 +7,10 @@
 #include <utility>
 #include <vector>
 
+#include <fstream>
+#include <iomanip>
+#include <filesystem>
+
 #include "drake/common/eigen_types.h"
 #include "drake/multibody/mpm/conjugate_gradient.h"
 #include "drake/multibody/mpm/mpm_model.h"
@@ -245,6 +249,25 @@ class MpmSolver {
               << ", ||m(v*)||_inf = " << res_linf
               << ", ||m(v*)||_{A^{-1}} = " << res_Ainv
               << "\033[0m" << std::endl;
+    
+    // Append one CSV row: iter,res_l2,res_linf,res_Ainv  (with header once)
+    auto append_residual_row = [](const std::string& path,
+                                  int iter, double r2, double rinf, double rAinv) {
+      namespace fs = std::filesystem;
+      const bool need_header = !fs::exists(path) || fs::file_size(path) == 0;
+
+      std::ofstream ofs(path, std::ios::app);
+      ofs.setf(std::ios::fixed);
+      ofs << std::setprecision(16);
+      if (need_header) ofs << "iter,res_l2,res_linf,res_Ainv\n";
+      ofs << iter << "," << r2 << "," << rinf << "," << rAinv << "\n";
+    };
+
+    append_residual_row("residuals.txt",
+                      /*iter=*/count,
+                      static_cast<double>(res_l2),
+                      static_cast<double>(res_linf),
+                      static_cast<double>(res_Ainv));
 
     return count;
   }
