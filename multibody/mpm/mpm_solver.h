@@ -59,8 +59,6 @@ class MpmSolver {
                 << grid_data_free_motion->num_active_nodes() << std::endl;
     }
     else if (model.integrator() == MpmIntegratorType::Substep) {
-      MpmSolverScratch<T> temp_scratch;
-      // throw; // NOTE(changyu): This scheme is already proved wrong and deprecated. Will be deleted in future.
       count = model.substep_count();
       double substep_dt = dt / count;
 
