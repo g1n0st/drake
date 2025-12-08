@@ -207,6 +207,48 @@ class MpmSolver {
       }
     }
 
+    // ----------------------------------------------------------------------
+    // Residual-aware re-anchoring of free-motion velocity:
+    // v† = v* - A^{-1} r, where r = m(v*), A = ∂m/∂v|_{v*} = d²E/dv².
+    // This makes the free-motion anchor consistent for the post-contact SAP.
+    // Only apply to implicit integrator.
+    // ----------------------------------------------------------------------
+    if (false) {
+      // Build state at current v* (grid_data_free_motion holds v* now).
+      DeformationState<T> def_vstar(
+          mpm_state.particles, mpm_state.sparse_grid, *grid_data_free_motion);
+      def_vstar.Update(transfer, dt, scratch,
+                      (!params.linear_constitutive_model));
+
+      // r = m(v*) = - ( -dE/dv ) under our discretization.
+      model.ComputeMinusDEnergyDV(transfer, scratch->v_prev, def_vstar, dt,
+                                  &(scratch->minus_dEdv),
+                                  &(scratch->transfer_scratch));
+      Eigen::VectorX<T> r = -scratch->minus_dEdv;
+
+      // A = d²E/dv² (SPD candidate).
+      model.ComputeD2EnergyDV2(transfer, def_vstar, dt, &(scratch->d2Edv2));
+      const MatrixX<T>& A = scratch->d2Edv2;
+
+      // Solve A w = r via LDLT; add tiny Tikhonov if needed.
+      Eigen::LDLT<MatrixX<T>> ldlt(A);
+      if (ldlt.info() != Eigen::Success) {
+        MatrixX<T> Areg = A;
+        Areg.diagonal().array() += static_cast<T>(1e-12);
+        ldlt.compute(Areg);
+      }
+      Eigen::VectorX<T> w = ldlt.solve(r);
+
+      // v† = v* - w
+      grid_data_free_motion->AddDG(-w);
+
+      // Re-apply ground projection if requested, to keep constraints satisfied.
+      if (params.apply_ground) {
+        grid_data_free_motion->ProjectionGround(scratch->collision_nodes,
+                                                params.sticky_ground);
+      }
+    }
+
     // NOTE (changyu): compute final residual
     DeformationState<T> deformation_state_v_star(
     mpm_state.particles, mpm_state.sparse_grid, *grid_data_free_motion);
