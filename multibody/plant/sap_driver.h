@@ -253,6 +253,9 @@ class SapDriver {
                                     const Vector3<T>& impulse,
                                     EigenPtr<VectorX<T>> tau_contact) const;
 
+  void CalcMomentumBias(const systems::Context<T>& context,
+                      Eigen::VectorX<T>* momentum_bias) const;
+
   // Computes the necessary data to describe the SAP contact problem. Additional
   // information such as the orientation of each contact frame in the world is
   // also computed here so that it can be used at a later stage to compute

@@ -812,6 +812,26 @@ void SapDriver<T>::AddFixedConstraints(
 }
 
 template <typename T>
+void SapDriver<T>::CalcMomentumBias(const systems::Context<T>& context,
+                                    VectorX<T>* momentum_bias) const {
+  DRAKE_DEMAND(momentum_bias != nullptr);
+  const int rigid_nv = plant().num_velocities();
+  if constexpr (std::is_same_v<T, double>) {
+    if (manager().deformable_driver() != nullptr &&
+        manager().deformable_driver()->ExistsMpmBody()) {
+      VectorX<T> r_mpm;
+      manager().deformable_driver()->CalcParticipatingMomentumBiasMpm(context, &r_mpm);
+      momentum_bias->resize(rigid_nv + r_mpm.size());
+      momentum_bias->head(rigid_nv).setZero();
+      momentum_bias->tail(r_mpm.size()) = r_mpm;
+      return;
+    }
+  }
+  momentum_bias->resize(rigid_nv);
+  momentum_bias->setZero();
+}
+
+template <typename T>
 void SapDriver<T>::CalcContactProblemCache(
     const systems::Context<T>& context, ContactProblemCache<T>* cache) const {
   std::vector<MatrixX<T>> A;
@@ -833,6 +853,9 @@ void SapDriver<T>::CalcContactProblemCache(
   cache->sap_problem = std::make_unique<SapContactProblem<T>>(
       plant().time_step(), std::move(A), std::move(v_star));
   cache->sap_problem->set_num_objects(num_objects);
+  VectorX<T> momentum_bias;
+  CalcMomentumBias(context, &momentum_bias);
+  cache->sap_problem->set_momentum_bias(std::move(momentum_bias));
   SapContactProblem<T>& problem = *cache->sap_problem;
   // N.B. All contact constraints must be added before any other constraint
   // types. This driver assumes this ordering of the constraints in order to

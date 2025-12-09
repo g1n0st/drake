@@ -202,6 +202,8 @@ class SapModel {
   /* Const access to the bundle for this model. */
   const SapConstraintBundle<T>& constraints_bundle() const;
 
+  const VectorX<T>& momentum_bias() const { return const_model_data_.momentum_bias; }
+
   /* Performs multiplication p = A⋅v. Only participating velocities are
    considered.
    @pre p must be a valid pointer.
@@ -378,6 +380,7 @@ class SapModel {
     std::vector<MatrixX<T>> dynamics_matrix;
     VectorX<T> v_star;  // Free motion generalized velocity v*.
     VectorX<T> p_star;  // Free motion generalized impulse, i.e. p* = A⋅v*.
+    VectorX<T> momentum_bias;  // r on participating DOFs
     // Inverse of the diagonal matrix formed with the square root of the
     // diagonal entries of the momentum matrix, i.e. diag(A)^{-1/2}.
     VectorX<T> inv_sqrt_A;
