@@ -40,6 +40,10 @@ SapModel<T>::SapModel(const SapContactProblem<T>* problem_ptr)
   VectorX<T> v_star(nv_participating);
   velocities_permutation.Apply(problem().v_star(), &v_star);
 
+  // Map momentum bias r (full) -> participating DOFs.
+  VectorX<T> r_participating(nv_participating);
+  velocities_permutation.Apply(problem().momentum_bias(), &r_participating);
+
   // Compute diagonal scaling inv_sqrt_A.
   VectorX<T> inv_sqrt_A(nv_participating);
   int clique_offset = 0;
@@ -68,8 +72,11 @@ SapModel<T>::SapModel(const SapContactProblem<T>* problem_ptr)
   // const_model_data_.
   VectorX<T> p_star(nv_participating);
   MultiplyByDynamicsMatrix(v_star, &p_star);
+  // Make p* := A⋅v* − r so that momentum_gain = A⋅(v−v*) + r.
+  p_star -= r_participating;
   const_model_data_.v_star = std::move(v_star);
   const_model_data_.p_star = std::move(p_star);
+  const_model_data_.momentum_bias = std::move(r_participating);
   const_model_data_.inv_sqrt_A = std::move(inv_sqrt_A);
   const_model_data_.delassus_diagonal = std::move(delassus_diagonal);
 
@@ -227,7 +234,12 @@ void SapModel<T>::CalcCostCache(const Context<T>& context,
   const MomentumGainCache<T>& gain_cache = EvalMomentumGainCache(context);
   const VectorX<T>& velocity_gain = gain_cache.velocity_gain;
   const VectorX<T>& momentum_gain = gain_cache.momentum_gain;
-  cache->momentum_cost = 0.5 * velocity_gain.dot(momentum_gain);
+  // ℓ_A = 1/2 xᵀ A x + rᵀ x.
+  // Since momentum_gain = A x + r, we have:
+  // 0.5 x·momentum_gain + 0.5 x·r = 0.5 xᵀ A x + rᵀ x.
+  cache->momentum_cost =
+       0.5 * velocity_gain.dot(momentum_gain) +
+       0.5 * velocity_gain.dot(const_model_data_.momentum_bias);
   const SapConstraintBundleData& bundle_data =
       EvalSapConstraintBundleData(context);
   cache->regularizer_cost = constraints_bundle().CalcCost(bundle_data);
@@ -238,10 +250,10 @@ template <typename T>
 void SapModel<T>::CalcGradientsCache(const systems::Context<T>& context,
                                      GradientsCache<T>* cache) const {
   cache->Resize(num_velocities());
-  const VectorX<T>& momentum_gain = EvalMomentumGain(context);  // = A⋅(v−v*)
+  const VectorX<T>& momentum_gain = EvalMomentumGain(context);  // = A⋅(v−v*) [+ r]
   const VectorX<T>& gamma = EvalImpulses(context);
   constraints_bundle().J().MultiplyByTranspose(gamma, &cache->j);  // = Jᵀ⋅γ
-  // Update ∇ᵥℓ = A⋅(v−v*) - Jᵀ⋅γ
+  // Update ∇ᵥℓ = A⋅(v−v*) + r - Jᵀ⋅γ  (r is already in momentum_gain)
   cache->cost_gradient = momentum_gain - cache->j;
 }
 

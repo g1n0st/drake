@@ -261,6 +261,7 @@ T SapSolver<T>::CalcCostAlongLine(
 
   // Data.
   const VectorX<T>& v_star = model_->v_star();
+  const VectorX<T>& r = model_->momentum_bias();
 
   // Search direction quantities at state v.
   const VectorX<T>& dv = search_direction_data.dv;
@@ -298,7 +299,9 @@ T SapSolver<T>::CalcCostAlongLine(
   //  - ellA(v) = 0.5‖v−v*‖²
   //  - d2ellA_dalpha2 = 0.5‖Δv‖²α², see [Castro et al., 2021; §VIII.C].
   T ellA = model_->EvalMomentumCost(context);
+  // add linear term rᵀ(v−v*) and its along-line increment α rᵀΔv
   ellA += alpha * dp.dot(v - v_star);
+  ellA += alpha * r.dot(dv);
   ellA += 0.5 * alpha * alpha * d2ellA_dalpha2;
   const T ell = ellA + ellR;
 
@@ -307,7 +310,8 @@ T SapSolver<T>::CalcCostAlongLine(
     const VectorX<T>& v_alpha = model_->GetVelocities(context_alpha);
 
     // First derivative.
-    const T dellA_dalpha = dp.dot(v_alpha - v_star);  // Momentum term.
+    // Momentum term + linear residual term rᵀΔv.
+    const T dellA_dalpha = dp.dot(v_alpha - v_star) + r.dot(dv);
     const T dellR_dalpha = -dvc.dot(gamma);           // Regularizer term.
     *dell_dalpha = dellA_dalpha + dellR_dalpha;
   }

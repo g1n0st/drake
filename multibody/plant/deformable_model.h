@@ -66,9 +66,21 @@ class DeformableModel final : public multibody::PhysicalModel<T> {
     return body_id;
   }
 
+  // @pre can only be called whence RegisterMpmBody() has been called
+  void RegisterAdditionalMpmBody(
+      std::unique_ptr<mpm::internal::AnalyticLevelSet> level_set,
+      std::unique_ptr<mpm::constitutive_model::ElastoPlasticModel<double>>
+          constitutive_model,
+      std::unique_ptr<math::RigidTransform<double>> pose, double density,
+      double grid_h) {
+    mpm_model_->AppendAdditionalInitialObjectParams(std::move(level_set),
+                                         std::move(constitutive_model),
+                                         std::move(pose), density, grid_h);
+  }
+
   bool ExistsMpmModel() const { return (mpm_model_ != nullptr); }
 
-  bool MpmUseSchur() const { return true; }
+  bool MpmUseSchur() const { return false; }
 
   const mpm::MpmModel<T>& mpm_model() const {
     if (mpm_model_ == nullptr) {

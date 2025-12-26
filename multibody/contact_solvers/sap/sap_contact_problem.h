@@ -250,6 +250,11 @@ class SapContactProblem {
    num_velocities(). */
   const VectorX<T>& v_star() const { return v_star_; }
 
+  /* An optional momentum bias r (size = nv) so that the momentum
+   * gain used by SAP becomes A⋅(v−v*) + r. Default is zero. */
+  void set_momentum_bias(const VectorX<T>& r);
+  const VectorX<T>& momentum_bias() const { return momentum_bias_; }
+
   const ContactProblemGraph& graph() const { return graph_; }
 
   /* Compute generalized forces per DoF and spatial forces per object given
@@ -302,6 +307,7 @@ class SapContactProblem {
   std::vector<int> constraint_equations_start_{0};
   std::vector<MatrixX<T>> A_;  // Linear dynamics matrix.
   VectorX<T> v_star_;          // Free-motion velocities.
+  VectorX<T> momentum_bias_;   // Optional r, defaults to zero(nv_).
   ContactProblemGraph graph_;  // Contact graph for this problem.
   // Constraints owned by this problem.
   std::vector<std::unique_ptr<SapConstraint<T>>> constraints_;

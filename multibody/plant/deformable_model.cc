@@ -356,6 +356,16 @@ void DeformableModel<T>::DoDeclareSystemResources(MultibodyPlant<T>* plant) {
         *(mpm_model_->InitialObjectParams().constitutive_model),
         mpm_model_->InitialObjectParams().density,
         mpm_model_->min_num_particles_per_cell());
+    std::cout << "add " << num_particles << " particles " << std::endl;
+    for (size_t a = 0; a < mpm_model_->NumAdditionalMpmBodies(); ++a) {
+      int additional = mpm_state.AddParticlesViaPoissonDiskSampling(
+        *(mpm_model_->GetInitialObjectParamsAt(a).level_set),
+        *(mpm_model_->GetInitialObjectParamsAt(a).pose),
+        *(mpm_model_->GetInitialObjectParamsAt(a).constitutive_model),
+        mpm_model_->GetInitialObjectParamsAt(a).density,
+        mpm_model_->min_num_particles_per_cell());
+        std::cout << "add " << additional << " particles " << std::endl;
+    }
 
     // TODO(zeshunzong): add to initialize event?
     mpm::MpmTransfer<T> initial_tranfer{};

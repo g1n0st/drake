@@ -239,6 +239,25 @@ void DeformableDriver<T>::DeclareCacheEntries(
         });
     cache_indexes_.grid_data_free_motion =
         grid_data_free_motion_cache_entry.cache_index();
+    
+    // 2.1 free-motion momentum residual
+    VectorX<T> momentum_bias;
+    const auto& momentum_bias_cache_entry = manager->DeclareCacheEntry(
+        "Free-motion momentum residual",
+        systems::ValueProducer(
+            momentum_bias,
+            std::function<void(const Context<T>&, VectorX<T>*)>{
+                [this](const Context<T>& context,
+                       VectorX<T>* momentum_bias_in) {
+                  this->CalcParticipatingMomentumBiasMpm(context,
+                                                momentum_bias_in);
+                }}),
+        {
+            manager_->plant().cache_entry_ticket(
+                cache_indexes_.grid_data_free_motion),
+        });
+    cache_indexes_.mpm_momentum_bias =
+        momentum_bias_cache_entry.cache_index();
 
     // 3. grid v post-SAP
     mpm::GridData<T> grid_data_post_contact;
@@ -257,7 +276,7 @@ void DeformableDriver<T>::DeclareCacheEntries(
             // TODO(zeshunzong): also depends on contact solver results. what is
             // the cache entry for that?
             manager_->plant().cache_entry_ticket(
-                cache_indexes_.grid_data_free_motion),
+                cache_indexes_.mpm_momentum_bias),
         });
     cache_indexes_.grid_data_post_contact =
         grid_data_post_contact_cache_entry.cache_index();

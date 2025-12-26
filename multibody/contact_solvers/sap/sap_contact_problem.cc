@@ -34,6 +34,14 @@ SapContactProblem<T>::SapContactProblem(const T& time_step,
     nv_ += Ac.rows();
   }
   DRAKE_THROW_UNLESS(v_star_.size() == nv_);
+  momentum_bias_.resize(nv_);
+  momentum_bias_.setZero();
+}
+
+template <typename T>
+void SapContactProblem<T>::set_momentum_bias(const VectorX<T>& r) {
+  DRAKE_THROW_UNLESS(r.size() == nv_);
+  momentum_bias_ = r;
 }
 
 template <typename T>

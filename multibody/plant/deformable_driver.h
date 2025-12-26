@@ -218,6 +218,45 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     }
   }
 
+  const VectorX<T>& EvalParticipatingMomentumBiasMpm(
+      const systems::Context<T>& context) const {
+    return manager_->plant()
+        .get_cache_entry(cache_indexes_.mpm_momentum_bias)
+        .template Eval<VectorX<T>>(context);
+  }
+
+  void CalcParticipatingMomentumBiasMpm(
+        const systems::Context<T>& context, VectorX<T>* result) const {
+    DRAKE_DEMAND(result != nullptr);
+    const auto& state = context.template get_abstract_state<mpm::MpmState<T>>(
+        deformable_model_->mpm_model().mpm_state_index());
+    const double dt = manager_->plant().time_step();
+
+    mpm::MpmSolverScratch<T>& scratch =
+        manager_->plant()
+            .get_cache_entry(cache_indexes_.mpm_solver_scratch)
+            .get_mutable_cache_entry_value(context)
+            .template GetMutableValueOrThrow<mpm::MpmSolverScratch<T>>();
+
+    mpm::GridData<T> grid_v_star = EvalGridDataFreeMotion(context);
+
+    mpm::DeformationState<T> def_state(state.particles, state.sparse_grid, grid_v_star);
+    def_state.Update(*mpm_transfer_, dt, &scratch,
+                    (!deformable_model_->mpm_model().newton_params().linear_constitutive_model));
+
+    deformable_model_->mpm_model().ComputeMinusDEnergyDV(
+        *mpm_transfer_, scratch.v_prev, def_state, dt, &scratch.minus_dEdv,
+        &scratch.transfer_scratch);
+
+    const Eigen::VectorX<T> m_free = -scratch.minus_dEdv;
+
+    if (!deformable_model_->MpmUseSchur()) {
+        *result = m_free;
+    } else {
+        printf("NotImplError\n"); throw; // NotImplError;
+    }
+  }
+
   const mpm::GridData<T>& EvalGridDataPostContact(
       const systems::Context<T>& context) const {
     return manager_->plant()
@@ -768,6 +807,7 @@ class DeformableDriver : public ScalarConvertibleComponent<T> {
     // mpm cache indexes
     systems::CacheIndex mpm_solver_scratch;
     systems::CacheIndex grid_data_free_motion;
+    systems::CacheIndex mpm_momentum_bias;
     systems::CacheIndex grid_data_post_contact;
     systems::CacheIndex mpm_contact_pairs;
     // systems::CacheIndex grid_indices_in_contact;
