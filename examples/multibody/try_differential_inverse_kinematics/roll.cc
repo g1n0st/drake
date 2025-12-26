@@ -335,6 +335,8 @@ int do_main() {
   owned_deformable_model->SetMpmFriction(FLAGS_friction);
   owned_deformable_model->SetMpmDamping(FLAGS_damping);
   owned_deformable_model->SetMpmStiffness(1e6);
+  owned_deformable_model->SetIntegrator(drake::multibody::mpm::MpmIntegratorType::Substep);
+  owned_deformable_model->SetSubstepCount(100);
   plant.AddPhysicalModel(std::move(owned_deformable_model));
 
   double Kp = 1e6;

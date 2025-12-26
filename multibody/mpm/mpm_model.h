@@ -177,6 +177,27 @@ class MpmModel {
     }
   }
 
+  void AppendAdditionalInitialObjectParams(
+      std::unique_ptr<internal::AnalyticLevelSet> level_set_in,
+      std::unique_ptr<constitutive_model::ElastoPlasticModel<T>>
+          constitutive_model_in,
+      std::unique_ptr<math::RigidTransform<T>> pose_in, double density_in,
+      double h_in) {
+    additional_initial_object_params_.emplace_back(
+        std::make_unique<MpmInitialObjectParameters<T>>(
+            std::move(level_set_in), std::move(constitutive_model_in),
+            std::move(pose_in), density_in, h_in));
+  }
+
+  size_t NumAdditionalMpmBodies() const {
+    return additional_initial_object_params_.size();
+  }
+
+  const MpmInitialObjectParameters<T>& GetInitialObjectParamsAt(size_t i) const {
+    DRAKE_DEMAND(i < NumAdditionalMpmBodies());
+    return *(additional_initial_object_params_[i]);
+  }
+
   const MpmInitialObjectParameters<T>& InitialObjectParams() const {
     DRAKE_DEMAND(initial_object_params_ != nullptr);
     return *initial_object_params_;
@@ -346,6 +367,10 @@ class MpmModel {
 
   // consider having a list of those?
   std::unique_ptr<MpmInitialObjectParameters<T>> initial_object_params_;
+
+  std::vector<std::unique_ptr<MpmInitialObjectParameters<T>>>
+      additional_initial_object_params_;
+
   // the state index where we store mpm_state inside context
   systems::AbstractStateIndex mpm_state_index_;
 
