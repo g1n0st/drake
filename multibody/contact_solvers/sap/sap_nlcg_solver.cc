@@ -68,7 +68,7 @@ void SapNlcgSolver<T>::CalcStoppingCriteriaResidual(const Context<T>& context,
   const VectorX<T> jc_tilde = inv_sqrt_A.asDiagonal() * jc;
 
   *momentum_residual = ell_grad_tilde.norm();
-  *momentum_scale = max(p_tilde.norm(), jc_tilde.norm());
+  *momentum_scale = std::max(p_tilde.norm(), jc_tilde.norm());
 }
 
 template <typename T>
@@ -194,9 +194,6 @@ template <>
 SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
     const SapContactProblem<double>& problem, const VectorX<double>& v_guess,
     SapSolverResults<double>* results) {
-  using std::abs;
-  using std::max;
-
   DRAKE_DEMAND(results != nullptr);
 
   if (problem.num_constraints() == 0) {
@@ -208,7 +205,7 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
 
   // Build model.
   model_ = std::make_unique<SapModel<double>>(&problem);
-  const int nv = model_->num_velocities();
+  // const int nv = model_->num_velocities();
 
   auto context = model_->MakeContext();
   auto scratch = model_->MakeContext();
@@ -221,23 +218,53 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
     model_->velocities_permutation().Apply(v_guess, &v);
   }
 
-  // Optional Jacobi preconditioner M ≈ diag(A).
+  const bool use_diag_h_preconditioner = 
+    parameters_.preconditioner_type == SapNlcgSolverParameters::PreconditionerType::kDiagH;
+  const bool use_preconditioner = 
+    parameters_.preconditioner_type != SapNlcgSolverParameters::PreconditionerType::kNone;
+
+  // Optional Jacobi preconditioners.
+  //  - diag(A)^{-1} (cheap, constant)
+  //  - diag(H)^{-1} with H ~ A + J^T diag(G) J (more expensive, refreshed)
   VectorX<double> inv_diag_A;
-  if (parameters_.use_jacobi_preconditioner) {
+  VectorX<double> diag_A;
+  MatrixX<double> J_squared;
+  if (use_preconditioner) {
     const VectorX<double>& inv_sqrt_A = model_->inv_sqrt_dynamics_matrix();
     inv_diag_A = inv_sqrt_A.array().square().matrix();
+    if (use_diag_h_preconditioner) {
+      diag_A = inv_diag_A.cwiseInverse();
+      const MatrixX<double> J =
+          model_->constraints_bundle().J().MakeDenseMatrix();
+      J_squared = J.array().square().matrix();
+    }
   }
+
+  auto ApplyPreconditioner = [&](const Context<double>& c,
+                                const VectorX<double>& g_in) -> VectorX<double> {
+    if (!use_preconditioner) return g_in;
+    if (!use_diag_h_preconditioner) return inv_diag_A.array() * g_in.array();
+    const int nk = model_->num_constraint_equations();
+    VectorX<double> diagG(nk);
+    int offset = 0;
+    const std::vector<MatrixX<double>>& G = model_->EvalConstraintsHessian(c);
+    for (const auto& Gi : G) {
+      const int ni = Gi.rows();
+      diagG.segment(offset, ni) = Gi.diagonal();
+      offset += ni;
+    }
+    DRAKE_DEMAND(offset == nk);
+    DRAKE_DEMAND(J_squared.rows() == nk);
+    VectorX<double> diag_H = diag_A + J_squared.transpose() * diagG;
+    diag_H = diag_H.array().max(parameters_.diag_h_min_diagonal).matrix();
+    return g_in.array() / diag_H.array();
+  };
 
   // Initialize objective and gradient.
   double ell = model_->EvalCost(*context);
   double ell_previous = ell;
   VectorX<double> g = model_->EvalCostGradient(*context);  // copy
-  VectorX<double> z(nv);
-  if (parameters_.use_jacobi_preconditioner) {
-    z = inv_diag_A.array() * g.array();
-  } else {
-    z = g;
-  }
+  VectorX<double> z = ApplyPreconditioner(*context, g);
   VectorX<double> d = -z;
 
   double alpha = 1.0;
@@ -264,7 +291,7 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
 
     // Sanity check: expected monotonic decrease; allow small slop.
     {
-      const double ell_scale = 0.5 * (abs(ell) + abs(ell_previous));
+      const double ell_scale = 0.5 * (std::abs(ell) + std::abs(ell_previous));
       const double ell_slop =
           parameters_.relative_slop * std::max(1.0, ell_scale);
       if (ell > ell_previous + ell_slop &&
@@ -322,16 +349,12 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
     const VectorX<double> z_prev = std::move(z);
     const VectorX<double> d_prev = d;
     g = model_->EvalCostGradient(*context);  // copy
-    if (parameters_.use_jacobi_preconditioner) {
-      z = inv_diag_A.array() * g.array();
-    } else {
-      z = g;
-    }
+    z = ApplyPreconditioner(*context, g);
 
     // Cost-stall check (round-off detection).
     {
-      const double ell_scale = 0.5 * (abs(ell) + abs(ell_previous));
-      const double ell_decrement = abs(ell_previous - ell);
+      const double ell_scale = 0.5 * (std::abs(ell) + std::abs(ell_previous));
+      const double ell_decrement = std::abs(ell_previous - ell);
       stats_.cost_criterion_reached =
           ell_decrement < parameters_.cost_abs_tolerance +
                               parameters_.cost_rel_tolerance * ell_scale &&
@@ -340,17 +363,12 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
 
     // PR+ update with restart heuristic.
     double beta = 0.0;
-    if (parameters_.use_jacobi_preconditioner) {
+    if (use_preconditioner) {
       const VectorX<double> z_diff = z - z_prev;
       const double denom = g_prev.dot(z_prev);
       if (denom > 0.0) {
         beta = std::max(0.0, g.dot(z_diff) / denom);
       }
-      std::cout << "\033[34m"
-          << fmt::format("final beta={}, g.dot(z_diff) / denom={}", 
-            beta, g.dot(z_diff) / denom)
-          << "\033[0m"
-          << std::endl;
     } else {
       const VectorX<double> y = g - g_prev;
       const double denom = g_prev.squaredNorm();

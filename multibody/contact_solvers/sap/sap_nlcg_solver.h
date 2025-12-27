@@ -27,6 +27,17 @@ struct SapNlcgSolverParameters {
     kExact,
   };
 
+  enum class PreconditionerType {
+    // uses a simple Jacobi preconditioner M ~ diag(A).
+    kJacobi,
+    // uses an (approximate) Hessian Jacobi preconditioner
+    //   M ~ diag(H) ~ diag(A) + diag(J^T diag(G) J).
+    // This option is intended to improve conditioning when contact
+    // stiffness dominates.
+    kDiagH,
+    kNone,
+  };
+
   // Parameters for the exact line search.
   // Ignored if line_search_type != LineSearchType::kExact.
   struct ExactLineSearchParameters {
@@ -53,7 +64,7 @@ struct SapNlcgSolverParameters {
   // Optimality condition: same definition as SapSolver (scaled momentum
   // residual). See SapSolverParameters for rationale.
   double abs_tolerance{1.e-14};
-  double rel_tolerance{1.e-6};
+  double rel_tolerance{1.e-2};
 
   // Cost-stall condition (round-off detection).
   double cost_abs_tolerance{1.e-30};
@@ -65,8 +76,9 @@ struct SapNlcgSolverParameters {
   //   g_{k+1}ᵀ g_k / (g_kᵀ g_k) > restart_threshold.
   double restart_threshold{0.2};
 
-  // If true, uses a simple Jacobi preconditioner M ≈ diag(A).
-  bool use_jacobi_preconditioner{true};
+  PreconditionerType preconditioner_type{PreconditionerType::kDiagH};
+  // Minimum diagonal used to invert diag(H) (safety clamp).
+  double diag_h_min_diagonal{1.0e-30};
 
   // Monotonicity sanity check slop.
   double relative_slop{1000 * std::numeric_limits<double>::epsilon()};
