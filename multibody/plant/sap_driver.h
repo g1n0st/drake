@@ -12,6 +12,7 @@
 #include "drake/multibody/contact_solvers/contact_solver_results.h"
 #include "drake/multibody/contact_solvers/sap/sap_contact_problem.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver.h"
+#include "drake/multibody/contact_solvers/sap/sap_nlcg_solver.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver_results.h"
 #include "drake/multibody/plant/contact_pair_kinematics.h"
 #include "drake/multibody/tree/multibody_forces.h"
