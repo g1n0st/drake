@@ -74,7 +74,7 @@ struct SapNlcgSolverParameters {
 
   // Restart heuristic threshold in PR+: restart if
   //   g_{k+1}ᵀ g_k / (g_kᵀ g_k) > restart_threshold.
-  double restart_threshold{0.2};
+  double restart_threshold{2.0};
 
   PreconditionerType preconditioner_type{PreconditionerType::kDiagH};
   // Minimum diagonal used to invert diag(H) (safety clamp).
