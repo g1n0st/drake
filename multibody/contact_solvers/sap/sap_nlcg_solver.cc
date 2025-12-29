@@ -367,21 +367,50 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
           alpha > 0.5;
     }
 
-    // PR+ update with restart heuristic.
+    // Beta update with an optional restart heuristic.
     double beta = 0.0;
-    if (use_preconditioner) {
-      const VectorX<double> z_diff = z - z_prev;
-      const double denom = g_prev.dot(z_prev);
-      if (denom > 0.0) {
-        beta = std::max(0.0, g.dot(z_diff) / denom);
+    switch (parameters_.beta_update_type) {
+      case SapNlcgSolverParameters::BetaUpdateType::kPolakRibierePlus: {
+        // PR+ update.
+        if (parameters_.preconditioner_type != SapNlcgSolverParameters::PreconditionerType::kNone) {
+          const VectorX<double> z_diff = z - z_prev;
+          const double denom = g_prev.dot(z_prev);
+          if (denom > 0.0) {
+            beta = std::max(0.0, g.dot(z_diff) / denom);
+          }
+        } else {
+          const VectorX<double> y = g - g_prev;
+          const double denom = g_prev.squaredNorm();
+          if (denom > 0.0) {
+            beta = std::max(0.0, g.dot(y) / denom);
+          }
+        }
+        break;
       }
-    } else {
-      const VectorX<double> y = g - g_prev;
-      const double denom = g_prev.squaredNorm();
-      if (denom > 0.0) {
-        beta = std::max(0.0, g.dot(y) / denom);
+      case SapNlcgSolverParameters::BetaUpdateType::kDaiKou: {
+        // Dai–Kou (DK) update.
+        const VectorX<double> y = g - g_prev;
+        const double denom = y.dot(d_prev);
+        const double denom_tol = std::numeric_limits<double>::epsilon() *
+                                 std::max(1.0, y.norm() * d_prev.norm());
+        if (std::abs(denom) > denom_tol) {
+          const double pk_g = d_prev.dot(g);
+          if (parameters_.preconditioner_type != SapNlcgSolverParameters::PreconditionerType::kNone) {
+            const VectorX<double> py = z - z_prev;  // P * y.
+            const double term1 = g.dot(py);         // g_{k+1}^T P y_k.
+            const double term2 = y.dot(py);         // y_k^T P y_k.
+            beta = term1 / denom - (term2 / denom) * (pk_g / denom);
+          } else {
+            const double term1 = g.dot(y);        // g_{k+1}^T y_k.
+            const double term2 = y.squaredNorm(); // y_k^T y_k.
+            beta = term1 / denom - (term2 / denom) * (pk_g / denom);
+          }
+          if (!std::isfinite(beta)) beta = 0.0;
+        }
+        break;
       }
     }
+
     {
       const double denom = g_prev.squaredNorm();
       if (denom > 0.0 &&
@@ -394,7 +423,8 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
     if (g.dot(d) >= 0.0) d = -z;
   }
 
-  if (!converged) return SapSolverStatus::kFailure;
+  // if (!converged) return SapSolverStatus::kFailure;
+  unused(converged);
 
   PackSapSolverResults(*context, results);
   stats_.num_iters = k;

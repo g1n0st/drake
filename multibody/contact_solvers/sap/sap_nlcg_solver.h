@@ -19,12 +19,20 @@ namespace internal {
 //
 // This solver minimizes SAP's strictly convex primal objective
 //   ℓ(v) = 1/2 (v-v*)ᵀ A (v-v*) + rᵀ (v-v*) + ℓc(Jv)
-// using a Polak–Ribière+ (PR+) update and either a strong-Wolfe or an exact
-// (one-dimensional) line search.
+// using a configurable nonlinear conjugate-gradient update
+// and either a strong-Wolfe or an exact (one-dimensional) line search.
 struct SapNlcgSolverParameters {
   enum class LineSearchType {
     kStrongWolfe,
     kExact,
+  };
+
+  // Update rule for the nonlinear conjugate gradient (NLCG) parameter beta.
+  enum class BetaUpdateType {
+    // Polak–Ribière+ (PR+) update with the standard non-negativity safeguard.
+    kPolakRibierePlus,
+    // Dai–Kou (DK) update.
+    kDaiKou,
   };
 
   enum class PreconditionerType {
@@ -72,8 +80,8 @@ struct SapNlcgSolverParameters {
 
   int max_iterations{200};
 
-  // Restart heuristic threshold in PR+: restart if
-  //   g_{k+1}ᵀ g_k / (g_kᵀ g_k) > restart_threshold.
+  BetaUpdateType beta_update_type{BetaUpdateType::kDaiKou};
+  // restart if g_{k+1}ᵀ g_k / (g_kᵀ g_k) > restart_threshold.
   double restart_threshold{2.0};
 
   PreconditionerType preconditioner_type{PreconditionerType::kDiagH};
