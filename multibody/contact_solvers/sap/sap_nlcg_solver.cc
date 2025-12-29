@@ -97,11 +97,6 @@ SapSolverStatus SapNlcgSolver<T>::SolveWithGuess(
       "set of constraints is non-empty.");
 }
 
-namespace {
-inline bool IsFinite(double x) {
-  return std::isfinite(x);
-}
-
 struct NlcgSearchDirectionData {
   const VectorX<double>& dv;
   const VectorX<double>& dp;
@@ -341,7 +336,7 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
     }
     stats_.num_line_search_iters += ls_iters;
 
-    if (!IsFinite(alpha) || alpha <= 0.0) break;
+    if (!std::isfinite(alpha) || alpha <= 0.0) break;
     if (parameters_.line_search_type ==
             SapNlcgSolverParameters::LineSearchType::kStrongWolfe &&
         alpha < parameters_.strong_wolfe.min_alpha) {
