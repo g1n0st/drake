@@ -36,19 +36,28 @@ void SapNlcgSolver<T>::PackSapSolverResults(const Context<T>& context,
   results->Resize(model_->problem().num_velocities(),
                   model_->num_constraint_equations());
 
-  // For non-participating velocities the solution is v = v*.
+  // For non-participating velocities the solutions is v = v*. Therefore we
+  // first initialize to v = v* and overwrite with the non-trivial participating
+  // values in the following line.
   results->v = model_->problem().v_star();
   const VectorX<T>& v_participating = model_->GetVelocities(context);
   model_->velocities_permutation().ApplyInverse(v_participating, &results->v);
 
-  // Constraint quantities are evaluated in clustered order; unpermute.
+  // Constraints equations are clustered (essentially their order is permuted
+  // for a better sparsity structure). Therefore constraint velocities and
+  // impulses are evaluated in this clustered order and permuted into the
+  // original order described by the model right after.
   const VectorX<T>& vc_clustered = model_->EvalConstraintVelocities(context);
   model_->impulses_permutation().ApplyInverse(vc_clustered, &results->vc);
   const VectorX<T>& gamma_clustered = model_->EvalImpulses(context);
   model_->impulses_permutation().ApplyInverse(gamma_clustered, &results->gamma);
 
-  // For non-participating velocities, generalized impulses are zero.
-  const VectorX<T>& tau_participating = model_->EvalGeneralizedImpulses(context);
+  // For non-participating velocities we have v=v* and the generalized impulses
+  // are zero. Therefore we first zero-out all generalized impulses and
+  // overwrite with the non-trivial non-zero values for the participating DOFs
+  // right after.
+  const VectorX<T>& tau_participating =
+      model_->EvalGeneralizedImpulses(context);
   results->j.setZero();
   model_->velocities_permutation().ApplyInverse(tau_participating, &results->j);
 }
@@ -63,12 +72,14 @@ void SapNlcgSolver<T>::CalcStoppingCriteriaResidual(const Context<T>& context,
   const VectorX<T>& jc = model_->EvalGeneralizedImpulses(context);
   const VectorX<T>& ell_grad = model_->EvalCostGradient(context);
 
+  // Scale generalized momentum quantities using inv_sqrt_A so that all entries
+  // have the same units and we can weigh them equally.
   const VectorX<T> ell_grad_tilde = inv_sqrt_A.asDiagonal() * ell_grad;
   const VectorX<T> p_tilde = inv_sqrt_A.asDiagonal() * p;
   const VectorX<T> jc_tilde = inv_sqrt_A.asDiagonal() * jc;
 
   *momentum_residual = ell_grad_tilde.norm();
-  *momentum_scale = std::max(p_tilde.norm(), jc_tilde.norm());
+  *momentum_scale = max(p_tilde.norm(), jc_tilde.norm());
 }
 
 template <typename T>
