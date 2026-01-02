@@ -194,8 +194,6 @@ double CalcCostAlongLine(
   return ell;
 }
 
-}  // namespace
-
 template <>
 SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
     const SapContactProblem<double>& problem, const VectorX<double>& v_guess,
