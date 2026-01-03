@@ -31,6 +31,7 @@ drake_cc_package_library(
         ":sap_model",
         ":sap_pd_controller_constraint",
         ":sap_solver",
+        ":sap_nlcg_solver",
         ":sap_solver_results",
         ":sap_weld_constraint",
     ],
@@ -264,6 +265,27 @@ drake_cc_library(
     deps = [
         ":sap_model",
         ":sap_solver_results",
+        "//common:default_scalars",
+        "//common:essential",
+        "//math:linear_solve",
+        "//multibody/contact_solvers:block_sparse_matrix",
+        "//multibody/contact_solvers:block_sparse_supernodal_solver",
+        "//multibody/contact_solvers:conex_supernodal_solver",
+        "//multibody/contact_solvers:newton_with_bisection",
+        "//multibody/contact_solvers:point_contact_data",
+        "//multibody/contact_solvers:supernodal_solver",
+        "//multibody/contact_solvers:system_dynamics_data",
+    ],
+)
+
+drake_cc_library(
+    name = "sap_nlcg_solver",
+    srcs = ["sap_nlcg_solver.cc"],
+    hdrs = ["sap_nlcg_solver.h"],
+    deps = [
+        ":sap_model",
+        ":sap_solver_results",
+        ":sap_solver",
         "//common:default_scalars",
         "//common:essential",
         "//math:linear_solve",

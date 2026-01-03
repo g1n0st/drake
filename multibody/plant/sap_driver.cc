@@ -23,6 +23,7 @@
 #include "drake/multibody/contact_solvers/sap/sap_limit_constraint.h"
 #include "drake/multibody/contact_solvers/sap/sap_pd_controller_constraint.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver.h"
+#include "drake/multibody/contact_solvers/sap/sap_nlcg_solver.h"
 #include "drake/multibody/contact_solvers/sap/sap_solver_results.h"
 #include "drake/multibody/contact_solvers/sap/sap_weld_constraint.h"
 #include "drake/multibody/plant/compliant_contact_manager.h"
@@ -51,6 +52,7 @@ using drake::multibody::contact_solvers::internal::SapHuntCrossleyConstraint;
 using drake::multibody::contact_solvers::internal::SapLimitConstraint;
 using drake::multibody::contact_solvers::internal::SapPdControllerConstraint;
 using drake::multibody::contact_solvers::internal::SapSolver;
+using drake::multibody::contact_solvers::internal::SapNlcgSolver;
 using drake::multibody::contact_solvers::internal::SapSolverResults;
 using drake::multibody::contact_solvers::internal::SapSolverStatus;
 using drake::multibody::contact_solvers::internal::SapWeldConstraint;
@@ -1028,8 +1030,9 @@ void SapDriver<T>::CalcSapSolverResults(
   }
 
   // Solve the reduced DOF locked problem.
-  SapSolver<T> sap;
-  sap.set_parameters(sap_parameters_);
+  // SapSolver<T> sap;
+  SapNlcgSolver<T> sap;
+  // sap.set_parameters(sap_parameters_);
 
   SapSolverStatus status;
   if (has_locked_dofs) {
