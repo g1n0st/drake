@@ -271,6 +271,9 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
   VectorX<double> z = ApplyPreconditioner(*context, g);
   VectorX<double> d = -z;
 
+  const double initial_momentum_residual =
+    (model_->inv_sqrt_dynamics_matrix().array() * g.array()).matrix().norm();
+
   double alpha = 1.0;
   bool converged = false;
   int k = 0;
@@ -278,9 +281,17 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
     // Stopping criteria check (before any expensive line search work).
     double momentum_residual{}, momentum_scale{};
     CalcStoppingCriteriaResidual(*context, &momentum_residual, &momentum_scale);
-    stats_.optimality_criterion_reached =
-        momentum_residual <= parameters_.abs_tolerance +
-                                parameters_.rel_tolerance * momentum_scale;
+
+    double stopping_scale = momentum_scale;
+    if (parameters_.stopping_criterion ==
+        SapNlcgSolverParameters::StoppingCriterionType::kInitialResidual) {
+      stopping_scale = initial_momentum_residual;
+    }
+
+    const double threshold =
+        parameters_.abs_tolerance + parameters_.rel_tolerance * stopping_scale;
+
+    stats_.optimality_criterion_reached = (momentum_residual <= threshold);
     stats_.cost.push_back(ell);
     stats_.alpha.push_back(alpha);
     stats_.momentum_residual.push_back(momentum_residual);
@@ -314,9 +325,8 @@ SapSolverStatus SapNlcgSolver<double>::SolveWithGuess(
     }
 
     std::cout << "\033[34m"
-          << fmt::format("k={}, dphi0={} ell={} alpha={}\n momentum_residual={}, momentum_scale={}, threshold={}", 
-            k, dphi0, ell, alpha, 
-            momentum_residual, momentum_scale, parameters_.abs_tolerance + parameters_.rel_tolerance * momentum_scale)
+          << fmt::format("k={}, dphi0={} ell={} alpha={}\n momentum_residual={}, threshold={}", 
+            k, dphi0, ell, alpha, momentum_residual, threshold)
           << "\033[0m"
           << std::endl;
 

@@ -27,6 +27,14 @@ struct SapNlcgSolverParameters {
     kExact,
   };
 
+  enum class StoppingCriterionType {
+    // ||D * ∇ℓ_p(v_k)|| <= ε_abs + ε_rel * max(||D p||, ||D j_c||)
+    kScaledMomentum,
+
+    // ||D * ∇ℓ_p(v_k)|| <= ε_abs + ε_rel * ||D * ∇ℓ_p(v_0)||
+    kInitialResidual,
+  };
+
   // Update rule for the nonlinear conjugate gradient (NLCG) parameter beta.
   enum class BetaUpdateType {
     // Polak–Ribière+ (PR+) update with the standard non-negativity safeguard.
@@ -69,16 +77,16 @@ struct SapNlcgSolverParameters {
   ExactLineSearchParameters exact_line_search;
   StrongWolfeLineSearchParameters strong_wolfe;
 
-  // Optimality condition: same definition as SapSolver (scaled momentum
-  // residual). See SapSolverParameters for rationale.
+  // Optimality condition
+  StoppingCriterionType stopping_criterion{StoppingCriterionType::kScaledMomentum};
   double abs_tolerance{1.e-14};
-  double rel_tolerance{1.e-2};
+  double rel_tolerance{1.e-3};
 
   // Cost-stall condition (round-off detection).
   double cost_abs_tolerance{1.e-30};
   double cost_rel_tolerance{1.e-15};
 
-  int max_iterations{200};
+  int max_iterations{500};
 
   BetaUpdateType beta_update_type{BetaUpdateType::kDaiKou};
   // restart if g_{k+1}ᵀ g_k / (g_kᵀ g_k) > restart_threshold.
